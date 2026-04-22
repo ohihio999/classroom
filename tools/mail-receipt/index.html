@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>掛號信簽收</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; }
+
+    .header {
+      background: #1976D2; color: white; padding: 16px 20px;
+      display: flex; justify-content: space-between; align-items: center;
+      position: sticky; top: 0; z-index: 10;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+    .header h1 { font-size: 20px; font-weight: 600; }
+
+    .tabs { background: white; display: flex; border-bottom: 2px solid #e0e0e0; }
+    .tab {
+      flex: 1; padding: 14px; text-align: center; font-size: 14px;
+      cursor: pointer; border-bottom: 3px solid transparent; color: #888; transition: all 0.2s;
+    }
+    .tab.active { color: #1976D2; border-bottom-color: #1976D2; font-weight: 600; }
+
+    .list { padding: 12px 16px; }
+
+    .card {
+      background: white; border-radius: 10px; padding: 16px; margin-bottom: 10px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08); cursor: pointer;
+      display: flex; justify-content: space-between; align-items: flex-start;
+      transition: background 0.1s;
+    }
+    .card:active { background: #f0f4ff; }
+    .card-main { flex: 1; min-width: 0; }
+    .card-tracking { font-size: 16px; font-weight: 600; color: #222; margin-bottom: 4px; }
+    .card-recipient { font-size: 15px; color: #444; margin-bottom: 2px; }
+    .card-sender { font-size: 13px; color: #888; margin-bottom: 4px; }
+    .card-meta { font-size: 12px; color: #bbb; }
+
+    .badge { padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; white-space: nowrap; margin-left: 12px; flex-shrink: 0; }
+    .badge-pending { background: #FFF3E0; color: #E65100; }
+    .badge-received { background: #E8F5E9; color: #2E7D32; }
+
+    .fab {
+      position: fixed; bottom: 28px; right: 24px;
+      width: 60px; height: 60px; border-radius: 50%;
+      background: #1976D2; color: white; border: none;
+      font-size: 32px; cursor: pointer; line-height: 1;
+      box-shadow: 0 4px 16px rgba(25,118,210,0.45);
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    .empty { text-align: center; padding: 60px 20px; color: #bbb; }
+    .empty-icon { font-size: 52px; margin-bottom: 12px; }
+    .empty p { font-size: 15px; }
+
+    .loading { text-align: center; padding: 50px; color: #bbb; font-size: 15px; }
+
+    /* Modal */
+    .modal-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.5); z-index: 100;
+      align-items: center; justify-content: center;
+    }
+    .modal-overlay.show { display: flex; }
+    .modal { background: white; border-radius: 14px; padding: 24px; width: 90%; max-width: 400px; }
+    .modal h2 { font-size: 18px; margin-bottom: 16px; color: #333; }
+    .modal label { font-size: 13px; color: #666; display: block; margin-bottom: 6px; }
+    .modal input {
+      width: 100%; padding: 12px; border: 1px solid #ddd;
+      border-radius: 8px; font-size: 14px; margin-bottom: 16px;
+    }
+    .modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
+    .btn { padding: 11px 22px; border-radius: 8px; border: none; cursor: pointer; font-size: 14px; font-weight: 500; }
+    .btn-primary { background: #1976D2; color: white; }
+    .btn-secondary { background: #eee; color: #333; }
+
+    .stats { display: flex; gap: 10px; padding: 12px 16px 4px; }
+    .stat { flex: 1; background: white; border-radius: 10px; padding: 12px; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+    .stat-num { font-size: 24px; font-weight: 700; }
+    .stat-label { font-size: 11px; color: #888; margin-top: 2px; }
+    .stat-pending .stat-num { color: #E65100; }
+    .stat-received .stat-num { color: #2E7D32; }
+    .stat-all .stat-num { color: #1976D2; }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <h1>📬 掛號信簽收</h1>
+  <button style="background:none;border:none;color:white;font-size:13px;cursor:pointer;opacity:0.8" onclick="logout()">登出</button>
+</div>
+
+<div class="stats" id="stats"></div>
+
+<div class="tabs">
+  <div class="tab active" data-filter="all" onclick="filterTab('all', this)">全部</div>
+  <div class="tab" data-filter="pending" onclick="filterTab('pending', this)">未領取</div>
+  <div class="tab" data-filter="received" onclick="filterTab('received', this)">已領取</div>
+</div>
+
+<div class="list" id="list">
+  <div class="loading">載入中…</div>
+</div>
+
+<button class="fab" onclick="location.href='register.html'" title="登記新信件">＋</button>
+
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js';
+import { getFirestore, collection, getDocs, query, orderBy } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js';
+import { getAuth, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js';
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBf0sHTsndFCksNlh46G_2mw9rk5zmPdc0",
+  authDomain: "my-teaching-tools-2b36c.firebaseapp.com",
+  projectId: "my-teaching-tools-2b36c",
+  storageBucket: "my-teaching-tools-2b36c.firebasestorage.app",
+  messagingSenderId: "82693897353",
+  appId: "1:82693897353:web:f667501aad05c536c09a58"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const auth = getAuth(app);
+
+let allRecords = [];
+let currentFilter = 'all';
+
+onAuthStateChanged(auth, (user) => {
+  if (!user) { location.href = 'login.html'; return; }
+  loadRecords();
+});
+
+window.logout = async function() {
+  await signOut(auth);
+  location.href = 'login.html';
+};
+
+async function loadRecords() {
+  try {
+    const q = query(collection(db, 'mail_receipts'), orderBy('createdAt', 'desc'));
+    const snapshot = await getDocs(q);
+    allRecords = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    renderStats();
+    renderList();
+  } catch(e) {
+    document.getElementById('list').innerHTML =
+      `<div class="empty"><div class="empty-icon">⚠️</div><p>載入失敗：${e.message}</p></div>`;
+  }
+}
+
+function renderStats() {
+  const total = allRecords.length;
+  const pending = allRecords.filter(r => r.status === 'pending').length;
+  const received = allRecords.filter(r => r.status === 'received').length;
+  document.getElementById('stats').innerHTML = `
+    <div class="stat stat-all"><div class="stat-num">${total}</div><div class="stat-label">總計</div></div>
+    <div class="stat stat-pending"><div class="stat-num">${pending}</div><div class="stat-label">未領取</div></div>
+    <div class="stat stat-received"><div class="stat-num">${received}</div><div class="stat-label">已領取</div></div>
+  `;
+}
+
+function renderList() {
+  const list = document.getElementById('list');
+  let records = allRecords;
+  if (currentFilter === 'pending') records = records.filter(r => r.status === 'pending');
+  if (currentFilter === 'received') records = records.filter(r => r.status === 'received');
+
+  if (records.length === 0) {
+    list.innerHTML = `<div class="empty"><div class="empty-icon">📭</div><p>尚無紀錄</p></div>`;
+    return;
+  }
+
+  list.innerHTML = records.map(r => {
+    const receivedTime = r.receivedAt ? new Date(r.receivedAt.seconds * 1000).toLocaleString('zh-TW') : '';
+    return `
+      <div class="card" onclick="location.href='sign.html?id=${r.id}'">
+        <div class="card-main">
+          <div class="card-tracking">${r.trackingNumber || '—'}</div>
+          <div class="card-recipient">收件人：${r.recipient || '—'}</div>
+          <div class="card-sender">寄件人：${r.sender || '—'}</div>
+          <div class="card-meta">${r.date || ''}${r.notes ? '・' + r.notes : ''}${receivedTime ? '・領取：' + receivedTime : ''}</div>
+        </div>
+        <span class="badge ${r.status === 'received' ? 'badge-received' : 'badge-pending'}">
+          ${r.status === 'received' ? '已領取' : '未領取'}
+        </span>
+      </div>
+    `;
+  }).join('');
+}
+
+window.filterTab = function(filter, el) {
+  currentFilter = filter;
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  renderList();
+};
+
+
+loadRecords();
+</script>
+</body>
+</html>

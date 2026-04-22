@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>登記掛號信</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; }
+
+    .header {
+      background: #1976D2; color: white; padding: 16px 20px;
+      display: flex; align-items: center; gap: 12px;
+      position: sticky; top: 0; z-index: 10;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+    .back-btn { background: none; border: none; color: white; font-size: 22px; cursor: pointer; }
+    .header h1 { font-size: 18px; font-weight: 600; }
+
+    .content { padding: 20px 16px; max-width: 600px; margin: 0 auto; }
+
+    .photo-area {
+      background: white; border-radius: 12px; padding: 20px;
+      margin-bottom: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); text-align: center;
+    }
+    .photo-area h2 { font-size: 15px; color: #555; margin-bottom: 16px; font-weight: 500; }
+
+    #previewImg {
+      width: 100%; max-height: 260px; object-fit: contain;
+      border-radius: 8px; display: none; margin-bottom: 12px;
+    }
+
+    .placeholder {
+      border: 2px dashed #ccc; border-radius: 10px;
+      padding: 40px 20px; color: #bbb; margin-bottom: 12px; cursor: pointer;
+    }
+    .placeholder-icon { font-size: 40px; margin-bottom: 8px; }
+    .placeholder p { font-size: 14px; }
+
+    input[type="file"] { display: none; }
+
+    .btn-row { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+    .btn {
+      padding: 12px 20px; border-radius: 10px; border: none;
+      cursor: pointer; font-size: 14px; font-weight: 500;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .btn-camera { background: #1976D2; color: white; }
+    .btn-ocr { background: #388E3C; color: white; }
+    .btn-ocr:disabled { background: #aaa; cursor: not-allowed; }
+    .btn-save { background: #1976D2; color: white; width: 100%; justify-content: center; font-size: 16px; padding: 16px; }
+    .btn-save:disabled { background: #aaa; cursor: not-allowed; }
+
+    .ocr-status { margin-top: 10px; font-size: 13px; color: #888; min-height: 20px; text-align: center; }
+    .ocr-status.error { color: #d32f2f; }
+    .ocr-status.success { color: #388E3C; }
+
+    .form-section {
+      background: white; border-radius: 12px; padding: 20px;
+      margin-bottom: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    }
+    .form-section h2 { font-size: 15px; color: #555; margin-bottom: 16px; font-weight: 500; }
+
+    .form-group { margin-bottom: 14px; }
+    .form-group label { font-size: 13px; color: #666; display: block; margin-bottom: 6px; }
+    .form-group input, .form-group textarea {
+      width: 100%; padding: 13px; border: 1px solid #ddd;
+      border-radius: 8px; font-size: 15px; outline: none; transition: border-color 0.2s;
+    }
+    .form-group input:focus, .form-group textarea:focus { border-color: #1976D2; }
+    .form-group textarea { resize: vertical; min-height: 70px; }
+
+    .spinner {
+      display: inline-block; width: 14px; height: 14px;
+      border: 2px solid rgba(255,255,255,0.4); border-top-color: white;
+      border-radius: 50%; animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <button class="back-btn" onclick="history.back()">←</button>
+  <h1>登記掛號信</h1>
+</div>
+
+<div class="content">
+  <div class="photo-area">
+    <h2>拍攝信封</h2>
+    <img id="previewImg" alt="信封預覽">
+    <div class="placeholder" id="placeholder" onclick="document.getElementById('cameraInput').click()">
+      <div class="placeholder-icon">📷</div>
+      <p>點此拍照或選取圖片</p>
+    </div>
+    <input type="file" id="cameraInput" accept="image/*" capture="environment">
+    <div class="btn-row">
+      <button class="btn btn-camera" onclick="document.getElementById('cameraInput').click()">📷 拍照 / 選圖</button>
+      <button class="btn btn-ocr" id="ocrBtn" onclick="runOCR()" disabled>✨ 自動辨識</button>
+    </div>
+    <div class="ocr-status" id="ocrStatus"></div>
+  </div>
+
+  <div class="form-section">
+    <h2>信件資訊</h2>
+    <div class="form-group">
+      <label>掛號號碼</label>
+      <input type="text" id="trackingNumber" placeholder="例：RR123456789TW">
+    </div>
+    <div class="form-group">
+      <label>收件人</label>
+      <input type="text" id="recipient" placeholder="姓名或單位">
+    </div>
+    <div class="form-group">
+      <label>寄件人</label>
+      <input type="text" id="sender" placeholder="姓名或單位">
+    </div>
+    <div class="form-group">
+      <label>日期</label>
+      <input type="date" id="date">
+    </div>
+    <div class="form-group">
+      <label>備註</label>
+      <textarea id="notes" placeholder="選填"></textarea>
+    </div>
+  </div>
+
+  <button class="btn btn-save" id="saveBtn" onclick="saveRecord()">儲存</button>
+</div>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js';
+import { getFirestore, collection, addDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js';
+import { getFunctions, httpsCallable } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-functions.js';
+import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js';
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBf0sHTsndFCksNlh46G_2mw9rk5zmPdc0",
+  authDomain: "my-teaching-tools-2b36c.firebaseapp.com",
+  projectId: "my-teaching-tools-2b36c",
+  storageBucket: "my-teaching-tools-2b36c.firebasestorage.app",
+  messagingSenderId: "82693897353",
+  appId: "1:82693897353:web:f667501aad05c536c09a58"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const functions = getFunctions(app, 'asia-east1');
+const auth = getAuth(app);
+
+onAuthStateChanged(auth, (user) => {
+  if (!user) location.href = 'login.html';
+});
+const ocrEnvelope = httpsCallable(functions, 'ocrEnvelope');
+
+document.getElementById('date').value = new Date().toISOString().split('T')[0];
+
+let imageBase64 = null;
+let imageMimeType = null;
+
+// 壓縮圖片到最大 1200px，JPEG 80%
+function compressImage(file) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const MAX = 1200;
+      let w = img.width, h = img.height;
+      if (w > MAX) { h = h * MAX / w; w = MAX; }
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL('image/jpeg', 0.8));
+    };
+    img.src = url;
+  });
+}
+
+document.getElementById('cameraInput').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const compressed = await compressImage(file);
+  imageMimeType = 'image/jpeg';
+  imageBase64 = compressed.split(',')[1];
+
+  document.getElementById('previewImg').src = compressed;
+  document.getElementById('previewImg').style.display = 'block';
+  document.getElementById('placeholder').style.display = 'none';
+  document.getElementById('ocrBtn').disabled = false;
+  document.getElementById('ocrStatus').textContent = '圖片已載入，可點「自動辨識」';
+  document.getElementById('ocrStatus').className = 'ocr-status';
+});
+
+window.runOCR = async function() {
+  if (!imageBase64) return;
+  const btn = document.getElementById('ocrBtn');
+  const status = document.getElementById('ocrStatus');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> 辨識中…';
+  status.textContent = '送出圖片辨識中…';
+  status.className = 'ocr-status';
+
+  try {
+    const result = await ocrEnvelope({ imageBase64, mimeType: imageMimeType });
+    const data = result.data;
+    if (data.trackingNumber) document.getElementById('trackingNumber').value = data.trackingNumber;
+    if (data.recipient) document.getElementById('recipient').value = data.recipient;
+    if (data.sender) document.getElementById('sender').value = data.sender;
+    status.textContent = '✅ 辨識完成，請確認欄位是否正確';
+    status.className = 'ocr-status success';
+  } catch(e) {
+    status.textContent = '❌ ' + (e.message || '辨識失敗');
+    status.className = 'ocr-status error';
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '✨ 自動辨識';
+  }
+};
+
+window.saveRecord = async function() {
+  const trackingNumber = document.getElementById('trackingNumber').value.trim();
+  const recipient = document.getElementById('recipient').value.trim();
+  if (!trackingNumber || !recipient) { alert('掛號號碼和收件人為必填'); return; }
+
+  const saveBtn = document.getElementById('saveBtn');
+  saveBtn.disabled = true;
+  saveBtn.textContent = '儲存中…';
+
+  try {
+    await addDoc(collection(db, 'mail_receipts'), {
+      trackingNumber,
+      recipient,
+      sender: document.getElementById('sender').value.trim(),
+      date: document.getElementById('date').value,
+      notes: document.getElementById('notes').value.trim(),
+      status: 'pending',
+      createdAt: serverTimestamp(),
+      receivedAt: null,
+      signatureImage: null,
+      envelopeImage: imageBase64 ? `data:image/jpeg;base64,${imageBase64}` : null
+    });
+    location.href = 'index.html';
+  } catch(e) {
+    alert('儲存失敗：' + e.message);
+    saveBtn.disabled = false;
+    saveBtn.textContent = '儲存';
+  }
+};
+</script>
+</body>
+</html>
