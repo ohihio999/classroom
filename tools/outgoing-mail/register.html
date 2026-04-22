@@ -185,8 +185,8 @@ function updateOcrBtn() {
 addEnvelopeSlot();
 
 // ── Batch OCR ──────────────────────────────────────
-const ENVELOPE_PROMPT = '這是一封信封的正面。請辨識以下欄位，以純 JSON 回傳（不加 markdown）：{"senderName":"寄件人公司或姓名","recipientName":"收件人公司或單位","recipientDept":"部門（若無填空）","recipientContact":"聯絡人姓名（若無填空）","recipientAddress":"收件地址","content":"信件內容說明（若有標示，否則填空）"}。找不到的欄位填空字串。';
-const RECEIPT_PROMPT = '這是一張郵局掛號收執聯，可能有多筆掛號。請辨識以下欄位，以純 JSON 回傳（不加 markdown）：{"trackingNumbers":["掛號號碼1","掛號號碼2"],"date":"日期 YYYY-MM-DD 格式（民國年轉西元）","postage":"郵費數字（若多件相同填一個，找不到填空）"}。trackingNumbers 請依序列出所有號碼，找不到填空陣列。';
+const ENVELOPE_PROMPT = '這是一封信封的正面。請辨識以下欄位，以純 JSON 回傳（不加 markdown）：{"senderName":"寄件人公司或姓名","recipientName":"收件人公司或單位","recipientDept":"部門（若無填空）","recipientContact":"聯絡人姓名（若無填空）","recipientAddress":"完整收件地址（含縣市）","content":"信件內容說明（若有標示，否則填空）"}。找不到的欄位填空字串。';
+const RECEIPT_PROMPT = '這是一張郵局掛號收執聯，可能有多筆掛號。台灣掛號號碼格式：2個英文字母＋9位數字＋2個英文字母，共13碼，請仔細辨識每一碼，不可遺漏任何一個字元。以純 JSON 回傳（不加 markdown）：{"items":[{"trackingNumber":"完整13碼掛號號碼","destination":"目的地城市（如高雄市、台北市、台中市，從郵遞區號或地址判斷）"}],"date":"日期 YYYY-MM-DD（民國年轉西元）","postage":"郵費數字（找不到填空）"}。依序列出所有掛號，找不到的填空字串。';
 
 window.runBatchOCR = async function() {
   const btn = document.getElementById('ocrAllBtn');
@@ -205,13 +205,13 @@ window.runBatchOCR = async function() {
         .catch(() => ({})));
 
     // 收執聯辨識
-    let receiptData = { trackingNumbers: [], date: today, postage: '' };
+    let receiptData = { items: [], date: today, postage: '' };
     if (receiptBase64) {
       try {
         const r = await ocrFn({ imageBase64: receiptBase64, mimeType: 'image/jpeg', prompt: RECEIPT_PROMPT });
         const d = r.data || {};
         receiptData = {
-          trackingNumbers: Array.isArray(d.trackingNumbers) ? d.trackingNumbers : (d.trackingNumbers ? [d.trackingNumbers] : []),
+          items: Array.isArray(d.items) ? d.items : [],
           date: d.date || today,
           postage: d.postage || ''
         };
@@ -220,9 +220,36 @@ window.runBatchOCR = async function() {
 
     const envResults = await Promise.all(envelopePromises);
 
-    // 合併：依順序分配掛號號碼
+    // 合併：依地址智慧配對掛號號碼，配不到再依序補
+    const items = [...receiptData.items];
+    const assigned = new Array(envResults.length).fill(null);
+    const usedIdx = new Set();
+
+    // 第一輪：地址包含目的地城市的直接配對
+    envResults.forEach((env, i) => {
+      const addr = (env.recipientAddress || '').toLowerCase();
+      for (let j = 0; j < items.length; j++) {
+        if (usedIdx.has(j)) continue;
+        const dest = (items[j].destination || '').toLowerCase();
+        if (dest && addr.includes(dest)) {
+          assigned[i] = items[j].trackingNumber || '';
+          usedIdx.add(j);
+          break;
+        }
+      }
+    });
+
+    // 第二輪：未配對的依序填剩餘號碼
+    let nextJ = 0;
+    envResults.forEach((_, i) => {
+      if (assigned[i] !== null) return;
+      while (nextJ < items.length && usedIdx.has(nextJ)) nextJ++;
+      assigned[i] = nextJ < items.length ? (items[nextJ].trackingNumber || '') : '';
+      usedIdx.add(nextJ); nextJ++;
+    });
+
     records = envResults.map((env, i) => ({
-      trackingNumber: receiptData.trackingNumbers[i] || '',
+      trackingNumber: assigned[i] || '',
       senderName: env.senderName || '',
       recipientName: env.recipientName || '',
       recipientDept: env.recipientDept || '',
@@ -258,7 +285,7 @@ function renderRecords() {
     div.className = 'record-card';
     div.innerHTML = `
       <div class="record-card-title">第 ${i + 1} 封</div>
-      <div class="form-group"><label>掛號號碼</label><input id="r${i}_trackingNumber" value="${esc(rec.trackingNumber)}"></div>
+      <div class="form-group"><label>掛號號碼</label><input id="r${i}_trackingNumber" value="${esc(formatTracking(rec.trackingNumber))}" style="font-family:'Courier New',monospace;letter-spacing:1px"></div>
       <div class="form-group"><label>收件公司/單位</label><input id="r${i}_recipientName" value="${esc(rec.recipientName)}"></div>
       <div class="form-row">
         <div class="form-group"><label>部門</label><input id="r${i}_recipientDept" value="${esc(rec.recipientDept)}"></div>
@@ -313,6 +340,14 @@ function showStatus(msg, type = '') {
 
 function esc(str) {
   return (str || '').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+}
+
+function formatTracking(num) {
+  if (!num) return '';
+  const n = num.replace(/\s+/g, '').toUpperCase();
+  const m = n.match(/^([A-Z]{2})(\d{3})(\d{3})(\d{3})([A-Z]{2})$/);
+  if (m) return `${m[1]} ${m[2]} ${m[3]} ${m[4]} ${m[5]}`;
+  return num;
 }
 
 function compress(file) {

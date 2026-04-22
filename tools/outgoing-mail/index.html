@@ -12,22 +12,18 @@
     .header-actions { display: flex; gap: 12px; align-items: center; }
     .hbtn { background: none; border: none; color: white; font-size: 13px; cursor: pointer; opacity: 0.85; padding: 4px 8px; border-radius: 6px; }
     .hbtn:hover { background: rgba(255,255,255,0.15); }
-    .tabs { background: white; display: flex; border-bottom: 2px solid #e0e0e0; }
-    .tab { flex: 1; padding: 14px; text-align: center; font-size: 14px; cursor: pointer; border-bottom: 3px solid transparent; color: #888; transition: all 0.2s; }
-    .tab.active { color: #5C6BC0; border-bottom-color: #5C6BC0; font-weight: 600; }
+    .search-bar { background: white; padding: 10px 16px; border-bottom: 1px solid #eee; }
+    .search-input { width: 100%; padding: 10px 14px; border: 1px solid #ddd; border-radius: 24px; font-size: 14px; outline: none; background: #f9f9f9; }
+    .search-input:focus { border-color: #5C6BC0; background: white; }
     .list { padding: 12px 16px; }
     .card { background: white; border-radius: 10px; padding: 16px; margin-bottom: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); cursor: pointer; display: flex; justify-content: space-between; align-items: flex-start; }
     .card:active { background: #f0f0ff; }
     .card-main { flex: 1; min-width: 0; }
-    .card-tracking { font-size: 16px; font-weight: 600; color: #222; margin-bottom: 4px; }
+    .card-tracking { font-size: 15px; font-weight: 700; color: #222; margin-bottom: 4px; letter-spacing: 0.5px; font-family: 'Courier New', monospace; }
     .card-recipient { font-size: 15px; color: #444; margin-bottom: 2px; }
     .card-sender { font-size: 13px; color: #888; margin-bottom: 4px; }
     .card-meta { font-size: 12px; color: #bbb; }
     .card-right { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex-shrink: 0; margin-left: 12px; }
-    .badge { padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; white-space: nowrap; }
-    .badge-sent { background: #E3F2FD; color: #1565C0; }
-    .badge-delivered { background: #E8F5E9; color: #2E7D32; }
-    .badge-returned { background: #FFEBEE; color: #C62828; }
     .btn-delete { background: none; border: none; font-size: 18px; cursor: pointer; color: #ddd; padding: 2px; line-height: 1; }
     .btn-delete:hover { color: #e53935; }
     .fab { position: fixed; bottom: 28px; right: 24px; width: 60px; height: 60px; border-radius: 50%; background: #5C6BC0; color: white; border: none; font-size: 32px; cursor: pointer; box-shadow: 0 4px 16px rgba(92,107,192,0.45); display: flex; align-items: center; justify-content: center; }
@@ -38,25 +34,36 @@
     .stat { flex: 1; background: white; border-radius: 10px; padding: 12px; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
     .stat-num { font-size: 24px; font-weight: 700; }
     .stat-label { font-size: 11px; color: #888; margin-top: 2px; }
-    /* Modal */
+    /* 匯出 Modal */
     .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 100; align-items: center; justify-content: center; }
     .modal-overlay.show { display: flex; }
     .modal { background: white; border-radius: 14px; padding: 24px; width: 90%; max-width: 400px; }
     .modal h2 { font-size: 18px; margin-bottom: 16px; color: #333; }
     .modal label { font-size: 13px; color: #666; display: block; margin-bottom: 6px; }
-    .modal input, .modal select { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; margin-bottom: 14px; }
+    .modal input { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; margin-bottom: 14px; }
     .modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
     .btn { padding: 11px 22px; border-radius: 8px; border: none; cursor: pointer; font-size: 14px; font-weight: 500; }
     .btn-primary { background: #5C6BC0; color: white; }
     .btn-secondary { background: #eee; color: #333; }
     .btn-export { background: #388E3C; color: white; }
-    /* 狀態更新 Modal */
-    .status-modal { background: white; border-radius: 14px; padding: 24px; width: 90%; max-width: 340px; }
-    .status-btn { width: 100%; padding: 14px; margin-bottom: 10px; border-radius: 10px; border: 2px solid #ddd; background: white; font-size: 15px; cursor: pointer; text-align: left; }
-    .status-btn:hover { border-color: #5C6BC0; background: #f0f0ff; }
+    /* 詳情 Modal */
+    .detail-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 100; align-items: flex-end; justify-content: center; }
+    .detail-overlay.show { display: flex; }
+    .detail-sheet { background: white; border-radius: 18px 18px 0 0; width: 100%; max-width: 600px; max-height: 85vh; overflow-y: auto; padding-bottom: 24px; }
+    .detail-header { display: flex; justify-content: space-between; align-items: center; padding: 18px 20px 12px; border-bottom: 1px solid #f0f0f0; position: sticky; top: 0; background: white; border-radius: 18px 18px 0 0; }
+    .detail-header h2 { font-size: 16px; color: #333; font-family: 'Courier New', monospace; letter-spacing: 1px; }
+    .detail-close { background: #eee; border: none; width: 30px; height: 30px; border-radius: 50%; font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; color: #666; }
+    .detail-body { padding: 16px 20px; }
+    .detail-row { display: flex; padding: 10px 0; border-bottom: 1px solid #f5f5f5; }
+    .detail-row:last-child { border-bottom: none; }
+    .detail-label { font-size: 12px; color: #999; min-width: 80px; padding-top: 2px; }
+    .detail-value { font-size: 14px; color: #333; flex: 1; word-break: break-all; }
+    .detail-value.tracking { font-family: 'Courier New', monospace; font-size: 16px; font-weight: 700; color: #222; letter-spacing: 1px; }
+    .detail-img { width: 100%; border-radius: 8px; margin-top: 12px; border: 1px solid #eee; }
   </style>
 </head>
 <body>
+
 <div class="header">
   <h1>📤 寄件追蹤</h1>
   <div class="header-actions">
@@ -65,13 +72,13 @@
     <button class="hbtn" onclick="logout()">登出</button>
   </div>
 </div>
+
 <div class="stats" id="stats"></div>
-<div class="tabs">
-  <div class="tab active" onclick="filterTab('all',this)">全部</div>
-  <div class="tab" onclick="filterTab('sent',this)">已寄出</div>
-  <div class="tab" onclick="filterTab('delivered',this)">已送達</div>
-  <div class="tab" onclick="filterTab('returned',this)">退件</div>
+
+<div class="search-bar">
+  <input class="search-input" id="searchInput" type="search" placeholder="🔍 搜尋收件者、地址…" oninput="onSearch()">
 </div>
+
 <div class="list" id="list"><div class="loading">載入中…</div></div>
 <button class="fab" onclick="location.href='register.html'">＋</button>
 
@@ -90,20 +97,20 @@
   </div>
 </div>
 
-<!-- 狀態更新 Modal -->
-<div class="modal-overlay" id="statusModal">
-  <div class="status-modal">
-    <h2 style="margin-bottom:16px">更新狀態</h2>
-    <button class="status-btn" onclick="updateStatus('sent')">📮 已寄出</button>
-    <button class="status-btn" onclick="updateStatus('delivered')">✅ 已送達</button>
-    <button class="status-btn" onclick="updateStatus('returned')">↩️ 退件</button>
-    <button class="btn btn-secondary" style="width:100%;padding:12px" onclick="closeStatus()">取消</button>
+<!-- 詳情 Modal -->
+<div class="detail-overlay" id="detailModal" onclick="closeDetail(event)">
+  <div class="detail-sheet" id="detailSheet">
+    <div class="detail-header">
+      <h2 id="detailTitle">信件詳情</h2>
+      <button class="detail-close" onclick="closeDetail()">✕</button>
+    </div>
+    <div class="detail-body" id="detailBody"></div>
   </div>
 </div>
 
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js';
-import { getFirestore, collection, getDocs, query, orderBy, doc, deleteDoc, updateDoc, where } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js';
+import { getFirestore, collection, getDocs, query, orderBy, doc, deleteDoc, where } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js';
 import { getAuth, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js';
 
 const firebaseConfig = { apiKey:"AIzaSyBf0sHTsndFCksNlh46G_2mw9rk5zmPdc0", authDomain:"my-teaching-tools-2b36c.firebaseapp.com", projectId:"my-teaching-tools-2b36c", storageBucket:"my-teaching-tools-2b36c.firebasestorage.app", messagingSenderId:"82693897353", appId:"1:82693897353:web:f667501aad05c536c09a58" };
@@ -111,12 +118,17 @@ const firebaseConfig = { apiKey:"AIzaSyBf0sHTsndFCksNlh46G_2mw9rk5zmPdc0", authD
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const auth = getAuth(app);
-let allRecords = [], currentFilter = 'all', editingId = null;
+let allRecords = [], searchTerm = '';
 
-const statusLabel = { sent:'已寄出', delivered:'已送達', returned:'退件' };
-const statusBadge = { sent:'badge-sent', delivered:'badge-delivered', returned:'badge-returned' };
+function formatTrackingNumber(num) {
+  if (!num) return '—';
+  const n = num.replace(/\s+/g, '').toUpperCase();
+  const m = n.match(/^([A-Z]{2})(\d{3})(\d{3})(\d{3})([A-Z]{2})$/);
+  if (m) return `${m[1]} ${m[2]} ${m[3]} ${m[4]} ${m[5]}`;
+  return num;
+}
 
-onAuthStateChanged(auth, (user) => { if (!user) { location.href = '/login.html'; return; } loadRecords(); });
+onAuthStateChanged(auth, user => { if (!user) { location.href = '/login.html'; return; } loadRecords(); });
 window.logout = async () => { await signOut(auth); location.href = '/login.html'; };
 
 async function loadRecords() {
@@ -124,7 +136,8 @@ async function loadRecords() {
     const q = query(collection(db, 'outgoing_mail'), orderBy('createdAt', 'desc'));
     const snap = await getDocs(q);
     allRecords = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    renderStats(); renderList();
+    renderStats();
+    renderList();
   } catch(e) {
     document.getElementById('list').innerHTML = `<div class="empty"><div class="empty-icon">⚠️</div><p>${e.message}</p></div>`;
   }
@@ -132,43 +145,50 @@ async function loadRecords() {
 
 function renderStats() {
   const total = allRecords.length;
-  const sent = allRecords.filter(r=>r.status==='sent').length;
-  const delivered = allRecords.filter(r=>r.status==='delivered').length;
+  const now = new Date();
+  const thisMonth = allRecords.filter(r => r.date && r.date.startsWith(`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`)).length;
   document.getElementById('stats').innerHTML = `
     <div class="stat"><div class="stat-num" style="color:#5C6BC0">${total}</div><div class="stat-label">總計</div></div>
-    <div class="stat"><div class="stat-num" style="color:#1565C0">${sent}</div><div class="stat-label">待確認</div></div>
-    <div class="stat"><div class="stat-num" style="color:#2E7D32">${delivered}</div><div class="stat-label">已送達</div></div>`;
+    <div class="stat"><div class="stat-num" style="color:#388E3C">${thisMonth}</div><div class="stat-label">本月</div></div>`;
 }
 
 function renderList() {
   const list = document.getElementById('list');
   let records = allRecords;
-  if (currentFilter !== 'all') records = records.filter(r => r.status === currentFilter);
-  if (!records.length) { list.innerHTML = `<div class="empty"><div class="empty-icon">📭</div><p>尚無紀錄</p></div>`; return; }
+  if (searchTerm) {
+    const kw = searchTerm.toLowerCase();
+    records = records.filter(r =>
+      (r.recipientName||'').toLowerCase().includes(kw) ||
+      (r.recipientAddress||'').toLowerCase().includes(kw) ||
+      (r.recipientDept||'').toLowerCase().includes(kw) ||
+      (r.trackingNumber||'').toLowerCase().replace(/\s/g,'').includes(kw.replace(/\s/g,''))
+    );
+  }
+  if (!records.length) {
+    list.innerHTML = `<div class="empty"><div class="empty-icon">📭</div><p>${searchTerm ? '找不到符合的紀錄' : '尚無紀錄'}</p></div>`;
+    return;
+  }
   list.innerHTML = records.map(r => `
-    <div class="card" onclick="openStatus('${r.id}')">
+    <div class="card" onclick="openDetail('${r.id}')">
       <div class="card-main">
-        <div class="card-tracking">${r.trackingNumber||'—'}</div>
+        <div class="card-tracking">${formatTrackingNumber(r.trackingNumber)}</div>
         <div class="card-recipient">收：${r.recipientName||'—'}${r.recipientDept?' · '+r.recipientDept:''}</div>
         <div class="card-sender">寄：${r.senderName||'—'}</div>
         <div class="card-meta">${r.date||''}${r.content?' · '+r.content:''}${r.postage?' · '+r.postage+'元':''}</div>
       </div>
       <div class="card-right">
-        <span class="badge ${statusBadge[r.status]||'badge-sent'}">${statusLabel[r.status]||r.status}</span>
         <button class="btn-delete" onclick="event.stopPropagation();deleteRecord('${r.id}','${(r.trackingNumber||'此筆').replace(/'/g,"\\'")}')">🗑️</button>
       </div>
     </div>`).join('');
 }
 
-window.filterTab = function(filter, el) {
-  currentFilter = filter;
-  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-  el.classList.add('active');
+window.onSearch = function() {
+  searchTerm = document.getElementById('searchInput').value.trim();
   renderList();
 };
 
 window.deleteRecord = async function(id, label) {
-  if (!confirm(`確定刪除「${label}」？`)) return;
+  if (!confirm(`確定刪除「${formatTrackingNumber(label)}」？`)) return;
   try {
     await deleteDoc(doc(db, 'outgoing_mail', id));
     allRecords = allRecords.filter(r => r.id !== id);
@@ -176,18 +196,31 @@ window.deleteRecord = async function(id, label) {
   } catch(e) { alert('刪除失敗：' + e.message); }
 };
 
-window.openStatus = function(id) { editingId = id; document.getElementById('statusModal').classList.add('show'); };
-window.closeStatus = () => { document.getElementById('statusModal').classList.remove('show'); editingId = null; };
+window.openDetail = function(id) {
+  const r = allRecords.find(r => r.id === id);
+  if (!r) return;
+  const formatted = formatTrackingNumber(r.trackingNumber);
+  document.getElementById('detailTitle').textContent = formatted;
+  document.getElementById('detailBody').innerHTML = `
+    <div class="detail-row"><span class="detail-label">掛號號碼</span><span class="detail-value tracking">${formatted}</span></div>
+    <div class="detail-row"><span class="detail-label">收件單位</span><span class="detail-value">${r.recipientName||'—'}</span></div>
+    ${r.recipientDept ? `<div class="detail-row"><span class="detail-label">部門</span><span class="detail-value">${r.recipientDept}</span></div>` : ''}
+    ${r.recipientContact ? `<div class="detail-row"><span class="detail-label">聯絡人</span><span class="detail-value">${r.recipientContact}</span></div>` : ''}
+    <div class="detail-row"><span class="detail-label">收件地址</span><span class="detail-value">${r.recipientAddress||'—'}</span></div>
+    <div class="detail-row"><span class="detail-label">寄件人</span><span class="detail-value">${r.senderName||'—'}</span></div>
+    ${r.content ? `<div class="detail-row"><span class="detail-label">內容</span><span class="detail-value">${r.content}</span></div>` : ''}
+    <div class="detail-row"><span class="detail-label">類別</span><span class="detail-value">${r.type||'—'}</span></div>
+    <div class="detail-row"><span class="detail-label">寄出日期</span><span class="detail-value">${r.date||'—'}</span></div>
+    ${r.postage ? `<div class="detail-row"><span class="detail-label">郵費</span><span class="detail-value">${r.postage} 元</span></div>` : ''}
+    ${r.notes ? `<div class="detail-row"><span class="detail-label">備註</span><span class="detail-value">${r.notes}</span></div>` : ''}
+    ${r.receiptImage ? `<img class="detail-img" src="${r.receiptImage}" alt="收執聯">` : ''}
+  `;
+  document.getElementById('detailModal').classList.add('show');
+};
 
-window.updateStatus = async function(status) {
-  if (!editingId) return;
-  try {
-    await updateDoc(doc(db, 'outgoing_mail', editingId), { status });
-    const r = allRecords.find(r => r.id === editingId);
-    if (r) r.status = status;
-    renderStats(); renderList();
-  } catch(e) { alert('更新失敗：' + e.message); }
-  closeStatus();
+window.closeDetail = function(e) {
+  if (e && e.target !== document.getElementById('detailModal')) return;
+  document.getElementById('detailModal').classList.remove('show');
 };
 
 // 匯出
@@ -208,11 +241,11 @@ window.doExport = async function() {
     const snap = await getDocs(q);
     const rows = snap.docs.map(d => d.data());
     if (!rows.length) { alert('該時段無紀錄'); return; }
-    const headers = ['掛號號碼','寄件人','收件人','單位','聯絡人','收件地址','內容','類別','寄出日期','郵費','狀態','備註'];
+    const headers = ['掛號號碼','寄件人','收件人','單位','聯絡人','收件地址','內容','類別','寄出日期','郵費','備註'];
     const csv = [headers, ...rows.map(r => [
-      r.trackingNumber||'', r.senderName||'', r.recipientName||'', r.recipientDept||'',
+      formatTrackingNumber(r.trackingNumber||''), r.senderName||'', r.recipientName||'', r.recipientDept||'',
       r.recipientContact||'', r.recipientAddress||'', r.content||'', r.type||'',
-      r.date||'', r.postage||'', statusLabel[r.status]||r.status||'', r.notes||''
+      r.date||'', r.postage||'', r.notes||''
     ])].map(row => row.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
     const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8'});
     const a = document.createElement('a');
@@ -220,8 +253,6 @@ window.doExport = async function() {
     closeExport();
   } catch(e) { alert('匯出失敗：' + e.message); }
 };
-
-loadRecords();
 </script>
 </body>
 </html>
