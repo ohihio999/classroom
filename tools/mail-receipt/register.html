@@ -125,7 +125,10 @@
     </div>
   </div>
 
-  <button class="btn btn-save" id="saveBtn" onclick="saveRecord()">儲存</button>
+  <div style="display:flex;gap:10px;margin-bottom:16px">
+    <button class="btn btn-save" id="continueBtn" onclick="saveAndContinue()" style="background:#388E3C">儲存並繼續</button>
+    <button class="btn btn-save" id="saveBtn" onclick="saveRecord()" style="flex:0 0 auto;width:auto;padding:16px 24px">儲存完成</button>
+  </div>
 </div>
 
 <script type="module">
@@ -149,7 +152,7 @@ const functions = getFunctions(app, 'asia-east1');
 const auth = getAuth(app);
 
 onAuthStateChanged(auth, (user) => {
-  if (!user) location.href = 'login.html';
+  if (!user) location.href = '/login.html';
 });
 const ocrEnvelope = httpsCallable(functions, 'ocrEnvelope');
 
@@ -219,34 +222,52 @@ window.runOCR = async function() {
   }
 };
 
-window.saveRecord = async function() {
+async function saveData() {
   const trackingNumber = document.getElementById('trackingNumber').value.trim();
   const recipient = document.getElementById('recipient').value.trim();
-  if (!trackingNumber || !recipient) { alert('掛號號碼和收件人為必填'); return; }
+  if (!trackingNumber || !recipient) { alert('掛號號碼和收件人為必填'); return false; }
+  await addDoc(collection(db, 'mail_receipts'), {
+    trackingNumber,
+    recipient,
+    sender: document.getElementById('sender').value.trim(),
+    date: document.getElementById('date').value,
+    notes: document.getElementById('notes').value.trim(),
+    status: 'pending',
+    createdAt: serverTimestamp(),
+    receivedAt: null,
+    signatureImage: null,
+    envelopeImage: imageBase64 ? `data:image/jpeg;base64,${imageBase64}` : null
+  });
+  return true;
+}
 
+window.saveRecord = async function() {
   const saveBtn = document.getElementById('saveBtn');
-  saveBtn.disabled = true;
-  saveBtn.textContent = '儲存中…';
-
+  saveBtn.disabled = true; saveBtn.textContent = '儲存中…';
   try {
-    await addDoc(collection(db, 'mail_receipts'), {
-      trackingNumber,
-      recipient,
-      sender: document.getElementById('sender').value.trim(),
-      date: document.getElementById('date').value,
-      notes: document.getElementById('notes').value.trim(),
-      status: 'pending',
-      createdAt: serverTimestamp(),
-      receivedAt: null,
-      signatureImage: null,
-      envelopeImage: imageBase64 ? `data:image/jpeg;base64,${imageBase64}` : null
-    });
-    location.href = 'index.html';
-  } catch(e) {
-    alert('儲存失敗：' + e.message);
-    saveBtn.disabled = false;
-    saveBtn.textContent = '儲存';
-  }
+    if (await saveData()) location.href = 'index.html';
+  } catch(e) { alert('儲存失敗：' + e.message); }
+  saveBtn.disabled = false; saveBtn.textContent = '儲存';
+};
+
+window.saveAndContinue = async function() {
+  const btn = document.getElementById('continueBtn');
+  btn.disabled = true; btn.textContent = '儲存中…';
+  try {
+    if (!await saveData()) { btn.disabled = false; btn.textContent = '儲存並繼續'; return; }
+    // 清空表單，繼續登記
+    imageBase64 = null; imageMimeType = null;
+    document.getElementById('previewImg').style.display = 'none';
+    document.getElementById('placeholder').style.display = 'block';
+    document.getElementById('ocrBtn').disabled = true;
+    document.getElementById('ocrStatus').textContent = '';
+    document.getElementById('cameraInput').value = '';
+    ['trackingNumber','recipient','sender','notes'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('date').value = new Date().toISOString().split('T')[0];
+    document.getElementById('ocrStatus').textContent = '✅ 已儲存，可繼續登記下一封';
+    document.getElementById('ocrStatus').className = 'ocr-status success';
+  } catch(e) { alert('儲存失敗：' + e.message); }
+  btn.disabled = false; btn.textContent = '儲存並繼續';
 };
 </script>
 </body>

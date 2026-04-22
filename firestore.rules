@@ -4,6 +4,9 @@ service cloud.firestore {
     match /mail_receipts/{document} {
       allow read, write: if request.auth != null;
     }
+    match /outgoing_mail/{document} {
+      allow read, write: if request.auth != null;
+    }
     match /{document=**} {
       allow read, write: if false;
     }

@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>登記寄件</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; }
+    .header { background: #5C6BC0; color: white; padding: 16px 20px; display: flex; align-items: center; gap: 12px; position: sticky; top: 0; z-index: 10; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+    .back-btn { background: none; border: none; color: white; font-size: 22px; cursor: pointer; }
+    .header h1 { font-size: 18px; font-weight: 600; }
+    .content { padding: 16px; max-width: 600px; margin: 0 auto; }
+    .section { background: white; border-radius: 12px; padding: 18px; margin-bottom: 14px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+    .section h2 { font-size: 14px; color: #555; margin-bottom: 14px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+    .photo-row { display: flex; gap: 10px; margin-bottom: 12px; }
+    .photo-box { flex: 1; border: 2px dashed #ddd; border-radius: 10px; padding: 16px; text-align: center; cursor: pointer; transition: border-color 0.2s; }
+    .photo-box:hover { border-color: #5C6BC0; }
+    .photo-box img { width: 100%; max-height: 160px; object-fit: contain; border-radius: 6px; display: none; }
+    .photo-box .ph-icon { font-size: 28px; }
+    .photo-box .ph-label { font-size: 12px; color: #aaa; margin-top: 4px; }
+    input[type="file"] { display: none; }
+    .btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
+    .btn { padding: 10px 16px; border-radius: 8px; border: none; cursor: pointer; font-size: 13px; font-weight: 500; display: flex; align-items: center; gap: 5px; }
+    .btn-camera { background: #5C6BC0; color: white; }
+    .btn-ocr { background: #388E3C; color: white; }
+    .btn-ocr:disabled { background: #bbb; cursor: not-allowed; }
+    .btn-save-continue { background: #388E3C; color: white; flex: 1; justify-content: center; padding: 16px; font-size: 15px; }
+    .btn-save-done { background: #5C6BC0; color: white; padding: 16px 24px; font-size: 15px; }
+    .btn-save-continue:disabled, .btn-save-done:disabled { background: #aaa; cursor: not-allowed; }
+    .ocr-status { font-size: 12px; color: #aaa; margin-top: 8px; min-height: 16px; }
+    .ocr-status.success { color: #388E3C; }
+    .ocr-status.error { color: #d32f2f; }
+    .form-group { margin-bottom: 12px; }
+    .form-group label { font-size: 12px; color: #666; display: block; margin-bottom: 5px; }
+    .form-group input, .form-group select { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; outline: none; }
+    .form-group input:focus, .form-group select:focus { border-color: #5C6BC0; }
+    .form-row { display: flex; gap: 10px; }
+    .form-row .form-group { flex: 1; }
+    .spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid rgba(255,255,255,0.4); border-top-color: white; border-radius: 50%; animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .save-row { display: flex; gap: 10px; margin-top: 4px; }
+  </style>
+</head>
+<body>
+<div class="header">
+  <button class="back-btn" onclick="history.back()">←</button>
+  <h1>登記寄件</h1>
+</div>
+<div class="content">
+
+  <!-- 拍照區 -->
+  <div class="section">
+    <h2>📷 拍攝文件</h2>
+    <div class="photo-row">
+      <div class="photo-box" onclick="document.getElementById('envelopeInput').click()">
+        <img id="envelopePreview" alt="">
+        <div id="envelopePh"><div class="ph-icon">✉️</div><div class="ph-label">信封正面</div></div>
+      </div>
+      <div class="photo-box" onclick="document.getElementById('receiptInput').click()">
+        <img id="receiptPreview" alt="">
+        <div id="receiptPh"><div class="ph-icon">🧾</div><div class="ph-label">郵局執據</div></div>
+      </div>
+    </div>
+    <input type="file" id="envelopeInput" accept="image/*" capture="environment">
+    <input type="file" id="receiptInput" accept="image/*" capture="environment">
+    <div class="btn-row">
+      <button class="btn btn-ocr" id="ocrEnvelopeBtn" onclick="runOCR('envelope')" disabled>✨ 辨識信封</button>
+      <button class="btn btn-ocr" id="ocrReceiptBtn" onclick="runOCR('receipt')" disabled>✨ 辨識執據</button>
+    </div>
+    <div class="ocr-status" id="ocrStatus"></div>
+  </div>
+
+  <!-- 收件資訊 -->
+  <div class="section">
+    <h2>📥 收件資訊（來自信封）</h2>
+    <div class="form-group"><label>收件公司/單位</label><input type="text" id="recipientName" placeholder="公司或單位名稱"></div>
+    <div class="form-row">
+      <div class="form-group"><label>部門</label><input type="text" id="recipientDept" placeholder="部門"></div>
+      <div class="form-group"><label>聯絡人</label><input type="text" id="recipientContact" placeholder="姓名"></div>
+    </div>
+    <div class="form-group"><label>收件地址</label><input type="text" id="recipientAddress" placeholder="地址"></div>
+    <div class="form-group"><label>寄件人/公司</label><input type="text" id="senderName" placeholder="寄件公司或姓名"></div>
+    <div class="form-group"><label>內容/用途</label><input type="text" id="content" placeholder="例：內附發票、合約…"></div>
+  </div>
+
+  <!-- 郵件資訊 -->
+  <div class="section">
+    <h2>🧾 郵件資訊（來自執據）</h2>
+    <div class="form-group"><label>掛號號碼</label><input type="text" id="trackingNumber" placeholder="掛號追蹤號碼"></div>
+    <div class="form-row">
+      <div class="form-group"><label>類別</label>
+        <select id="type"><option value="信函">信函</option><option value="包裹">包裹</option><option value="其他">其他</option></select>
+      </div>
+      <div class="form-group"><label>郵費（元）</label><input type="text" id="postage" placeholder="28"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>寄出日期</label><input type="date" id="date"></div>
+    </div>
+    <div class="form-group"><label>備註</label><input type="text" id="notes" placeholder="選填"></div>
+  </div>
+
+  <div class="save-row">
+    <button class="btn btn-save-continue" id="continueBtn" onclick="saveAndContinue()">儲存並繼續</button>
+    <button class="btn btn-save-done" id="saveBtn" onclick="saveRecord()">儲存完成</button>
+  </div>
+</div>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js';
+import { getFirestore, collection, addDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js';
+import { getFunctions, httpsCallable } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-functions.js';
+import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js';
+
+const firebaseConfig = { apiKey:"AIzaSyBf0sHTsndFCksNlh46G_2mw9rk5zmPdc0", authDomain:"my-teaching-tools-2b36c.firebaseapp.com", projectId:"my-teaching-tools-2b36c", storageBucket:"my-teaching-tools-2b36c.firebasestorage.app", messagingSenderId:"82693897353", appId:"1:82693897353:web:f667501aad05c536c09a58" };
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const functions = getFunctions(app, 'asia-east1');
+const auth = getAuth(app);
+const ocrEnvelope = httpsCallable(functions, 'ocrEnvelope');
+
+onAuthStateChanged(auth, (user) => { if (!user) location.href = '/login.html'; });
+
+document.getElementById('date').value = new Date().toISOString().split('T')[0];
+
+let images = { envelope: null, receipt: null };
+
+function compressImage(file) {
+  return new Promise(resolve => {
+    const img = new Image(), url = URL.createObjectURL(file);
+    img.onload = () => {
+      const MAX = 1200; let w = img.width, h = img.height;
+      if (w > MAX) { h = h * MAX / w; w = MAX; }
+      const c = document.createElement('canvas'); c.width = w; c.height = h;
+      c.getContext('2d').drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url); resolve(c.toDataURL('image/jpeg', 0.8));
+    };
+    img.src = url;
+  });
+}
+
+document.getElementById('envelopeInput').addEventListener('change', async (e) => {
+  const file = e.target.files[0]; if (!file) return;
+  const compressed = await compressImage(file);
+  images.envelope = compressed.split(',')[1];
+  const preview = document.getElementById('envelopePreview');
+  preview.src = compressed; preview.style.display = 'block';
+  document.getElementById('envelopePh').style.display = 'none';
+  document.getElementById('ocrEnvelopeBtn').disabled = false;
+  showStatus('信封已載入，可點「辨識信封」');
+});
+
+document.getElementById('receiptInput').addEventListener('change', async (e) => {
+  const file = e.target.files[0]; if (!file) return;
+  const compressed = await compressImage(file);
+  images.receipt = compressed.split(',')[1];
+  const preview = document.getElementById('receiptPreview');
+  preview.src = compressed; preview.style.display = 'block';
+  document.getElementById('receiptPh').style.display = 'none';
+  document.getElementById('ocrReceiptBtn').disabled = false;
+  showStatus('執據已載入，可點「辨識執據」');
+});
+
+function showStatus(msg, type='') {
+  const el = document.getElementById('ocrStatus');
+  el.textContent = msg; el.className = 'ocr-status' + (type ? ' '+type : '');
+}
+
+const PROMPTS = {
+  envelope: '這是一封信封的正面。請辨識以下欄位，以純 JSON 回傳（不加 markdown）：{"senderName":"寄件人公司或姓名","recipientName":"收件人公司或單位","recipientDept":"部門","recipientContact":"聯絡人姓名","recipientAddress":"收件地址","content":"信件內容說明（如有標示，如內附發票）"}。找不到填空字串。',
+  receipt: '這是一張郵局掛號執據。請辨識以下欄位，以純 JSON 回傳（不加 markdown）：{"trackingNumber":"掛號號碼（第幾號）","type":"類別（信函/包裹）","date":"日期 YYYY-MM-DD 格式（民國轉西元）","postage":"郵費數字"}。找不到填空字串。'
+};
+
+const FILL_MAPS = {
+  envelope: ['senderName','recipientName','recipientDept','recipientContact','recipientAddress','content'],
+  receipt: ['trackingNumber','type','postage','date']
+};
+
+window.runOCR = async function(type) {
+  if (!images[type]) return;
+  const btnId = type === 'envelope' ? 'ocrEnvelopeBtn' : 'ocrReceiptBtn';
+  const btn = document.getElementById(btnId);
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> 辨識中…';
+  showStatus('辨識中…');
+  try {
+    const result = await ocrEnvelope({ imageBase64: images[type], mimeType: 'image/jpeg', prompt: PROMPTS[type] });
+    const data = result.data;
+    FILL_MAPS[type].forEach(field => { if (data[field]) document.getElementById(field).value = data[field]; });
+    showStatus('✅ ' + (type==='envelope'?'信封':'執據') + '辨識完成，請確認欄位', 'success');
+  } catch(e) {
+    showStatus('❌ ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = type==='envelope' ? '✨ 辨識信封' : '✨ 辨識執據';
+  }
+};
+
+function getFormData() {
+  return {
+    trackingNumber: document.getElementById('trackingNumber').value.trim(),
+    senderName: document.getElementById('senderName').value.trim(),
+    recipientName: document.getElementById('recipientName').value.trim(),
+    recipientDept: document.getElementById('recipientDept').value.trim(),
+    recipientContact: document.getElementById('recipientContact').value.trim(),
+    recipientAddress: document.getElementById('recipientAddress').value.trim(),
+    content: document.getElementById('content').value.trim(),
+    type: document.getElementById('type').value,
+    date: document.getElementById('date').value,
+    postage: document.getElementById('postage').value.trim(),
+    notes: document.getElementById('notes').value.trim(),
+    status: 'sent',
+    createdAt: serverTimestamp(),
+    envelopeImage: images.envelope ? 'data:image/jpeg;base64,'+images.envelope : null,
+    receiptImage: images.receipt ? 'data:image/jpeg;base64,'+images.receipt : null
+  };
+}
+
+function resetForm() {
+  images = { envelope: null, receipt: null };
+  ['envelopePreview','receiptPreview'].forEach(id => { document.getElementById(id).style.display='none'; });
+  ['envelopePh','receiptPh'].forEach(id => { document.getElementById(id).style.display='block'; });
+  ['ocrEnvelopeBtn','ocrReceiptBtn'].forEach(id => { document.getElementById(id).disabled=true; });
+  document.getElementById('envelopeInput').value = '';
+  document.getElementById('receiptInput').value = '';
+  ['recipientName','recipientDept','recipientContact','recipientAddress','senderName','content','trackingNumber','postage','notes'].forEach(id => { document.getElementById(id).value=''; });
+  document.getElementById('type').value = '信函';
+  document.getElementById('date').value = new Date().toISOString().split('T')[0];
+}
+
+window.saveRecord = async function() {
+  const btn = document.getElementById('saveBtn');
+  btn.disabled = true; btn.textContent = '儲存中…';
+  try {
+    await addDoc(collection(db, 'outgoing_mail'), getFormData());
+    location.href = 'index.html';
+  } catch(e) { alert('儲存失敗：' + e.message); btn.disabled = false; btn.textContent = '儲存完成'; }
+};
+
+window.saveAndContinue = async function() {
+  const btn = document.getElementById('continueBtn');
+  btn.disabled = true; btn.textContent = '儲存中…';
+  try {
+    await addDoc(collection(db, 'outgoing_mail'), getFormData());
+    resetForm();
+    showStatus('✅ 已儲存，可繼續登記下一件', 'success');
+  } catch(e) { alert('儲存失敗：' + e.message); }
+  btn.disabled = false; btn.textContent = '儲存並繼續';
+};
+</script>
+</body>
+</html>

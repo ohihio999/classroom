@@ -3,21 +3,21 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>掛號信簽收</title>
+  <title>寄件追蹤</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; }
-    .header { background: #1976D2; color: white; padding: 16px 20px; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 10; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+    .header { background: #5C6BC0; color: white; padding: 16px 20px; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 10; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
     .header h1 { font-size: 18px; font-weight: 600; }
     .header-actions { display: flex; gap: 12px; align-items: center; }
     .hbtn { background: none; border: none; color: white; font-size: 13px; cursor: pointer; opacity: 0.85; padding: 4px 8px; border-radius: 6px; }
     .hbtn:hover { background: rgba(255,255,255,0.15); }
     .tabs { background: white; display: flex; border-bottom: 2px solid #e0e0e0; }
     .tab { flex: 1; padding: 14px; text-align: center; font-size: 14px; cursor: pointer; border-bottom: 3px solid transparent; color: #888; transition: all 0.2s; }
-    .tab.active { color: #1976D2; border-bottom-color: #1976D2; font-weight: 600; }
+    .tab.active { color: #5C6BC0; border-bottom-color: #5C6BC0; font-weight: 600; }
     .list { padding: 12px 16px; }
-    .card { background: white; border-radius: 10px; padding: 16px; margin-bottom: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); cursor: pointer; display: flex; justify-content: space-between; align-items: flex-start; transition: background 0.1s; }
-    .card:active { background: #f0f4ff; }
+    .card { background: white; border-radius: 10px; padding: 16px; margin-bottom: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); cursor: pointer; display: flex; justify-content: space-between; align-items: flex-start; }
+    .card:active { background: #f0f0ff; }
     .card-main { flex: 1; min-width: 0; }
     .card-tracking { font-size: 16px; font-weight: 600; color: #222; margin-bottom: 4px; }
     .card-recipient { font-size: 15px; color: #444; margin-bottom: 2px; }
@@ -25,48 +25,52 @@
     .card-meta { font-size: 12px; color: #bbb; }
     .card-right { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex-shrink: 0; margin-left: 12px; }
     .badge { padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; white-space: nowrap; }
-    .badge-pending { background: #FFF3E0; color: #E65100; }
-    .badge-received { background: #E8F5E9; color: #2E7D32; }
+    .badge-sent { background: #E3F2FD; color: #1565C0; }
+    .badge-delivered { background: #E8F5E9; color: #2E7D32; }
+    .badge-returned { background: #FFEBEE; color: #C62828; }
     .btn-delete { background: none; border: none; font-size: 18px; cursor: pointer; color: #ddd; padding: 2px; line-height: 1; }
     .btn-delete:hover { color: #e53935; }
-    .fab { position: fixed; bottom: 28px; right: 24px; width: 60px; height: 60px; border-radius: 50%; background: #1976D2; color: white; border: none; font-size: 32px; cursor: pointer; box-shadow: 0 4px 16px rgba(25,118,210,0.45); display: flex; align-items: center; justify-content: center; }
+    .fab { position: fixed; bottom: 28px; right: 24px; width: 60px; height: 60px; border-radius: 50%; background: #5C6BC0; color: white; border: none; font-size: 32px; cursor: pointer; box-shadow: 0 4px 16px rgba(92,107,192,0.45); display: flex; align-items: center; justify-content: center; }
     .empty { text-align: center; padding: 60px 20px; color: #bbb; }
     .empty-icon { font-size: 52px; margin-bottom: 12px; }
-    .loading { text-align: center; padding: 50px; color: #bbb; font-size: 15px; }
+    .loading { text-align: center; padding: 50px; color: #bbb; }
     .stats { display: flex; gap: 10px; padding: 12px 16px 4px; }
     .stat { flex: 1; background: white; border-radius: 10px; padding: 12px; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
     .stat-num { font-size: 24px; font-weight: 700; }
     .stat-label { font-size: 11px; color: #888; margin-top: 2px; }
-    .stat-pending .stat-num { color: #E65100; }
-    .stat-received .stat-num { color: #2E7D32; }
-    .stat-all .stat-num { color: #1976D2; }
     /* Modal */
     .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 100; align-items: center; justify-content: center; }
     .modal-overlay.show { display: flex; }
     .modal { background: white; border-radius: 14px; padding: 24px; width: 90%; max-width: 400px; }
     .modal h2 { font-size: 18px; margin-bottom: 16px; color: #333; }
     .modal label { font-size: 13px; color: #666; display: block; margin-bottom: 6px; }
-    .modal input { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; margin-bottom: 14px; }
+    .modal input, .modal select { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; margin-bottom: 14px; }
     .modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
     .btn { padding: 11px 22px; border-radius: 8px; border: none; cursor: pointer; font-size: 14px; font-weight: 500; }
-    .btn-primary { background: #1976D2; color: white; }
+    .btn-primary { background: #5C6BC0; color: white; }
     .btn-secondary { background: #eee; color: #333; }
     .btn-export { background: #388E3C; color: white; }
+    /* 狀態更新 Modal */
+    .status-modal { background: white; border-radius: 14px; padding: 24px; width: 90%; max-width: 340px; }
+    .status-btn { width: 100%; padding: 14px; margin-bottom: 10px; border-radius: 10px; border: 2px solid #ddd; background: white; font-size: 15px; cursor: pointer; text-align: left; }
+    .status-btn:hover { border-color: #5C6BC0; background: #f0f0ff; }
   </style>
 </head>
 <body>
 <div class="header">
-  <h1>📬 掛號信簽收</h1>
+  <h1>📤 寄件追蹤</h1>
   <div class="header-actions">
     <button class="hbtn" onclick="openExport()">📊 匯出</button>
+    <button class="hbtn" onclick="location.href='/'">首頁</button>
     <button class="hbtn" onclick="logout()">登出</button>
   </div>
 </div>
 <div class="stats" id="stats"></div>
 <div class="tabs">
   <div class="tab active" onclick="filterTab('all',this)">全部</div>
-  <div class="tab" onclick="filterTab('pending',this)">未領取</div>
-  <div class="tab" onclick="filterTab('received',this)">已領取</div>
+  <div class="tab" onclick="filterTab('sent',this)">已寄出</div>
+  <div class="tab" onclick="filterTab('delivered',this)">已送達</div>
+  <div class="tab" onclick="filterTab('returned',this)">退件</div>
 </div>
 <div class="list" id="list"><div class="loading">載入中…</div></div>
 <button class="fab" onclick="location.href='register.html'">＋</button>
@@ -86,9 +90,20 @@
   </div>
 </div>
 
+<!-- 狀態更新 Modal -->
+<div class="modal-overlay" id="statusModal">
+  <div class="status-modal">
+    <h2 style="margin-bottom:16px">更新狀態</h2>
+    <button class="status-btn" onclick="updateStatus('sent')">📮 已寄出</button>
+    <button class="status-btn" onclick="updateStatus('delivered')">✅ 已送達</button>
+    <button class="status-btn" onclick="updateStatus('returned')">↩️ 退件</button>
+    <button class="btn btn-secondary" style="width:100%;padding:12px" onclick="closeStatus()">取消</button>
+  </div>
+</div>
+
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js';
-import { getFirestore, collection, getDocs, query, orderBy, doc, deleteDoc, where } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js';
+import { getFirestore, collection, getDocs, query, orderBy, doc, deleteDoc, updateDoc, where } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js';
 import { getAuth, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js';
 
 const firebaseConfig = { apiKey:"AIzaSyBf0sHTsndFCksNlh46G_2mw9rk5zmPdc0", authDomain:"my-teaching-tools-2b36c.firebaseapp.com", projectId:"my-teaching-tools-2b36c", storageBucket:"my-teaching-tools-2b36c.firebasestorage.app", messagingSenderId:"82693897353", appId:"1:82693897353:web:f667501aad05c536c09a58" };
@@ -96,14 +111,17 @@ const firebaseConfig = { apiKey:"AIzaSyBf0sHTsndFCksNlh46G_2mw9rk5zmPdc0", authD
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const auth = getAuth(app);
-let allRecords = [], currentFilter = 'all';
+let allRecords = [], currentFilter = 'all', editingId = null;
+
+const statusLabel = { sent:'已寄出', delivered:'已送達', returned:'退件' };
+const statusBadge = { sent:'badge-sent', delivered:'badge-delivered', returned:'badge-returned' };
 
 onAuthStateChanged(auth, (user) => { if (!user) { location.href = '/login.html'; return; } loadRecords(); });
 window.logout = async () => { await signOut(auth); location.href = '/login.html'; };
 
 async function loadRecords() {
   try {
-    const q = query(collection(db, 'mail_receipts'), orderBy('createdAt', 'desc'));
+    const q = query(collection(db, 'outgoing_mail'), orderBy('createdAt', 'desc'));
     const snap = await getDocs(q);
     allRecords = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     renderStats(); renderList();
@@ -113,34 +131,33 @@ async function loadRecords() {
 }
 
 function renderStats() {
-  const total = allRecords.length, pending = allRecords.filter(r=>r.status==='pending').length, received = allRecords.filter(r=>r.status==='received').length;
+  const total = allRecords.length;
+  const sent = allRecords.filter(r=>r.status==='sent').length;
+  const delivered = allRecords.filter(r=>r.status==='delivered').length;
   document.getElementById('stats').innerHTML = `
-    <div class="stat stat-all"><div class="stat-num">${total}</div><div class="stat-label">總計</div></div>
-    <div class="stat stat-pending"><div class="stat-num">${pending}</div><div class="stat-label">未領取</div></div>
-    <div class="stat stat-received"><div class="stat-num">${received}</div><div class="stat-label">已領取</div></div>`;
+    <div class="stat"><div class="stat-num" style="color:#5C6BC0">${total}</div><div class="stat-label">總計</div></div>
+    <div class="stat"><div class="stat-num" style="color:#1565C0">${sent}</div><div class="stat-label">待確認</div></div>
+    <div class="stat"><div class="stat-num" style="color:#2E7D32">${delivered}</div><div class="stat-label">已送達</div></div>`;
 }
 
 function renderList() {
   const list = document.getElementById('list');
   let records = allRecords;
-  if (currentFilter === 'pending') records = records.filter(r => r.status === 'pending');
-  if (currentFilter === 'received') records = records.filter(r => r.status === 'received');
+  if (currentFilter !== 'all') records = records.filter(r => r.status === currentFilter);
   if (!records.length) { list.innerHTML = `<div class="empty"><div class="empty-icon">📭</div><p>尚無紀錄</p></div>`; return; }
-  list.innerHTML = records.map(r => {
-    const receivedTime = r.receivedAt ? new Date(r.receivedAt.seconds*1000).toLocaleString('zh-TW') : '';
-    return `<div class="card" onclick="location.href='sign.html?id=${r.id}'">
+  list.innerHTML = records.map(r => `
+    <div class="card" onclick="openStatus('${r.id}')">
       <div class="card-main">
         <div class="card-tracking">${r.trackingNumber||'—'}</div>
-        <div class="card-recipient">收件人：${r.recipient||'—'}</div>
-        <div class="card-sender">寄件人：${r.sender||'—'}</div>
-        <div class="card-meta">${r.date||''}${r.notes?'・'+r.notes:''}${receivedTime?'・領取：'+receivedTime:''}</div>
+        <div class="card-recipient">收：${r.recipientName||'—'}${r.recipientDept?' · '+r.recipientDept:''}</div>
+        <div class="card-sender">寄：${r.senderName||'—'}</div>
+        <div class="card-meta">${r.date||''}${r.content?' · '+r.content:''}${r.postage?' · '+r.postage+'元':''}</div>
       </div>
       <div class="card-right">
-        <span class="badge ${r.status==='received'?'badge-received':'badge-pending'}">${r.status==='received'?'已領取':'未領取'}</span>
+        <span class="badge ${statusBadge[r.status]||'badge-sent'}">${statusLabel[r.status]||r.status}</span>
         <button class="btn-delete" onclick="event.stopPropagation();deleteRecord('${r.id}','${(r.trackingNumber||'此筆').replace(/'/g,"\\'")}')">🗑️</button>
       </div>
-    </div>`;
-  }).join('');
+    </div>`).join('');
 }
 
 window.filterTab = function(filter, el) {
@@ -151,21 +168,33 @@ window.filterTab = function(filter, el) {
 };
 
 window.deleteRecord = async function(id, label) {
-  if (!confirm(`確定刪除「${label}」？此動作無法復原。`)) return;
+  if (!confirm(`確定刪除「${label}」？`)) return;
   try {
-    await deleteDoc(doc(db, 'mail_receipts', id));
+    await deleteDoc(doc(db, 'outgoing_mail', id));
     allRecords = allRecords.filter(r => r.id !== id);
     renderStats(); renderList();
   } catch(e) { alert('刪除失敗：' + e.message); }
 };
 
+window.openStatus = function(id) { editingId = id; document.getElementById('statusModal').classList.add('show'); };
+window.closeStatus = () => { document.getElementById('statusModal').classList.remove('show'); editingId = null; };
+
+window.updateStatus = async function(status) {
+  if (!editingId) return;
+  try {
+    await updateDoc(doc(db, 'outgoing_mail', editingId), { status });
+    const r = allRecords.find(r => r.id === editingId);
+    if (r) r.status = status;
+    renderStats(); renderList();
+  } catch(e) { alert('更新失敗：' + e.message); }
+  closeStatus();
+};
+
 // 匯出
 window.openExport = function() {
   const now = new Date();
-  const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-  const lastDay = new Date(now.getFullYear(), now.getMonth()+1, 0).toISOString().split('T')[0];
-  document.getElementById('exportStart').value = firstDay;
-  document.getElementById('exportEnd').value = lastDay;
+  document.getElementById('exportStart').value = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+  document.getElementById('exportEnd').value = new Date(now.getFullYear(), now.getMonth()+1, 0).toISOString().split('T')[0];
   document.getElementById('exportModal').classList.add('show');
 };
 window.closeExport = () => document.getElementById('exportModal').classList.remove('show');
@@ -175,23 +204,19 @@ window.doExport = async function() {
   const end = document.getElementById('exportEnd').value;
   if (!start || !end) { alert('請選擇日期範圍'); return; }
   try {
-    const q = query(collection(db, 'mail_receipts'), where('date','>=',start), where('date','<=',end), orderBy('date'));
+    const q = query(collection(db, 'outgoing_mail'), where('date','>=',start), where('date','<=',end), orderBy('date'));
     const snap = await getDocs(q);
     const rows = snap.docs.map(d => d.data());
     if (!rows.length) { alert('該時段無紀錄'); return; }
-    const headers = ['掛號號碼','收件人','寄件人','日期','狀態','領取時間','備註'];
+    const headers = ['掛號號碼','寄件人','收件人','單位','聯絡人','收件地址','內容','類別','寄出日期','郵費','狀態','備註'];
     const csv = [headers, ...rows.map(r => [
-      r.trackingNumber||'', r.recipient||'', r.sender||'', r.date||'',
-      r.status==='received'?'已領取':'未領取',
-      r.receivedAt ? new Date(r.receivedAt.seconds*1000).toLocaleString('zh-TW') : '',
-      r.notes||''
+      r.trackingNumber||'', r.senderName||'', r.recipientName||'', r.recipientDept||'',
+      r.recipientContact||'', r.recipientAddress||'', r.content||'', r.type||'',
+      r.date||'', r.postage||'', statusLabel[r.status]||r.status||'', r.notes||''
     ])].map(row => row.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
-    const bom = '\uFEFF';
-    const blob = new Blob([bom+csv], {type:'text/csv;charset=utf-8'});
+    const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8'});
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `掛號信簽收_${start}_${end}.csv`;
-    a.click();
+    a.href = URL.createObjectURL(blob); a.download = `寄件追蹤_${start}_${end}.csv`; a.click();
     closeExport();
   } catch(e) { alert('匯出失敗：' + e.message); }
 };

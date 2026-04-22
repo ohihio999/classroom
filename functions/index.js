@@ -8,11 +8,13 @@ exports.ocrEnvelope = onCall({ secrets: [gptApiKey], region: 'asia-east1' }, asy
     throw new HttpsError('unauthenticated', '請先登入');
   }
 
-  const { imageBase64, mimeType } = request.data;
+  const { imageBase64, mimeType, prompt } = request.data;
 
   if (!imageBase64 || !mimeType) {
     throw new HttpsError('invalid-argument', '缺少圖片資料');
   }
+
+  const ocrPrompt = prompt || '請從圖片中辨識文字，以純 JSON 格式回傳。找不到的欄位填空字串。';
 
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
@@ -25,24 +27,16 @@ exports.ocrEnvelope = onCall({ secrets: [gptApiKey], region: 'asia-east1' }, asy
       messages: [{
         role: 'user',
         content: [
-          {
-            type: 'text',
-            text: '這是一封掛號信的信封。請從圖片中辨識以下欄位，以純 JSON 格式回傳（不要加 markdown）：{"trackingNumber":"掛號追蹤號碼","recipient":"收件人姓名或單位","sender":"寄件人姓名或單位"}。找不到的欄位填空字串。'
-          },
-          {
-            type: 'image_url',
-            image_url: { url: `data:${mimeType};base64,${imageBase64}` }
-          }
+          { type: 'text', text: ocrPrompt },
+          { type: 'image_url', image_url: { url: `data:${mimeType};base64,${imageBase64}` } }
         ]
       }],
-      max_tokens: 300
+      max_tokens: 400
     })
   });
 
   const data = await response.json();
-  if (!response.ok) {
-    throw new HttpsError('internal', data.error?.message || 'GPT 辨識失敗');
-  }
+  if (!response.ok) throw new HttpsError('internal', data.error?.message || 'GPT 辨識失敗');
 
   const content = data.choices[0].message.content.trim();
   const match = content.match(/\{[\s\S]*\}/);

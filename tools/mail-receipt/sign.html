@@ -104,7 +104,7 @@ const docId = params.get('id');
 if (!docId) { location.href = 'index.html'; }
 
 onAuthStateChanged(auth, (user) => {
-  if (!user) location.href = `login.html?redirect=${encodeURIComponent(location.href)}`;
+  if (!user) location.href = `/login.html?redirect=${encodeURIComponent(location.href)}`;
 });
 
 let record = null;
