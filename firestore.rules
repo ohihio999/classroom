@@ -1,0 +1,18 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 信件簽收工具
+    match /mail_receipts/{document} {
+      allow read, write: if true;
+    }
+    match /mail_letters/{document} {
+      allow read, write: if true;
+    }
+
+    // 其他集合預設禁止
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
