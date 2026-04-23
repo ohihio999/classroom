@@ -102,7 +102,7 @@
     <h2>📝 信件資訊</h2>
     <div class="form-group">
       <label>掛號號碼</label>
-      <input type="text" id="trackingNumber" placeholder="例：RR 123 456 789 TW" style="font-family:'Courier New',monospace;letter-spacing:1px">
+      <input type="text" id="trackingNumber" placeholder="" style="font-family:'Courier New',monospace;letter-spacing:1px">
     </div>
     <div class="form-group">
       <label>收件人</label>
@@ -235,7 +235,6 @@ function formatTracking(num) {
 async function saveData() {
   const trackingNumber = document.getElementById('trackingNumber').value.trim();
   const recipient = document.getElementById('recipient').value.trim();
-  if (!trackingNumber || !recipient) { alert('掛號號碼和收件人為必填'); return false; }
   await addDoc(collection(db, 'mail_receipts'), {
     trackingNumber,
     recipient,
