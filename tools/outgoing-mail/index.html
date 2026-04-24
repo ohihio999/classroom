@@ -68,7 +68,7 @@
   <h1>📤 寄件追蹤</h1>
   <div class="header-actions">
     <button class="hbtn" onclick="openExport()">📊 匯出</button>
-    <button class="hbtn" onclick="location.href='/'">首頁</button>
+    <button class="hbtn" onclick="location.href='/'">🏠</button>
     <button class="hbtn" onclick="logout()">登出</button>
   </div>
 </div>
@@ -123,8 +123,12 @@ let allRecords = [], searchTerm = '';
 function formatTrackingNumber(num) {
   if (!num) return '—';
   const n = num.replace(/\s+/g, '').toUpperCase();
-  const m = n.match(/^([A-Z]{2})(\d{3})(\d{3})(\d{3})([A-Z]{2})$/);
-  if (m) return `${m[1]} ${m[2]} ${m[3]} ${m[4]} ${m[5]}`;
+  // 國際掛號：AA 000 000 000 TW（13碼）
+  const m13 = n.match(/^([A-Z]{2})(\d{3})(\d{3})(\d{3})([A-Z]{2})$/);
+  if (m13) return `${m13[1]} ${m13[2]} ${m13[3]} ${m13[4]} ${m13[5]}`;
+  // 普通掛號條碼：000000 000000 00 00000 0（20碼純數字）
+  const m20 = n.match(/^(\d{6})(\d{6})(\d{2})(\d{5})(\d{1})$/);
+  if (m20) return `${m20[1]} ${m20[2]} ${m20[3]} ${m20[4]} ${m20[5]}`;
   return num;
 }
 
