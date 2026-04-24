@@ -192,26 +192,29 @@ function matchRecipient(text) {
   const t = text.trim();
   const tLower = t.toLowerCase();
 
-  // 精確比對：全名（中或英）
+  // 1. 精確比對全名（中或英）
   const exact = RECIPIENTS.filter(p =>
     p.zh === t || p.en.toLowerCase() === tLower
   );
   if (exact.length) return exact;
 
-  // 英文部分比對（包含）
+  // 2. 英文部分比對
   const enPartial = RECIPIENTS.filter(p =>
     p.en.toLowerCase().includes(tLower) || tLower.includes(p.en.toLowerCase())
   );
   if (enPartial.length) return enPartial;
 
-  // 中文姓氏比對（取第一個字）
-  const surname = t.charAt(0);
-  const surnameMatch = RECIPIENTS.filter(p => p.zh.charAt(0) === surname);
-  if (surnameMatch.length) return surnameMatch;
+  // 3. 中文全名出現在文字中（如「台精精密 林玉鈴 收」）
+  const zhInText = RECIPIENTS.filter(p => t.includes(p.zh));
+  if (zhInText.length) return zhInText;
 
-  // 中文部分包含比對
-  const zhPartial = RECIPIENTS.filter(p => p.zh.includes(t) || t.includes(p.zh));
-  if (zhPartial.length) return zhPartial;
+  // 4. 掃描整段文字找已知姓氏（處理「公司名 林小姐」這類格式）
+  const knownSurnames = [...new Set(RECIPIENTS.map(p => p.zh.charAt(0)))];
+  const foundSurnames = knownSurnames.filter(s => t.includes(s));
+  if (foundSurnames.length) {
+    const byFoundSurname = RECIPIENTS.filter(p => foundSurnames.includes(p.zh.charAt(0)));
+    if (byFoundSurname.length) return byFoundSurname;
+  }
 
   return [];
 }
