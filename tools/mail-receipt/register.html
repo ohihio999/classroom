@@ -183,6 +183,7 @@ const RECIPIENTS = [
   { zh: '鍾文綺', en: 'Hina' },
   { zh: '石博仁', en: 'Seki' },
   { zh: '潘怡穎', en: 'Daisy' },
+  { zh: '台精精密股份有限公司', en: 'Seiko Instruments Taiwan Inc.' },
 ];
 
 function formatPerson(p) { return `${p.zh} (${p.en})`; }
@@ -216,6 +217,21 @@ function matchRecipient(text) {
     if (byFoundSurname.length) return byFoundSurname;
   }
 
+  // 4.5 英文姓氏反查（處理 YUTING LIN、HUANG XX 等全英文名）
+  const EN_SURNAME_MAP = {
+    'LIN': '林', 'HUANG': '黃', 'WU': '吳',
+    'TSENG': '曾', 'ZENG': '曾', 'WANG': '王',
+    'HSU': '許', 'XU': '許', 'CHEN': '陳',
+    'SU': '蘇', 'CHUNG': '鍾', 'ZHONG': '鍾',
+    'SHIH': '石', 'SHI': '石', 'PAN': '潘',
+  };
+  const words = t.toUpperCase().split(/\s+/);
+  const matchedZh = [...new Set(words.map(w => EN_SURNAME_MAP[w]).filter(Boolean))];
+  if (matchedZh.length) {
+    const bySurname = RECIPIENTS.filter(p => matchedZh.includes(p.zh.charAt(0)));
+    if (bySurname.length) return bySurname;
+  }
+
   return [];
 }
 
@@ -244,6 +260,16 @@ function handleRecipientOCR(ocrText) {
     document.getElementById('recipientPicker').style.display = 'block';
   } else {
     document.getElementById('recipient').value = ocrText;
+    const chips = document.getElementById('recipientChips');
+    chips.innerHTML = '';
+    RECIPIENTS.forEach(p => {
+      const btn = document.createElement('button');
+      btn.className = 'recipient-chip';
+      btn.textContent = formatPerson(p);
+      btn.addEventListener('click', () => applyRecipient(p));
+      chips.appendChild(btn);
+    });
+    document.getElementById('recipientPicker').style.display = 'block';
   }
 }
 
