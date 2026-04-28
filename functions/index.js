@@ -28,7 +28,7 @@ exports.ocrEnvelope = onCall({ secrets: [gptApiKey], region: 'asia-east1' }, asy
         role: 'user',
         content: [
           { type: 'text', text: ocrPrompt },
-          { type: 'image_url', image_url: { url: `data:${mimeType};base64,${imageBase64}` } }
+          { type: 'image_url', image_url: { url: `data:${mimeType};base64,${imageBase64}`, detail: 'high' } }
         ]
       }],
       max_tokens: 400

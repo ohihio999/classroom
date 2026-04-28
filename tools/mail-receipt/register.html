@@ -311,8 +311,8 @@ async function upsertSender(name, address, phone) {
 }
 
 // ── OCR ────────────────────────────────────────────
-const FRONT_PROMPT = '這是一封掛號信封的正面。請辨識以下欄位，以純 JSON 回傳（不加 markdown）：{"trackingNumber":"掛號號碼，有兩種格式：①國際掛號=2英文+9數字+2英文共13碼（如RA123456789TW）②普通掛號條碼=純數字20碼（如91889822000210104007）。辨識完整不可遺漏，去除空格後回傳","recipient":"收件人姓名或單位","sender":"寄件人姓名或單位","senderAddress":"寄件人地址（完整含縣市，找不到填空）","senderPhone":"寄件人電話（找不到填空）"}。找不到的填空字串。';
-const BACK_PROMPT  = '這是一封掛號信封的背面。請辨識以下欄位，以純 JSON 回傳（不加 markdown）：{"trackingNumber":"掛號號碼，有兩種格式：①國際掛號=2英文+9數字+2英文共13碼（如RA123456789TW）②普通掛號條碼=純數字20碼（如91889822000210104007）。若有條碼請辨識條碼，辨識完整不可遺漏，去除空格後回傳","recipient":"收件人姓名或單位（若有）","sender":"寄件人姓名或單位（若有）","senderAddress":"寄件人地址（完整含縣市，找不到填空）","senderPhone":"寄件人電話（找不到填空）"}。找不到的填空字串。';
+const FRONT_PROMPT = '這是一封掛號信封的正面。請辨識以下欄位，以純 JSON 回傳（不加 markdown）：{"trackingNumber":"掛號號碼，有三種格式：①國際掛號=2英文+9數字+2英文共13碼（如RA123456789TW、EN513181509JP）②普通掛號條碼=純數字20碼（如91889822000210104007）③順豐快遞=SF開頭+12位數字共14碼（如SF1565030948367）。辨識完整不可遺漏，去除空格後回傳","recipient":"收件人姓名或單位","sender":"寄件人姓名或單位","senderAddress":"寄件人地址（完整含縣市，找不到填空）","senderPhone":"寄件人電話（找不到填空）"}。找不到的填空字串。';
+const BACK_PROMPT  = '這是一封掛號信封的背面。請辨識以下欄位，以純 JSON 回傳（不加 markdown）：{"trackingNumber":"掛號號碼，有三種格式：①國際掛號=2英文+9數字+2英文共13碼（如RA123456789TW、EN513181509JP）②普通掛號條碼=純數字20碼（如91889822000210104007）③順豐快遞=SF開頭+12位數字共14碼（如SF1565030948367）。若有條碼請辨識條碼，辨識完整不可遺漏，去除空格後回傳","recipient":"收件人姓名或單位（若有）","sender":"寄件人姓名或單位（若有）","senderAddress":"寄件人地址（完整含縣市，找不到填空）","senderPhone":"寄件人電話（找不到填空）"}。找不到的填空字串。';
 
 window.runOCR = async function() {
   const btn = document.getElementById('ocrBtn');
@@ -377,6 +377,9 @@ function formatTracking(num) {
   // 普通掛號條碼：000000 000000 00 00000 0（20碼純數字）
   const m20 = n.match(/^(\d{6})(\d{6})(\d{2})(\d{5})(\d{1})$/);
   if (m20) return `${m20[1]} ${m20[2]} ${m20[3]} ${m20[4]} ${m20[5]}`;
+  // 順豐快遞：SF 000 000 000 0000（SF+12碼）
+  const mSF = n.match(/^(SF)(\d{3})(\d{3})(\d{3})(\d{4})$/);
+  if (mSF) return `${mSF[1]} ${mSF[2]} ${mSF[3]} ${mSF[4]} ${mSF[5]}`;
   return num;
 }
 
