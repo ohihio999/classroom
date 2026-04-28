@@ -893,8 +893,17 @@
       <div class="flabel">OpenAI API Key（用於 AI 批量解析）</div>
       <input class="fi" id="openaiKey" type="password" placeholder="sk-..." />
     </div>
+    <div class="field" style="margin-top:10px">
+      <div class="flabel">AI 模型</div>
+      <select class="fi" id="openaiModel">
+        <option value="gpt-4o-mini">gpt-4o-mini（快速、省費）</option>
+        <option value="gpt-4o">gpt-4o（更強）</option>
+        <option value="gpt-4.1-mini">gpt-4.1-mini（新輕量）</option>
+        <option value="gpt-4.1">gpt-4.1（新旗艦）</option>
+      </select>
+    </div>
     <div class="modal-hint" style="margin-top:6px;font-size:12px">
-      Key 只儲存在你的瀏覽器 localStorage，不會上傳雲端。
+      Key 與模型設定只儲存在你的瀏覽器 localStorage，不會上傳雲端。
     </div>
     <button class="btn-save" onclick="saveSettings()">儲存設定</button>
     <div id="settingsMsg"></div>
@@ -976,6 +985,8 @@ const COLORS = ['c1','c2','c3','c4','c5','c6','c7'];
 function init() {
   const key = localStorage.getItem('openai_api_key') || '';
   document.getElementById('openaiKey').value = key;
+  const model = localStorage.getItem('openai_model') || 'gpt-4o-mini';
+  document.getElementById('openaiModel').value = model;
 
   onSnapshot(
     query(collection(db, 'tool_manager_categories'), orderBy('createdAt')),
@@ -1186,6 +1197,8 @@ function renderHistory() {
 window.saveSettings = () => {
   const key = document.getElementById('openaiKey').value.trim();
   localStorage.setItem('openai_api_key', key);
+  const model = document.getElementById('openaiModel').value;
+  localStorage.setItem('openai_model', model);
   const el = document.getElementById('settingsMsg');
   el.className = 'msg-ok';
   el.textContent = '✓ 設定已儲存';
@@ -1199,6 +1212,7 @@ window.runBatch = async () => {
   const statusEl = document.getElementById('batchStatus');
   const btn = document.getElementById('batchBtn');
 
+  const model = localStorage.getItem('openai_model') || 'gpt-4o-mini';
   if (!text) return toast('請貼入工具清單');
   if (!apiKey) return toast('請先在 ⚙ 設定中填入 OpenAI API Key');
   if (categories.length === 0) return toast('請先新增分類');
@@ -1227,7 +1241,7 @@ ${text}
         'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
+        model,
         messages: [{ role: 'user', content: prompt }],
         response_format: { type: 'json_object' },
         temperature: 0.1
@@ -1294,6 +1308,7 @@ window.doSearch = async () => {
   const query = document.getElementById('searchInput').value.trim();
   const apiKey = localStorage.getItem('openai_api_key');
 
+  const model = localStorage.getItem('openai_model') || 'gpt-4o-mini';
   if (!query) return toast('請輸入搜尋關鍵字');
   if (!apiKey) return toast('請先在 ⚙ 設定中填入 OpenAI API Key');
   if (tools.length === 0) return toast('尚無工具資料可搜尋');
@@ -1327,7 +1342,7 @@ ${toolsContext}
         'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
+        model,
         messages: [{ role: 'user', content: prompt }],
         response_format: { type: 'json_object' },
         temperature: 0.1
