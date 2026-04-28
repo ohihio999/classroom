@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<title>批量匯入工具資料</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f2f5; padding: 30px; color: #2d3748; }
+.container { max-width: 760px; margin: 0 auto; background: white; border-radius: 14px; padding: 30px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+h1 { font-size: 22px; margin-bottom: 8px; }
+.sub { color: #718096; font-size: 13px; margin-bottom: 24px; }
+.btn { padding: 12px 24px; border: none; border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.btn-primary { background: linear-gradient(135deg, #4f6ef7, #764ba2); color: white; }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-danger { background: #fc8181; color: white; }
+.warn { background: #fff5e6; border-left: 4px solid #f59e0b; padding: 12px 16px; border-radius: 8px; margin: 16px 0; font-size: 13px; color: #92400e; }
+.cat-block { margin-bottom: 14px; padding: 10px 14px; background: #f8fafc; border-radius: 8px; }
+.cat-title { font-size: 13.5px; font-weight: 600; margin-bottom: 6px; }
+.cat-tools { font-size: 12px; color: #718096; }
+.log { margin-top: 20px; padding: 12px; background: #1a202c; color: #a0e9a0; font-family: monospace; font-size: 12px; border-radius: 8px; max-height: 300px; overflow-y: auto; white-space: pre-wrap; }
+.spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid #ffffff40; border-top: 2px solid white; border-radius: 50%; animation: spin 0.8s linear infinite; vertical-align: middle; margin-right: 6px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.status { margin-top: 16px; padding: 12px; border-radius: 8px; font-size: 13px; }
+.ok { background: #f0fdf4; color: #15803d; }
+.err { background: #fef2f2; color: #b91c1c; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>📦 批量匯入工具資料</h1>
+  <div class="sub" id="userInfo">驗證身分中...</div>
+
+  <div class="warn">
+    ⚠️ 此頁為一次性匯入工具，匯入後請通知建立此頁的人刪除（避免其他人重複匯入）。<br>
+    匯入規則：分類若已存在（依名稱比對）則使用既有分類；工具會新增，不檢查重複。
+  </div>
+
+  <div id="preview"></div>
+
+  <div style="display:flex; gap:10px; margin-top:20px;">
+    <button class="btn btn-primary" id="importBtn" onclick="runImport()" disabled>🚀 執行匯入</button>
+    <a class="btn btn-danger" href="/tool-manager/" style="text-decoration:none;display:inline-flex;align-items:center">取消返回</a>
+  </div>
+
+  <div id="status"></div>
+  <div class="log" id="log" style="display:none"></div>
+</div>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js';
+import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js';
+import { getFirestore, collection, getDocs, addDoc, serverTimestamp, writeBatch, doc, query, orderBy } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js';
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBf0sHTsndFCksNlh46G_2mw9rk5zmPdc0",
+  authDomain: "my-teaching-tools-2b36c.firebaseapp.com",
+  projectId: "my-teaching-tools-2b36c",
+  storageBucket: "my-teaching-tools-2b36c.firebasestorage.app",
+  messagingSenderId: "82693897353",
+  appId: "1:82693897353:web:f667501aad05c536c09a58"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+const COLORS = ['c1','c2','c3','c4','c5','c6','c7'];
+
+// ============ DATA ============
+const CATEGORIES = [
+  { name: 'AI分享會', icon: '📁' },
+  { name: 'AI工具教學', icon: '💡' },
+  { name: '休閒類 GEM（占卜／娛樂）', icon: '🔮' },
+  { name: '教育類 AI（國語文／寫作教學）', icon: '📝' },
+  { name: '健康／飲食需求 AI', icon: '🥗' },
+  { name: 'Agent 專案教學', icon: '🤖' },
+  { name: '講義簡報', icon: '📄' },
+  { name: '圖像／生成藝術', icon: '🎨' },
+  { name: 'AI Studio 3D 工具', icon: '🏗️' },
+  { name: 'AI應用技巧', icon: '🛠️' },
+  { name: '活動／會議回饋', icon: '📋' },
+  { name: '養龍蝦', icon: '🦞' },
+  { name: 'Vibe Coding', icon: '✨' },
+  { name: '社群 研討會', icon: '👥' }
+];
+
+const TOOLS = [
+  // AI分享會
+  { cat: 'AI分享會', name: '摩根史丹利「全球裁員3%」 2500人丟飯碗', url: 'https://today.line.me/tw/v3/article/3NeJ5Wv', desc: '摩根史丹利「全球裁員3%」 2500人丟飯碗' },
+  { cat: 'AI分享會', name: '考空服員「AI履歷自傳」踩紅線！華航永不錄用 長榮取消資格', url: 'https://today.line.me/tw/v3/article/eL86JEJ', desc: '' },
+  { cat: 'AI分享會', name: 'AI面試官', url: 'https://career.duotify.com/?fbclid=IwY2xjawQdu2dleHRuA2FlbQIxMQBzcnRjBmFwcF9pZBAyMjIwMzkxNzg4MjAwODkyAAEeuKUXc3WzSYuYWRgFriWw3e9dMxwlQ9J1jQ6tiI06Mqexed-7gI-T4UXbkfI_aem_zNScenwF-s8ATBCxBVePBQ', desc: '我這次預計開出的職缺，無論起薪多少，年底前我估計每個人年薪至少都會破百萬，而這只是保守估計，能力強的我會給很多加給，一般人很難想像 AI 賦能到底是什麼感覺，慢慢寫 Code 的時代過去了。\n我設計了一個精美的招募網站，各位點擊連結進去就可以看到我們的職缺介紹。更重要的，我這幾天還花了不少時間打磨我的新一代 AI 面試官，這個版本跟去年差別非常巨大，其特色如下：\n1. 支援語音輸入，用說的就可以回答面試問題，互動體驗不錯\n2. 面試過程可上傳檔案，跟著面試官引導上傳文件或圖片即可\n3. 設計多代理人架構，透過 4 位 AI 代理人掌管整個面試流程\n4. 每位代理人基於 GPT-5.2 模型，並擁有鮮明的個性與目標\n5. 擁有完整的面試軌跡與記憶，我的代理人幾乎不會亂說話\n小聲提醒：\n與我的面試官說話，建議視同「正式面試」，因為口氣太兇、太輕浮的對話有機會被終止面試。如果你被意外終止面試的話，麻煩私訊請我解鎖。\n面試流程：\n1. 第一階段：AI 面試 (Telegram Bot)\n2. 第二階段：投遞履歷 (Microsoft Forms)\n3. 第三階段：安排面試 (透過 Zoom 線上面試或實體面試)\n期待您的加入，讓我們在 AI 驅動下，以前瞻的技術迎接挑戰！😊' },
+  { cat: 'AI分享會', name: 'AI霍去病', url: 'https://www.youtube.com/watch?v=kupDZqPwSf4', desc: '' },
+  { cat: 'AI分享會', name: 'AI助理Claude Cowork', url: 'https://www.youtube.com/shorts/-UFWajjJvGU', desc: '' },
+  { cat: 'AI分享會', name: 'AI各家更新速度', url: 'https://www.youtube.com/watch?v=CKy5MvG5lIc&t=4s', desc: '' },
+  { cat: 'AI分享會', name: 'AI猜謎', url: 'https://docs.google.com/presentation/d/1yY_ouvhGYzGiXcgl7ZaW7Tyl0G5lWSL-ChR-YlDAOBA/edit?slide=id.SLIDES_API389733665_0#slide=id.SLIDES_API389733665_0', desc: '' },
+
+  // AI工具教學
+  { cat: 'AI工具教學', name: '三師爸', url: 'https://www.youtube.com/results?search_query=%E4%B8%89%E5%B8%AB%E7%88%B8', desc: '' },
+  { cat: 'AI工具教學', name: '杰森的效率工坊', url: 'https://www.youtube.com/@JasonEfficiencyLab/videos', desc: '' },
+  { cat: 'AI工具教學', name: 'Hei_Ai 成長日記', url: 'https://www.youtube.com/@Hei_Ai%E6%88%90%E9%95%B7%E6%97%A5%E8%A8%98', desc: '' },
+  { cat: 'AI工具教學', name: '杰森的效率工坊_谷歌沒告訴你的NotebookLM隱藏用法：9個高級技巧，開啟上帝視角', url: 'https://jason-efficiency-lab.notion.site/23705c28a18880b0ae46f1fe28172787', desc: 'https://www.youtube.com/watch?v=qKK4C9A3lCY\n\n本視頻分享 NotebookLM 的9個高級技巧，突破其作為簡單閱讀工具的限制。內容涵蓋谷歌官方的「Everything Notebook」理念、如何聯通 Gemini 3 突破聯網限制、系統及自定義提示詞撰寫、Deep Research 優化、超長音視頻上傳、一鍵批量導入 YouTube 頻道、聯動 Google Drive 打通 Obsidian 與本地文件、繞過人臉/照片審核，以及如何利用 Shell 和 Python 自動合並大量文檔，幫助用戶打造一個能輔助決策的AI數字分身。' },
+  { cat: 'AI工具教學', name: '阿亮老師｜Gemini CLI 完整教學', url: 'https://big-gemini-cli.netlify.app/', desc: '建議：不要用 LINE 內建瀏覽器或手機瀏覽器，改用電腦瀏覽器\n來源：你提供的連結文字（原本經由 Facebook 轉址）' },
+  { cat: 'AI工具教學', name: '20251228 Gemini 新手村：AI 教學應用實戰(4)︱育達長鴻冠名贊助', url: 'https://www.youtube.com/watch?v=3Fa2d_Pujd8&t=3456s', desc: '' },
+  { cat: 'AI工具教學', name: '最新！OpenClaw 手把手安全部屬教學 | OpenClaw / MiniMax M2.5 / Zeabur', url: 'https://www.youtube.com/watch?v=aEXR8tPesKk', desc: '' },
+  { cat: 'AI工具教學', name: 'brain-alex.com', url: 'https://ai-brain-alex.com/', desc: '' },
+  { cat: 'AI工具教學', name: '阿亮簡報助手', url: 'https://hsuliang.github.io/slideagent/index.html', desc: '' },
+  { cat: 'AI工具教學', name: '阿貴校長的工具', url: 'https://ezschool.tw/modules/tad_uploader/index.php?of_cat_sn=30', desc: '' },
+  { cat: 'AI工具教學', name: 'NotebookLM教學終極完全體', url: 'https://padlet.com/mathruffian/notebooklm-89z7qt1q89lunb10', desc: '三師爸Sense Bar 提供的 NotebookLM 終極教學資源，內容匯集於Padlet，旨在提供 NotebookLM 的全面教學。' },
+  { cat: 'AI工具教學', name: '人力組織圖繪製', url: 'https://org-chart.vivichen.ai/', desc: '可快速繪製人力組織架構圖的線上工具。' },
+  { cat: 'AI工具教學', name: 'Notebook教學簡報終極完全體_學會 YAML 框架：100% 掌握 NotebookLM 視覺風格', url: 'https://www.youtube.com/watch?v=-d8qL2I0Eas', desc: '此教學影片深入解析 NotebookLM 簡報的 YAML 框架，教導如何透過 YAML 全域規範控制簡報視覺風格，並示範將內容轉化為單字學習卡、考古題庫及連環漫畫等多種形式。同時也說明如何將現有 PDF 簡報丟入 NotebookLM 進行逆向工程拆解，解析其設計邏輯與提示詞。' },
+
+  // 休閒類 GEM
+  { cat: '休閒類 GEM（占卜／娛樂）', name: '紫葳斗數', url: 'https://shiuangku-ce8c4.web.app/ziwei-ai2026.html?fbclid=IwY2xjawQKOUVleHRuA2FlbQIxMABicmlkETJYTDVhbnZNVktUeU1GQWxpc3J0YwZhcHBfaWQQMjIyMDM5MTc4ODIwMDg5MgABHtwHdI2DCymNOMTpiRDXUX_BAXrhoeP4JhsCBYLymYcEIBj6lJhO6SYMvwqv_aem_fsrJrXogpPFZCIaBQKU4dQ', desc: '' },
+  { cat: '休閒類 GEM（占卜／娛樂）', name: 'Kelly 時尚 AI 造型_換衣服', url: 'https://gemini.google.com/share/a7c7e9e06d28', desc: '' },
+  { cat: '休閒類 GEM（占卜／娛樂）', name: 'Puti-AI小小創意修復師', url: 'https://gemini.google.com/gem/1aVE3OfJeIf4ewy3Wdb99zSgku6m8GM7J?usp=sharing', desc: '小朋友的作品 變圖案' },
+  { cat: '休閒類 GEM（占卜／娛樂）', name: 'AI虛擬情侶聊天室', url: 'https://cfw2214.github.io/ai-girlfriend-chat/', desc: 'AI虛擬情侶聊天室 測試版 beta V0.2\n黑叔花了一個晚上奮鬥奴役claude 做的一個『AI虛擬情侶聊天室』\n（主要是不想白浪費claude的每週算力 ）\n大家玩玩看 ～ 但必須先自己去groq 創建一個免費的api key\n填入 api key密鑰後 才能跟虛擬ai情侶聊天\nhttps://cfw2214.github.io/ai-girlfriend-chat/\n\n～\n原本的想法是\n根據聊天的內容 生成對應的主角的情緒照片\n但卡在沒有免費又快速的生圖算力主機支援 ～只好先放棄\n（不然玩起來會更接近「同級生」😍）無奈科技還沒進步到這邊🫠\n～\n然後原本想要 聊天對話即時生成語音（包含對應角色的情緒\n但免費的語音tts有夠鳥～聽了都縮了～乾脆不要比較好🫠\n搜尋的感覺openai的語音還可以～但我沒有訂閱openai\n留給有openai api key的人自己測試嚕🤔\n～\n修正v0.1.1 調整記憶詞條到100 上限可設定到9999\n修正到v0.2 新增霸總男性角色 男女要平等👍' },
+  { cat: '休閒類 GEM（占卜／娛樂）', name: '塔羅牌', url: 'https://gemini.google.com/gem/1u547fvQ-m6GmLBK-SF94Sydlj0dlW2Et?usp=sharing', desc: '用途：休閒使用，歡迎回饋建議\n備註：Gemini 連結可能需要登入或會遇到抓取逾時' },
+  { cat: '休閒類 GEM（占卜／娛樂）', name: '八字算命', url: 'https://gemini.google.com/gem/1mul9DkZAmkJ9BLxS4CFdl8wlRl2zKEkj?usp=sharing', desc: '用途：休閒使用，歡迎回饋建議\n備註：Gemini 連結可能需要登入或會遇到抓取逾時' },
+  { cat: '休閒類 GEM（占卜／娛樂）', name: '紫微斗數', url: 'https://gemini.google.com/gem/1jzu978C7P94x3NCtnFdBlHewO8jL2vGG?usp=sharing', desc: '用途：休閒使用，歡迎回饋建議\n備註：Gemini 連結可能需要登入或會遇到抓取逾時\n\n分享由GEMINI完成，全部都由GEMINI分析的AI斗數算命程式，過程中會呼叫GOOGLE Cloud中的GEMINI API，第一次的回應會先呼叫GEMINI 3 flash，只產生300字的反應。提問後會呼叫GEMINI 3 PRO，產生較深入的結果。' },
+
+  // 教育類 AI
+  { cat: '教育類 AI（國語文／寫作教學）', name: 'GPTs大集合', url: 'https://padlet.com/hualien_county_government_department_of_education/gpts-bp1b5wcbyspyj0rr', desc: '邱文盛 •大約1天 GPTs大集合' },
+  { cat: '教育類 AI（國語文／寫作教學）', name: 'AI教學類', url: 'https://padlet.com/hualien_county_government_department_of_education/ai-yxveas8dm907c64p', desc: '邱文盛 晚上8:24' },
+  { cat: '教育類 AI（國語文／寫作教學）', name: 'Puti-AI 教學工具庫_黃朝榮老師', url: 'https://padlet.com/clongwh/puti-ai-teaching-tool-library-tifvrvjcpg51cw7r', desc: 'Puti-AI 教學工具庫(Teaching Tool Library)\n屏東後庄國小黃朝榮老師。我正在使用 AnyGen 大幅提升工作效率！請透過我的連結註冊試用一下，你會有額外點數喔！ https://www.anygen.io/home?invitation_code=ML2PTODZWQVRUSP' },
+  { cat: '教育類 AI（國語文／寫作教學）', name: '國語文寫作助理 v1.02', url: 'https://gemini.google.com/gem/143aaajFpmQ_PiULblpGgL2ImtdV4mFin?usp=sharing', desc: '#### 定位\n- 不提供標準答案，走「鷹架理論」路線\n- 老師端：共創教案、備課與教學輔助\n- 學生端：用間接提問引導靈感、協助完成作文\n- 批改：可批改作文並提供「會考作文升級示範」\n- 呈現：可將概念轉成邏輯圖表（仍在最佳化）\n\n#### 功能\n1. 素養導向寫作教案設計\n2. 寫作構思教練\n3. 會考六級分閱卷與回饋\n4. 思維圖像化生成器（可用，仍在最佳化）\n\n#### 使用例\n- 例 1：老師使用／高中程度／AI 時代的媒體識讀／600 字作文\n- [使用例 1（share）](https://gemini.google.com/share/6c7a9c4c0c10)\n- 例 2：老師備課議論文：「應該限制青少年使用社群媒體嗎？」\n- [使用例 2（share）](https://gemini.google.com/share/d4855df9c642)\n- 例 3：學生從找靈感到完成一篇作文\n- [使用例 3（share）](https://gemini.google.com/share/76b1a36a486c)' },
+
+  // 健康/飲食
+  { cat: '健康／飲食需求 AI', name: '飲食健康守護', url: 'https://gemini.google.com/gem/1-5RK8xweJ1C9lMZJ_gVGaAqZdBF3TWlT?usp=sharing', desc: '適用情境：減重、低普林、低 GI、高血壓等特定飲食需求\n使用方式：拍幾張照片（餐品或食材）→ 取得建議' },
+
+  // Agent 專案教學
+  { cat: 'Agent 專案教學', name: 'TXTOS（Semantic OS）', url: 'https://github.com/onestardao/WFGY/blob/main/OS/TXTOS.txt', desc: '#### 你提出的商用場景可能需要補強的要點\n- sandbox／權限邊界\n- 測試與部署流程\n- logging／監控／可觀測性\n\n#### TXTOS（語義防火牆概念）\n- 把啟動流程、長期記憶、常見 failure 模式先講清楚\n- 讓高權限 agent 的風險邊界更好說明' },
+  { cat: 'Agent 專案教學', name: 'Project Golem（AI 代理人）', url: 'https://github.com/Arvincreator/project-golem', desc: 'Project Golem 是一個具有高度自主性、長期記憶、跨平台能力與 社交人格 的 AI 代理系統。 v9.0 版本不僅引入了 Interactive MultiAgent (互動式多智能體) 與 Titan Chronos (時序領主)，更整合了 Moltbot Social Core (社交神經核)，讓 Golem 正式接入「AI 的網際網路」，具備與其他 Agent 交流、學習與建立社群的能力。\n\n它以 Web Gemini 為無限上下文大腦，Puppeteer 為手，Node.js 為神經系統，並透過 Discord、Telegram 與 Moltbook 三大平台與世界連結。' },
+  { cat: 'Agent 專案教學', name: 'Kaggle 的《代理入門》白皮書', url: 'https://www.kaggle.com/whitepaper-introduction-to-agents', desc: 'Google 官方推出了 Advent of Agents 第二季，31 天帶你寫出能真正上線的 Agent。\n\n跟著官方節奏，31天零到一。\n每天解鎖進度，不用怕一次學不完。\n教學涵蓋 Gemini、ADK 和 Vertex AI 的核心技術。\n\n• 每天實作一點點，無痛吸收最新技術\n• 一個月後直接產出 Production-ready 的應用' },
+  { cat: 'Agent 專案教學', name: '第一季連結', url: 'https://adventofagents.com/2025/12/', desc: 'Advent of Agents 第一季' },
+  { cat: 'Agent 專案教學', name: 'Advent of Agents 官方網站', url: 'https://adventofagents.com/', desc: 'Google 官方推出的 Advent of Agents 系列' },
+  { cat: 'Agent 專案教學', name: '4K 影片再也不用到處找繁中字幕了，Claude Code 自己馬上產生！', url: 'https://github.com/joshhu/makeownsrt', desc: '常常下載一些非常老的影片或是非常冷門(非英語)的影片是絕對不可能有繁中字幕的，網路上的字幕好不易找到了，時間軸又對不準，真的是麻煩。目前大部分的 4K 影片都有字幕軌，但不見得有繁體中文字幕的，這時候怎麼辦？其實很簡單，影片內附的字幕軌的時間軸一定是對的，只是要把字幕軌的語文翻譯成繁體中文就好了。\n\n做成 Agent Skill，適用於所有支援 Skills 的 Code Agent，直接用 coding agent 中的 LLM 來翻譯就行了。使用方法很簡單，只要在 code agent 中，直接輸入：「/translate-srt abc.mkv」然後過一會兒你就會看到「abc.srt」了。' },
+
+  // 講義簡報
+  { cat: '講義簡報', name: 'Generative AI 小聚 2025', url: 'https://docs.google.com/document/d/1x0ig4KugsZNqiGzkagrEk_8r4I5db2KysvcE_rTEkR0/edit?pli=1&tab=t.vzfjff4kh245#heading=h.6zg0714ljxwk', desc: '' },
+  { cat: '講義簡報', name: 'Generative AI 小聚 2026', url: 'https://docs.google.com/document/d/15l7_QoxmIMnBCKlvBvlgyo2cA5klh7ortLvz7E6TjiQ/edit?tab=t.fhjsiok32z81#heading=h.6zg0714ljxwk', desc: '' },
+  { cat: '講義簡報', name: '你的文件就是你的系統', url: 'https://gamma.app/docs/-7dz617zxz58vjwi', desc: '' },
+  { cat: '講義簡報', name: '國中地理漫畫', url: 'https://spell0227.notion.site/Done-2e998e9ab3a280898d62fa462cdf2de7', desc: '' },
+  { cat: '講義簡報', name: '信廷的投影片', url: 'https://drive.google.com/file/d/1-huVa9pNNbXoQa3KZgzbMn2_udWNpZMc/view?usp=drive_link', desc: '和順國中林信廷 晚上8:23' },
+  { cat: '講義簡報', name: '20260223Gemini驚喜盲盒：解鎖最強AI助手（講師：李偉綾Shirley Li）', url: 'https://www.canva.com/design/DAHCHPGTDlI/VyrH7EpPcT4ObL-LSRdDPA/edit?utm_content=DAHCHPGTDlI&utm_campaign=designshare&utm_medium=link2&utm_source=sharebutton', desc: '講師：李偉綾Shirley Li' },
+
+  // 圖像/生成藝術
+  { cat: '圖像／生成藝術', name: 'GPT生圖提示詞', url: 'https://youmind.com/zh-TW/gpt-image-2-prompts?fbclid=IwY2xjawRXBlhleHRuA2FlbQIxMABicmlkETF2ZTh4RGVaNXl1OXFwRHRjc3J0YwZhcHBfaWQQMjIyMDM5MTc4ODIwMDg5MgABHkb7WkmOE8BriNuOXKnb0RsAR0hKndfNdPbZkazyteWw5w1hDi2NnOnkKSKg_aem_3lyA1qrveCMvA3mGMeB33g', desc: '' },
+  { cat: '圖像／生成藝術', name: "Google's Nano Banana 生圖集錦 Ver 1.4", url: 'https://gemini.google.com/share/9ccc6fe0172d', desc: '來源：你提供的分享連結\n備註：該連結目前顯示需登入（我無法直接讀取內容），但已先收錄於主連結清單' },
+
+  // AI Studio 3D
+  { cat: 'AI Studio 3D 工具', name: '顏世倫｜AI Studio 3D 小工具（簡易 3D 建模／開口牆面）', url: 'https://ai.studio/apps/drive/1uTj_FGSA2BpEdEF1-NoFB3O00pGfoWZv', desc: '來源描述：顏世倫在 Google AI Studio 做的簡陋 3D 小工具，可讓實體牆面隨意開口，也可做建築外觀造型；平面圖功能尚未實裝\n作者連結（Facebook，需登入）：https://www.facebook.com/groups/1024463572071191/user/100000494945899/\n備註：你貼的連結含 Facebook 轉址參數，我已改成較乾淨的 AI Studio 直接連結' },
+
+  // AI應用技巧
+  { cat: 'AI應用技巧', name: 'SayIt（言）語音轉文字', url: 'https://jackle.pro/tools/sayIt', desc: 'Jackle Chen\nSayIt（言）語音轉文字\nhttps://jackle.pro/tools/sayIt' },
+  { cat: 'AI應用技巧', name: 'GPTs連結（RODES 提問優化器）', url: 'https://s.vivichen.ai/gpts-rodes', desc: '針對提問技巧進行優化的 GPTs 工具。' },
+
+  // 活動/會議回饋
+  { cat: '活動／會議回饋', name: '三師爸_LM_研習回饋', url: 'https://padlet.com/mathruffian/breakout-room/nEw64OwO7bKE4aPB-K5gBvaZOEn3BbpV7?fbclid=IwY2xjawQH_q5leHRuA2FlQIMABicmlkETJScjU2dFA5b0xzTjZaZERrc3J0YwZhcHBfaWQQMjIyMDM5MTc4ODIwMDg5MgABHp-9GkXVQDIgi6nRd4ULgmYX_GHroDak_5VfOIaGPBYuDgsYLnZS6obBnNRj_aem_BQSD9yiRTWnnY6lUnPmugQ', desc: '此為用於收集研習活動的回饋意見的 Padlet 連結。' },
+
+  // 養龍蝦
+  { cat: '養龍蝦', name: '七天學龍蝦', url: 'https://openclaw101.dev/zh', desc: '' },
+  { cat: '養龍蝦', name: 'OpenClawVIP 實戰學習站', url: 'https://openclawvip.com/', desc: '' },
+
+  // Vibe Coding
+  { cat: 'Vibe Coding', name: '游泳教練', url: 'https://reurl.cc/O6R0zr', desc: '' },
+
+  // 社群 研討會
+  { cat: '社群 研討會', name: 'CCMAX俱樂部', url: 'https://atmarketing.tw/claudemax', desc: '' }
+];
+
+// ============ Logic ============
+let currentUser = null;
+
+function logMsg(msg) {
+  const log = document.getElementById('log');
+  log.style.display = 'block';
+  log.textContent += msg + '\n';
+  log.scrollTop = log.scrollHeight;
+}
+
+function renderPreview() {
+  const preview = document.getElementById('preview');
+  preview.innerHTML = '<h3 style="font-size:15px;margin-bottom:10px">將匯入：</h3>' +
+    CATEGORIES.map(cat => {
+      const tools = TOOLS.filter(t => t.cat === cat.name);
+      return `<div class="cat-block">
+        <div class="cat-title">${cat.icon} ${cat.name}</div>
+        <div class="cat-tools">${tools.length} 個工具：${tools.map(t => t.name).join('、')}</div>
+      </div>`;
+    }).join('') +
+    `<div style="font-size:13px;color:#4a5568;margin-top:8px">總計：${CATEGORIES.length} 個分類、${TOOLS.length} 個工具</div>`;
+}
+
+onAuthStateChanged(auth, user => {
+  if (!user) {
+    document.getElementById('userInfo').innerHTML = '⚠️ 尚未登入，<a href="/login.html">前往登入</a>';
+    return;
+  }
+  currentUser = user;
+  document.getElementById('userInfo').textContent = `已登入：${user.email}`;
+  document.getElementById('importBtn').disabled = false;
+  renderPreview();
+});
+
+window.runImport = async function() {
+  if (!confirm(`確定要匯入 ${CATEGORIES.length} 個分類、${TOOLS.length} 個工具？`)) return;
+
+  const btn = document.getElementById('importBtn');
+  const status = document.getElementById('status');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>匯入中...';
+  status.innerHTML = '';
+  document.getElementById('log').textContent = '';
+
+  try {
+    // 1. Get existing categories
+    logMsg('📋 讀取既有分類...');
+    const catSnap = await getDocs(query(collection(db, 'tool_manager_categories'), orderBy('createdAt')));
+    const existing = {};
+    catSnap.docs.forEach(d => { existing[d.data().name] = d.id; });
+    logMsg(`   既有分類：${Object.keys(existing).length} 個`);
+
+    // 2. Create missing categories
+    logMsg('\n📁 處理分類...');
+    const catIdMap = { ...existing };
+    let newCatCount = 0;
+    for (let i = 0; i < CATEGORIES.length; i++) {
+      const cat = CATEGORIES[i];
+      if (catIdMap[cat.name]) {
+        logMsg(`   ✓ 已存在「${cat.name}」`);
+        continue;
+      }
+      const ref = await addDoc(collection(db, 'tool_manager_categories'), {
+        name: cat.name,
+        icon: cat.icon,
+        color: COLORS[(Object.keys(catIdMap).length) % COLORS.length],
+        createdAt: serverTimestamp()
+      });
+      catIdMap[cat.name] = ref.id;
+      newCatCount++;
+      logMsg(`   + 新增「${cat.icon} ${cat.name}」`);
+      await new Promise(r => setTimeout(r, 80)); // throttle for createdAt ordering
+    }
+
+    // 3. Bulk write tools (in chunks of 400 for batch limits)
+    logMsg(`\n🛠️ 匯入工具（${TOOLS.length} 個）...`);
+    let imported = 0;
+    const chunkSize = 400;
+    for (let i = 0; i < TOOLS.length; i += chunkSize) {
+      const chunk = TOOLS.slice(i, i + chunkSize);
+      const batch = writeBatch(db);
+      chunk.forEach(t => {
+        const catId = catIdMap[t.cat];
+        if (!catId) {
+          logMsg(`   ⚠️ 找不到分類「${t.cat}」，跳過工具「${t.name}」`);
+          return;
+        }
+        const ref = doc(collection(db, 'tool_manager_tools'));
+        batch.set(ref, {
+          name: t.name,
+          url: t.url,
+          categoryId: catId,
+          description: t.desc || '',
+          createdAt: serverTimestamp()
+        });
+      });
+      await batch.commit();
+      imported += chunk.length;
+      logMsg(`   ✓ 已匯入 ${imported}/${TOOLS.length}`);
+    }
+
+    // 4. Log history
+    await addDoc(collection(db, 'tool_manager_history'), {
+      action: `批量匯入：新增 ${newCatCount} 個分類 + ${TOOLS.length} 個工具（來源：資料備份.md）`,
+      createdAt: serverTimestamp()
+    });
+
+    logMsg(`\n✅ 完成！新增 ${newCatCount} 個分類、${imported} 個工具`);
+    status.innerHTML = `<div class="status ok">✅ 匯入完成！<a href="/tool-manager/" style="margin-left:8px;color:#15803d">前往查看 →</a></div>`;
+    btn.innerHTML = '✅ 已完成';
+  } catch(e) {
+    logMsg(`\n❌ 失敗：${e.message}`);
+    status.innerHTML = `<div class="status err">❌ ${e.message}</div>`;
+    btn.disabled = false;
+    btn.innerHTML = '🚀 重試匯入';
+  }
+};
+</script>
+</body>
+</html>

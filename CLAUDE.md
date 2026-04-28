@@ -20,7 +20,9 @@
 
 ## 工具清單
 （之後加新工具時會自動更新）
-- （尚無）
+- `tools/mail-receipt/` — 掛號信簽收
+- `tools/outgoing-mail/` — 寄件追蹤
+- `tools/tool-manager/` — 小程式分類管理（Firebase + GPT API）
 
 ## 工作注意事項
 - 人員資料一律去識別化（只用編號或代號）
