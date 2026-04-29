@@ -85,21 +85,32 @@
     .fi {
       width: 100%;
       padding: 10px 13px;
-      border: 1px solid rgba(173, 187, 255, 0.2);
+      border: 1px solid var(--border);
       border-radius: var(--radius-sm);
       font-size: 13.5px;
-      color: #F5F7FF;
+      color: var(--text);
       outline: none;
       transition: border-color 0.15s var(--easing), box-shadow 0.15s var(--easing);
       font-family: inherit;
+      background: var(--surface);
+    }
+    .fi:hover { border-color: var(--border-2); }
+    .fi:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-tint);
+    }
+    .fi::placeholder { color: var(--text-3); }
+    .sidebar .fi {
+      border-color: rgba(173, 187, 255, 0.2);
+      color: #F5F7FF;
       background: rgba(255, 255, 255, 0.08);
     }
-    .fi:hover { border-color: rgba(197, 207, 255, 0.38); }
-    .fi:focus {
+    .sidebar .fi:hover { border-color: rgba(197, 207, 255, 0.38); }
+    .sidebar .fi:focus {
       border-color: #8EA0FF;
       box-shadow: 0 0 0 3px rgba(111, 130, 255, 0.18);
     }
-    .fi::placeholder { color: #A2ADD2; }
+    .sidebar .fi::placeholder { color: #A2ADD2; }
     .sidebar select.fi option {
       color: var(--text);
       background: var(--surface);
@@ -910,10 +921,23 @@
     <div class="field" style="margin-top:10px">
       <div class="flabel">AI 模型</div>
       <select class="fi" id="openaiModel">
-        <option value="gpt-4o-mini">gpt-4o-mini（快速、省費）</option>
-        <option value="gpt-4o">gpt-4o（更強）</option>
-        <option value="gpt-4.1-mini">gpt-4.1-mini（新輕量）</option>
-        <option value="gpt-4.1">gpt-4.1（新旗艦）</option>
+        <optgroup label="GPT-4.1 系列">
+          <option value="gpt-4.1-nano">gpt-4.1-nano（最輕量、最省費）</option>
+          <option value="gpt-4.1-mini">gpt-4.1-mini（輕量）</option>
+          <option value="gpt-4.1">gpt-4.1（旗艦）</option>
+        </optgroup>
+        <optgroup label="GPT-4o 系列">
+          <option value="gpt-4o-mini">gpt-4o-mini（快速、省費）</option>
+          <option value="gpt-4o">gpt-4o（標準）</option>
+          <option value="gpt-4.5-preview">gpt-4.5-preview（需確認權限）</option>
+        </optgroup>
+        <optgroup label="o 系列（推理型）">
+          <option value="o4-mini">o4-mini（推理輕量）</option>
+          <option value="o3-mini">o3-mini（推理）</option>
+          <option value="o3">o3（推理旗艦）</option>
+          <option value="o1-mini">o1-mini</option>
+          <option value="o1">o1</option>
+        </optgroup>
       </select>
     </div>
     <div class="modal-hint" style="margin-top:6px;font-size:12px">
