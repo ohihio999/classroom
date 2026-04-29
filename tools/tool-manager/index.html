@@ -1,3 +1,9 @@
+<!--
+  版本：v1.1
+  版更記錄：
+  v1.1 (2026-04-29) - 加入 Firebase Auth 保護，限制只有 ohihio@gmail.com 可存取
+  v1.0 (初始版本) - 小程式分類管理，含 AI 批量解析、AI 搜尋、分類管理
+-->
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
@@ -1080,6 +1086,7 @@
 
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js';
+import { getAuth, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js';
 import {
   getFirestore, collection, doc, addDoc, deleteDoc, updateDoc,
   onSnapshot, query, orderBy, serverTimestamp, writeBatch
@@ -1096,10 +1103,19 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
 const db = getFirestore(app);
 
-// ===== Init =====
-init();
+const ALLOWED_EMAIL = 'ohihio@gmail.com';
+
+onAuthStateChanged(auth, (user) => {
+  if (!user) { location.href = '/login.html'; return; }
+  if (user.email !== ALLOWED_EMAIL) {
+    signOut(auth).then(() => { location.href = '/login.html'; });
+    return;
+  }
+  init();
+});
 
 // ===== State =====
 let categories = [];

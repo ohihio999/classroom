@@ -1,16 +1,21 @@
+<!--
+  版本：v1.2
+  版更記錄：
+  v1.2 (2026-04-29) - 移除登入驗證與登出按鈕，改為公開頁面；標題改為 SIC 維運工具；移除 email 顯示
+  v1.1 (2026-04-29) - 標題改為 SIC 維運工具，移除 email 顯示
+  v1.0 (初始版本) - 基本工具首頁，含掛號信簽收、寄件追蹤
+-->
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>維運工具</title>
+  <title>SIC 維運工具</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; min-height: 100vh; }
     .header { background: #1976D2; color: white; padding: 20px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
     .header h1 { font-size: 22px; font-weight: 600; }
-    .header p { font-size: 13px; opacity: 0.8; margin-top: 4px; }
-    .logout { position: absolute; right: 16px; top: 22px; background: none; border: none; color: white; font-size: 13px; cursor: pointer; opacity: 0.8; }
     .tools { padding: 24px 16px; display: flex; flex-direction: column; gap: 14px; max-width: 480px; margin: 0 auto; }
     .tool-card { background: white; border-radius: 14px; padding: 24px 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); cursor: pointer; display: flex; align-items: center; gap: 16px; transition: transform 0.1s, box-shadow 0.1s; text-decoration: none; color: inherit; }
     .tool-card:active { transform: scale(0.98); box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
@@ -20,10 +25,8 @@
   </style>
 </head>
 <body>
-<div class="header" style="position:relative">
-  <h1>🏢 維運工具</h1>
-  <p id="userEmail"></p>
-  <button class="logout" onclick="logout()">登出</button>
+<div class="header">
+  <h1>🏢 SIC 維運工具</h1>
 </div>
 <div class="tools">
   <a class="tool-card" href="/mail-receipt/">
@@ -41,17 +44,5 @@
     </div>
   </a>
 </div>
-<script type="module">
-import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js';
-import { getAuth, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js';
-const firebaseConfig = { apiKey:"AIzaSyBf0sHTsndFCksNlh46G_2mw9rk5zmPdc0", authDomain:"my-teaching-tools-2b36c.firebaseapp.com", projectId:"my-teaching-tools-2b36c", storageBucket:"my-teaching-tools-2b36c.firebasestorage.app", messagingSenderId:"82693897353", appId:"1:82693897353:web:f667501aad05c536c09a58" };
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-onAuthStateChanged(auth, (user) => {
-  if (!user) { location.href = '/login.html'; return; }
-  document.getElementById('userEmail').textContent = user.email;
-});
-window.logout = async () => { await signOut(auth); location.href = '/login.html'; };
-</script>
 </body>
 </html>
