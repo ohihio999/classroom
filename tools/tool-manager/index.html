@@ -1,6 +1,9 @@
 <!--
-  版本：v1.1
+  版本：v1.4
   版更記錄：
+  v1.4 (2026-04-30) - AI 功能改走 Firebase Functions，OpenAI API Key 留在後端，不再要求前端輸入
+  v1.3 (2026-04-30) - 工具列新增編輯按鈕，可直接修改名稱、分類與連結
+  v1.2 (2026-04-30) - AI 功能改用 Responses API，依模型自動套用相容格式，提升 GPT-5 與 o 系列模型可用性
   v1.1 (2026-04-29) - 加入 Firebase Auth 保護，限制只有 ohihio@gmail.com 可存取
   v1.0 (初始版本) - 小程式分類管理，含 AI 批量解析、AI 搜尋、分類管理
 -->
@@ -411,6 +414,12 @@
       background: var(--accent-tint);
       border-color: var(--accent-soft);
       color: var(--accent-hover);
+    }
+
+    button.tool-link {
+      font-family: inherit;
+      background: #FFFFFF;
+      cursor: pointer;
     }
 
     .tool-acts {
@@ -1001,6 +1010,28 @@
   </div>
 </div>
 
+<!-- ===== MODAL: Edit Tool ===== -->
+<div class="overlay" id="modalEditTool">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('modalEditTool')">✕</button>
+    <div class="modal-title">編輯工具</div>
+    <input id="editToolId" type="hidden" />
+    <div class="field">
+      <div class="flabel">分類</div>
+      <select class="fi" id="editCat"><option value="">選擇分類</option></select>
+    </div>
+    <div class="field">
+      <div class="flabel">名稱</div>
+      <input class="fi" id="editName" type="text" placeholder="例：Claude Code" />
+    </div>
+    <div class="field">
+      <div class="flabel">連結</div>
+      <input class="fi" id="editUrl" type="url" placeholder="https://..." />
+    </div>
+    <button class="btn-save" onclick="saveEditTool()">儲存變更</button>
+  </div>
+</div>
+
 <!-- ===== MODAL: History ===== -->
 <div class="overlay" id="modalHistory">
   <div class="modal">
@@ -1016,10 +1047,6 @@
     <button class="modal-close" onclick="closeModal('modalSettings')">✕</button>
     <div class="modal-title">⚙ 設定</div>
     <div class="field">
-      <div class="flabel">OpenAI API Key（用於 AI 批量解析）</div>
-      <input class="fi" id="openaiKey" type="password" placeholder="sk-..." />
-    </div>
-    <div class="field" style="margin-top:10px">
       <div class="flabel">AI 模型</div>
       <select class="fi" id="openaiModel">
         <optgroup label="GPT-5 系列">
@@ -1047,7 +1074,7 @@
       </select>
     </div>
     <div class="modal-hint" style="margin-top:6px;font-size:12px">
-      Key 與模型設定只儲存在你的瀏覽器 localStorage，不會上傳雲端。
+      OpenAI API Key 由後端 Firebase Functions 保管；這裡只會記住你選的模型。
     </div>
     <button class="btn-save" onclick="saveSettings()">儲存設定</button>
     <div id="settingsMsg"></div>
@@ -1087,6 +1114,7 @@
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js';
 import { getAuth, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js';
+import { getFunctions, httpsCallable } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-functions.js';
 import {
   getFirestore, collection, doc, addDoc, deleteDoc, updateDoc,
   onSnapshot, query, orderBy, serverTimestamp, writeBatch
@@ -1105,6 +1133,8 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+const functions = getFunctions(app, 'asia-east1');
+const toolManagerAIFn = httpsCallable(functions, 'toolManagerAI');
 
 const ALLOWED_EMAIL = 'ohihio@gmail.com';
 
@@ -1127,11 +1157,23 @@ let pendingBatch = [];
 
 const COLORS = ['c1','c2','c3','c4','c5','c6','c7'];
 
+function getSelectedModel() {
+  return localStorage.getItem('openai_model') || 'gpt-4o-mini';
+}
+
+async function callOpenAIJSON(prompt) {
+  const model = getSelectedModel();
+  try {
+    const result = await toolManagerAIFn({ prompt, model });
+    return result.data || {};
+  } catch (error) {
+    throw new Error(error.message || 'AI 呼叫失敗');
+  }
+}
+
 // ===== Init =====
 function init() {
-  const key = localStorage.getItem('openai_api_key') || '';
-  document.getElementById('openaiKey').value = key;
-  const model = localStorage.getItem('openai_model') || 'gpt-4o-mini';
+  const model = getSelectedModel();
   document.getElementById('openaiModel').value = model;
 
   onSnapshot(
@@ -1197,6 +1239,7 @@ function render() {
             <div class="tool-row">
               <div class="tool-name">${esc(t.name)}</div>
               <a class="tool-link" href="${esc(t.url)}" target="_blank" rel="noopener">主要連結 ↗</a>
+              <button class="tool-link" onclick="openEditTool('${t.id}')">編輯</button>
               <div class="tool-acts">
                 <button class="btn-del-tool" onclick="aiReclassify('${t.id}','${esc(t.name)}','${esc(t.url)}')" title="AI 重新分析">🤖</button>
                 <button class="btn-del-tool" onclick="delTool('${t.id}','${esc(t.name)}')" title="刪除">🗑</button>
@@ -1234,9 +1277,10 @@ function renderMd(md) {
 }
 
 function refreshCatDropdown() {
-  const sel = document.getElementById('fCat');
-  sel.innerHTML = '<option value="">選擇分類</option>' +
+  const options = '<option value="">選擇分類</option>' +
     categories.map(c => `<option value="${c.id}">${esc(c.icon || '📁')} ${esc(c.name)}</option>`).join('');
+  document.getElementById('fCat').innerHTML = options;
+  document.getElementById('editCat').innerHTML = options;
 }
 
 // ===== Toggles =====
@@ -1277,6 +1321,41 @@ window.saveTool = async () => {
     toast(`✓ 已儲存「${name}」`);
   } catch(e) {
     toast(`❌ 儲存失敗：${e.message}`);
+  }
+};
+
+window.openEditTool = id => {
+  const tool = tools.find(t => t.id === id);
+  if (!tool) return toast('找不到要編輯的工具');
+  document.getElementById('editToolId').value = tool.id;
+  document.getElementById('editName').value = tool.name || '';
+  document.getElementById('editUrl').value = tool.url || '';
+  document.getElementById('editCat').value = tool.categoryId || '';
+  openModal('modalEditTool');
+};
+
+window.saveEditTool = async () => {
+  const id = document.getElementById('editToolId').value;
+  const name = document.getElementById('editName').value.trim();
+  const url = document.getElementById('editUrl').value.trim();
+  const categoryId = document.getElementById('editCat').value;
+
+  if (!id) return toast('找不到要儲存的工具');
+  if (!name) return toast('請填寫工具名稱');
+  if (!url) return toast('請填寫網址');
+  if (!categoryId) return toast('請選擇分類');
+
+  try {
+    await updateDoc(doc(db, 'tool_manager_tools', id), {
+      name,
+      url,
+      categoryId
+    });
+    await log(`編輯工具「${name}」`);
+    closeModal('modalEditTool');
+    toast(`✓ 已更新「${name}」`);
+  } catch(e) {
+    toast(`❌ 更新失敗：${e.message}`);
   }
 };
 
@@ -1343,8 +1422,6 @@ function renderHistory() {
 
 // ===== Settings =====
 window.saveSettings = () => {
-  const key = document.getElementById('openaiKey').value.trim();
-  localStorage.setItem('openai_api_key', key);
   const model = document.getElementById('openaiModel').value;
   localStorage.setItem('openai_model', model);
   const el = document.getElementById('settingsMsg');
@@ -1356,13 +1433,10 @@ window.saveSettings = () => {
 // ===== AI Batch =====
 window.runBatch = async () => {
   const text = document.getElementById('batchText').value.trim();
-  const apiKey = localStorage.getItem('openai_api_key');
   const statusEl = document.getElementById('batchStatus');
   const btn = document.getElementById('batchBtn');
 
-  const model = localStorage.getItem('openai_model') || 'gpt-4o-mini';
   if (!text) return toast('請貼入工具清單');
-  if (!apiKey) return toast('請先在 ⚙ 設定中填入 OpenAI API Key');
   if (categories.length === 0) return toast('請先新增分類');
 
   btn.disabled = true;
@@ -1382,27 +1456,7 @@ ${text}
 {"tools":[{"name":"工具名稱","url":"https://...","categoryId":"分類ID"}]}`;
 
   try {
-    const res = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model,
-        messages: [{ role: 'user', content: prompt }],
-        response_format: { type: 'json_object' },
-        temperature: 0.1
-      })
-    });
-
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.error?.message || `HTTP ${res.status}`);
-    }
-
-    const data = await res.json();
-    const parsed = JSON.parse(data.choices[0].message.content);
+    const parsed = await callOpenAIJSON(prompt);
     pendingBatch = parsed.tools || [];
 
     if (pendingBatch.length === 0) throw new Error('未解析到任何工具');
@@ -1454,11 +1508,8 @@ window.confirmBatch = async () => {
 // ===== AI Search =====
 window.doSearch = async () => {
   const query = document.getElementById('searchInput').value.trim();
-  const apiKey = localStorage.getItem('openai_api_key');
 
-  const model = localStorage.getItem('openai_model') || 'gpt-4o-mini';
   if (!query) return toast('請輸入搜尋關鍵字');
-  if (!apiKey) return toast('請先在 ⚙ 設定中填入 OpenAI API Key');
   if (tools.length === 0) return toast('尚無工具資料可搜尋');
 
   const btn = document.getElementById('searchBtn');
@@ -1483,27 +1534,7 @@ ${toolsContext}
 只回傳 JSON，不要其他文字。`;
 
   try {
-    const res = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model,
-        messages: [{ role: 'user', content: prompt }],
-        response_format: { type: 'json_object' },
-        temperature: 0.1
-      })
-    });
-
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.error?.message || `HTTP ${res.status}`);
-    }
-
-    const data = await res.json();
-    const parsed = JSON.parse(data.choices[0].message.content);
+    const parsed = await callOpenAIJSON(prompt);
     const results = (parsed.results || []).map(r => ({
       ...r,
       tool: tools.find(t => t.id === r.id)
@@ -1566,11 +1597,8 @@ window.toggleDrawer = () => {
 // ===== AI Suggest (sidebar: URL → fill name/cat/desc) =====
 window.aiSuggest = async () => {
   const url = document.getElementById('fUrl').value.trim();
-  const apiKey = localStorage.getItem('openai_api_key');
-  const model = localStorage.getItem('openai_model') || 'gpt-4o-mini';
 
   if (!url) return toast('請先填入網址');
-  if (!apiKey) return toast('請先在 ⚙ 設定中填入 OpenAI API Key');
   if (categories.length === 0) return toast('請先新增分類');
 
   const btn = document.getElementById('aiSuggestBtn');
@@ -1588,14 +1616,7 @@ ${catList}
 {"name":"工具名稱","categoryId":"最適合的分類ID","description":"一段簡短說明，50字以內"}`;
 
   try {
-    const res = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-      body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], response_format: { type: 'json_object' }, temperature: 0.1 })
-    });
-    if (!res.ok) { const err = await res.json(); throw new Error(err.error?.message || `HTTP ${res.status}`); }
-    const data = await res.json();
-    const parsed = JSON.parse(data.choices[0].message.content);
+    const parsed = await callOpenAIJSON(prompt);
     if (parsed.name) document.getElementById('fName').value = parsed.name;
     if (parsed.categoryId) document.getElementById('fCat').value = parsed.categoryId;
     if (parsed.description) document.getElementById('fDesc').value = parsed.description;
@@ -1610,10 +1631,6 @@ ${catList}
 
 // ===== AI Reclassify (existing tool: AI re-analyze URL → confirm → update) =====
 window.aiReclassify = async (toolId, toolName, toolUrl) => {
-  const apiKey = localStorage.getItem('openai_api_key');
-  const model = localStorage.getItem('openai_model') || 'gpt-4o-mini';
-
-  if (!apiKey) return toast('請先在 ⚙ 設定中填入 OpenAI API Key');
   if (categories.length === 0) return toast('請先新增分類');
 
   toast('🤖 AI 分析中...');
@@ -1630,14 +1647,7 @@ ${catList}
 {"name":"建議的工具名稱","categoryId":"最適合的分類ID","description":"一段簡短說明，50字以內"}`;
 
   try {
-    const res = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-      body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], response_format: { type: 'json_object' }, temperature: 0.1 })
-    });
-    if (!res.ok) { const err = await res.json(); throw new Error(err.error?.message || `HTTP ${res.status}`); }
-    const data = await res.json();
-    const parsed = JSON.parse(data.choices[0].message.content);
+    const parsed = await callOpenAIJSON(prompt);
     const newCat = categories.find(c => c.id === parsed.categoryId);
     const msg = `AI 建議：\n名稱：${parsed.name}\n分類：${newCat ? (newCat.icon + ' ' + newCat.name) : parsed.categoryId}\n說明：${parsed.description || '（無）'}\n\n確認套用？`;
     if (!confirm(msg)) return;
