@@ -814,6 +814,7 @@
   <div>
     <div class="field-label">網址</div>
     <input class="fi" id="fUrl" type="url" placeholder="https://..." />
+    <button class="btn-ai" id="aiSuggestBtn" style="margin-top:8px;font-size:12px;padding:8px 12px" onclick="aiSuggest()">🤖 AI 建議名稱與分類</button>
   </div>
 
   <div>
@@ -987,7 +988,7 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js';
 import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js';
 import {
-  getFirestore, collection, doc, addDoc, deleteDoc,
+  getFirestore, collection, doc, addDoc, deleteDoc, updateDoc,
   onSnapshot, query, orderBy, serverTimestamp, writeBatch
 } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js';
 
@@ -1095,6 +1096,7 @@ function render() {
               <div class="tool-name">${esc(t.name)}</div>
               <a class="tool-link" href="${esc(t.url)}" target="_blank" rel="noopener">主要連結 ↗</a>
               <div class="tool-acts">
+                <button class="btn-del-tool" onclick="aiReclassify('${t.id}','${esc(t.name)}','${esc(t.url)}')" title="AI 重新分析">🤖</button>
                 <button class="btn-del-tool" onclick="delTool('${t.id}','${esc(t.name)}')" title="刪除">🗑</button>
               </div>
             </div>`).join('')}
@@ -1450,6 +1452,96 @@ window.clearSearch = () => {
   document.getElementById('clearSearchBtn').style.display = 'none';
   document.getElementById('catList').style.display = '';
   render();
+};
+
+// ===== AI Suggest (sidebar: URL → fill name/cat/desc) =====
+window.aiSuggest = async () => {
+  const url = document.getElementById('fUrl').value.trim();
+  const apiKey = localStorage.getItem('openai_api_key');
+  const model = localStorage.getItem('openai_model') || 'gpt-4o-mini';
+
+  if (!url) return toast('請先填入網址');
+  if (!apiKey) return toast('請先在 ⚙ 設定中填入 OpenAI API Key');
+  if (categories.length === 0) return toast('請先新增分類');
+
+  const btn = document.getElementById('aiSuggestBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>分析中...';
+
+  const catList = categories.map(c => `- ${c.id}: ${c.icon || ''} ${c.name}`).join('\n');
+  const prompt = `根據以下網址，推測這是什麼工具，給出建議。
+網址：${url}
+
+現有分類（格式：ID: 名稱）：
+${catList}
+
+請回傳 JSON（僅 JSON，不含其他文字）：
+{"name":"工具名稱","categoryId":"最適合的分類ID","description":"一段簡短說明，50字以內"}`;
+
+  try {
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], response_format: { type: 'json_object' }, temperature: 0.1 })
+    });
+    if (!res.ok) { const err = await res.json(); throw new Error(err.error?.message || `HTTP ${res.status}`); }
+    const data = await res.json();
+    const parsed = JSON.parse(data.choices[0].message.content);
+    if (parsed.name) document.getElementById('fName').value = parsed.name;
+    if (parsed.categoryId) document.getElementById('fCat').value = parsed.categoryId;
+    if (parsed.description) document.getElementById('fDesc').value = parsed.description;
+    toast('✓ AI 已填入建議');
+  } catch(e) {
+    toast(`❌ 分析失敗：${e.message}`);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '🤖 AI 建議名稱與分類';
+  }
+};
+
+// ===== AI Reclassify (existing tool: AI re-analyze URL → confirm → update) =====
+window.aiReclassify = async (toolId, toolName, toolUrl) => {
+  const apiKey = localStorage.getItem('openai_api_key');
+  const model = localStorage.getItem('openai_model') || 'gpt-4o-mini';
+
+  if (!apiKey) return toast('請先在 ⚙ 設定中填入 OpenAI API Key');
+  if (categories.length === 0) return toast('請先新增分類');
+
+  toast('🤖 AI 分析中...');
+
+  const catList = categories.map(c => `- ${c.id}: ${c.icon || ''} ${c.name}`).join('\n');
+  const prompt = `根據以下工具資訊，建議最適合的名稱與分類。
+工具名稱（目前）：${toolName}
+網址：${toolUrl}
+
+現有分類（格式：ID: 名稱）：
+${catList}
+
+請回傳 JSON（僅 JSON，不含其他文字）：
+{"name":"建議的工具名稱","categoryId":"最適合的分類ID","description":"一段簡短說明，50字以內"}`;
+
+  try {
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], response_format: { type: 'json_object' }, temperature: 0.1 })
+    });
+    if (!res.ok) { const err = await res.json(); throw new Error(err.error?.message || `HTTP ${res.status}`); }
+    const data = await res.json();
+    const parsed = JSON.parse(data.choices[0].message.content);
+    const newCat = categories.find(c => c.id === parsed.categoryId);
+    const msg = `AI 建議：\n名稱：${parsed.name}\n分類：${newCat ? (newCat.icon + ' ' + newCat.name) : parsed.categoryId}\n說明：${parsed.description || '（無）'}\n\n確認套用？`;
+    if (!confirm(msg)) return;
+    const updates = {};
+    if (parsed.name) updates.name = parsed.name;
+    if (parsed.categoryId) updates.categoryId = parsed.categoryId;
+    if (parsed.description) updates.description = parsed.description;
+    await updateDoc(doc(db, 'tool_manager_tools', toolId), updates);
+    await log(`AI 重新分類「${toolName}」→「${parsed.name || toolName}」`);
+    toast(`✓ 已更新「${parsed.name || toolName}」`);
+  } catch(e) {
+    toast(`❌ 分析失敗：${e.message}`);
+  }
 };
 
 // ===== Export =====
