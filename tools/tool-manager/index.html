@@ -892,42 +892,17 @@
 <div class="drawer-overlay" id="drawerOverlay" onclick="toggleDrawer()"></div>
 
 <!-- ===== FAB ===== -->
-<button class="fab" onclick="toggleDrawer()">＋</button>
+<button class="fab" onclick="openModal('modalAddTool')">＋</button>
 
 <!-- ===== SIDEBAR ===== -->
 <div class="sidebar" id="sidebar">
-  <div class="sidebar-title">＋ 新增資料 <button class="sidebar-close" onclick="toggleDrawer()">✕</button></div>
+  <div class="sidebar-title">工具管理 <button class="sidebar-close" onclick="toggleDrawer()">✕</button></div>
 
-  <div>
-    <div class="field-label">工具名稱</div>
-    <input class="fi" id="fName" type="text" placeholder="例：Claude Code" />
-  </div>
-
-  <div>
-    <div class="field-label">網址</div>
-    <input class="fi" id="fUrl" type="url" placeholder="https://..." />
-    <button class="btn-ai" id="aiSuggestBtn" style="margin-top:8px;font-size:12px;padding:8px 12px" onclick="aiSuggest()">🤖 AI 建議名稱與分類</button>
-  </div>
-
-  <div>
-    <div class="field-label">分類</div>
-    <select class="fi" id="fCat">
-      <option value="">選擇分類</option>
-    </select>
-  </div>
-
-  <button class="btn-newcat" onclick="openModal('modalAddCat')">＋ 新增分類</button>
-
-  <div>
-    <div class="field-label">說明（支援 Markdown）</div>
-    <textarea class="fi" id="fDesc" placeholder="可選，貼上工具介紹..."></textarea>
-  </div>
-
-  <button class="btn-save" onclick="saveTool()">儲存工具</button>
+  <button class="btn-save" onclick="openModal('modalAddTool');toggleDrawer()">＋ 新增工具</button>
 
   <hr class="divider" />
 
-  <button class="btn-ai" onclick="openModal('modalBatch')">✨ AI 批量解析</button>
+  <button class="btn-ai" onclick="openModal('modalBatch');toggleDrawer()">✨ AI 批量解析</button>
 
   <div class="btn-row">
     <button class="btn-outline" onclick="exportHTML()">HTML 匯出</button>
@@ -973,6 +948,33 @@
     <div class="empty-icon">📦</div>
     <div class="empty-title">還沒有任何工具</div>
     <div class="empty-sub">從左側新增第一個吧</div>
+  </div>
+</div>
+
+<!-- ===== MODAL: Add Tool ===== -->
+<div class="overlay" id="modalAddTool">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('modalAddTool')">✕</button>
+    <div class="modal-title">新增工具</div>
+    <div class="field">
+      <div class="flabel">工具名稱</div>
+      <input class="fi" id="fName" type="text" placeholder="例：Claude Code" />
+    </div>
+    <div class="field">
+      <div class="flabel">網址</div>
+      <input class="fi" id="fUrl" type="url" placeholder="https://..." />
+      <button class="btn-ai" id="aiSuggestBtn" style="margin-top:8px;font-size:12px;padding:8px 12px;width:100%" onclick="aiSuggest()">🤖 AI 建議名稱與分類</button>
+    </div>
+    <div class="field">
+      <div class="flabel">分類</div>
+      <select class="fi" id="fCat"><option value="">選擇分類</option></select>
+    </div>
+    <button class="btn-newcat" style="margin-bottom:10px" onclick="closeModal('modalAddTool');openModal('modalAddCat')">＋ 新增分類</button>
+    <div class="field">
+      <div class="flabel">說明（支援 Markdown）</div>
+      <textarea class="fi" id="fDesc" placeholder="可選，貼上工具介紹..."></textarea>
+    </div>
+    <button class="btn-save" onclick="saveTool()">儲存工具</button>
   </div>
 </div>
 
@@ -1255,6 +1257,7 @@ window.saveTool = async () => {
     document.getElementById('fUrl').value = '';
     document.getElementById('fCat').value = '';
     document.getElementById('fDesc').value = '';
+    closeModal('modalAddTool');
     toast(`✓ 已儲存「${name}」`);
   } catch(e) {
     toast(`❌ 儲存失敗：${e.message}`);
