@@ -48,7 +48,6 @@ h1 { font-size: 22px; margin-bottom: 8px; }
 
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js';
-import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js';
 import {
   getFirestore, collection, getDocs, addDoc, serverTimestamp,
   writeBatch, doc
@@ -64,7 +63,6 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
 const db = getFirestore(app);
 const COLORS = ['c1','c2','c3','c4','c5','c6','c7'];
 
@@ -166,16 +164,10 @@ function renderPreview() {
     </p>`;
 }
 
-// ============ Auth ============
-onAuthStateChanged(auth, user => {
-  if (!user) {
-    document.getElementById('userInfo').innerHTML = '⚠️ 尚未登入，<a href="/login.html">前往登入</a>';
-    return;
-  }
-  document.getElementById('userInfo').textContent = `已登入：${user.email}`;
-  document.getElementById('importBtn').disabled = false;
-  renderPreview();
-});
+// ============ Init ============
+document.getElementById('userInfo').style.display = 'none';
+document.getElementById('importBtn').disabled = false;
+renderPreview();
 
 // ============ Log ============
 function logMsg(msg) {
