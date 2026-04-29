@@ -85,7 +85,6 @@
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js';
 import { getFirestore, doc, getDoc, updateDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js';
-import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js';
 
 const firebaseConfig = {
   apiKey: "AIzaSyBf0sHTsndFCksNlh46G_2mw9rk5zmPdc0",
@@ -98,15 +97,10 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
-const auth = getAuth(app);
 
 const params = new URLSearchParams(location.search);
 const docId = params.get('id');
 if (!docId) { location.href = 'index.html'; }
-
-onAuthStateChanged(auth, (user) => {
-  if (!user) location.href = `/login.html?redirect=${encodeURIComponent(location.href)}`;
-});
 
 let record = null;
 let canvas, ctx, drawing = false, hasStrokes = false;

@@ -5,10 +5,6 @@ const gptApiKey = defineSecret('GPT_API_KEY');
 const ALLOWED_EMAIL = 'ohihio@gmail.com';
 
 exports.ocrEnvelope = onCall({ secrets: [gptApiKey], region: 'asia-east1' }, async (request) => {
-  if (!request.auth) {
-    throw new HttpsError('unauthenticated', '請先登入');
-  }
-
   const { imageBase64, mimeType, prompt } = request.data;
 
   if (!imageBase64 || !mimeType) {

@@ -69,7 +69,6 @@
   <div class="header-actions">
     <button class="hbtn" onclick="openExport()">📊 匯出</button>
     <button class="hbtn" onclick="location.href='/'">🏠</button>
-    <button class="hbtn" onclick="logout()">登出</button>
   </div>
 </div>
 
@@ -111,13 +110,11 @@
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js';
 import { getFirestore, collection, getDocs, query, orderBy, doc, deleteDoc, where } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js';
-import { getAuth, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js';
 
 const firebaseConfig = { apiKey:"AIzaSyBf0sHTsndFCksNlh46G_2mw9rk5zmPdc0", authDomain:"my-teaching-tools-2b36c.firebaseapp.com", projectId:"my-teaching-tools-2b36c", storageBucket:"my-teaching-tools-2b36c.firebasestorage.app", messagingSenderId:"82693897353", appId:"1:82693897353:web:f667501aad05c536c09a58" };
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
-const auth = getAuth(app);
 let allRecords = [], searchTerm = '';
 
 function formatTrackingNumber(num) {
@@ -132,8 +129,7 @@ function formatTrackingNumber(num) {
   return num;
 }
 
-onAuthStateChanged(auth, user => { if (!user) { location.href = '/login.html'; return; } loadRecords(); });
-window.logout = async () => { await signOut(auth); location.href = '/login.html'; };
+loadRecords();
 
 async function loadRecords() {
   try {
