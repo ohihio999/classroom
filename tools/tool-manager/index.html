@@ -798,13 +798,104 @@
     }
     .search-empty-icon { font-size: 40px; margin-bottom: 10px; opacity: 0.5; }
     .search-empty-msg { font-size: 13.5px; color: var(--text-2); }
+
+    /* ===== FAB ===== */
+    .fab {
+      display: none;
+      position: fixed;
+      bottom: 24px; right: 24px;
+      width: 56px; height: 56px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #6C63FF, #4D76FF);
+      color: white;
+      font-size: 26px;
+      border: none;
+      cursor: pointer;
+      box-shadow: 0 4px 20px rgba(79, 102, 255, 0.45);
+      z-index: 50;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.15s var(--easing), box-shadow 0.15s var(--easing);
+    }
+    .fab:active { transform: scale(0.92); }
+
+    /* ===== DRAWER OVERLAY ===== */
+    .drawer-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 20, 40, 0.45);
+      z-index: 99;
+      backdrop-filter: blur(2px);
+    }
+    .drawer-overlay.open { display: block; }
+
+    /* ===== MOBILE ===== */
+    @media (max-width: 768px) {
+      body { display: block; height: auto; overflow-y: auto; overflow-x: hidden; }
+
+      .sidebar {
+        position: fixed;
+        left: -330px;
+        top: 0; bottom: 0;
+        z-index: 100;
+        width: 300px;
+        min-width: 300px;
+        transition: left 0.28s var(--easing);
+        box-shadow: var(--shadow-lg);
+      }
+      .sidebar.open { left: 0; }
+
+      .sidebar-close { display: none; }
+    .sidebar-close {
+        display: flex;
+        margin-left: auto;
+        background: rgba(255,255,255,0.1);
+        border: none;
+        color: #DDE3FF;
+        width: 28px; height: 28px;
+        border-radius: 50%;
+        font-size: 14px;
+        cursor: pointer;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+      }
+
+      .main { padding: 20px 16px 90px; }
+
+      .main-title { font-size: 20px; }
+      .main-subtitle { font-size: 12px; }
+      .back-link { font-size: 11px; }
+
+      .main-hd { gap: 8px; margin-bottom: 20px; }
+      .btn-pill { font-size: 11.5px; padding: 6px 10px; }
+      .sync-badge { font-size: 11.5px; padding: 6px 10px; }
+
+      .search-wrap { padding: 9px 12px; }
+      .search-input { font-size: 13.5px; }
+      .btn-search { font-size: 12px; padding: 6px 12px; }
+
+      .cat-name { font-size: 13.5px; }
+      .tool-name { font-size: 13px; }
+      .tool-link { font-size: 11.5px; padding: 5px 8px; }
+      .tool-acts { opacity: 1; }
+
+      .fab { display: flex; }
+    }
   </style>
 </head>
 <body>
 
+<!-- ===== DRAWER OVERLAY ===== -->
+<div class="drawer-overlay" id="drawerOverlay" onclick="toggleDrawer()"></div>
+
+<!-- ===== FAB ===== -->
+<button class="fab" onclick="toggleDrawer()">＋</button>
+
 <!-- ===== SIDEBAR ===== -->
-<div class="sidebar">
-  <div class="sidebar-title">＋ 新增資料</div>
+<div class="sidebar" id="sidebar">
+  <div class="sidebar-title">＋ 新增資料 <button class="sidebar-close" onclick="toggleDrawer()">✕</button></div>
 
   <div>
     <div class="field-label">工具名稱</div>
@@ -1444,6 +1535,12 @@ window.clearSearch = () => {
   document.getElementById('clearSearchBtn').style.display = 'none';
   document.getElementById('catList').style.display = '';
   render();
+};
+
+// ===== Mobile Drawer =====
+window.toggleDrawer = () => {
+  document.getElementById('sidebar').classList.toggle('open');
+  document.getElementById('drawerOverlay').classList.toggle('open');
 };
 
 // ===== AI Suggest (sidebar: URL → fill name/cat/desc) =====
