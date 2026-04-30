@@ -380,6 +380,15 @@
       font-weight: 500;
       letter-spacing: -0.005em;
     }
+    a.tool-name {
+      text-decoration: none;
+      transition: color 0.15s var(--easing);
+    }
+    a.tool-name:hover {
+      color: var(--accent-hover);
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
 
     .tool-link {
       font-size: 12px;
@@ -407,10 +416,11 @@
     .tool-acts {
       display: flex;
       gap: 4px;
-      opacity: 0;
+      min-width: 132px;
+      justify-content: flex-end;
+      opacity: 1;
       transition: opacity 0.15s var(--easing);
     }
-    .tool-row:hover .tool-acts { opacity: 1; }
 
     .btn-del-tool {
       background: transparent;
@@ -423,6 +433,16 @@
       transition: all 0.15s var(--easing);
     }
     .btn-del-tool:hover { color: var(--danger); background: rgba(201,112,100,0.08); }
+    .btn-del-tool:disabled {
+      opacity: 0.34;
+      cursor: default;
+      color: var(--text-3);
+      background: transparent;
+    }
+    .btn-del-tool:disabled:hover {
+      color: var(--text-3);
+      background: transparent;
+    }
 
     .desc-toggle {
       display: inline-flex;
@@ -897,6 +917,8 @@
         opacity: 1;
         justify-self: end;
         gap: 2px;
+        min-width: 132px;
+        justify-content: flex-end;
       }
       .btn-del-tool {
         padding: 3px 4px;
@@ -1029,6 +1051,10 @@
     <div class="field">
       <div class="flabel">連結</div>
       <input class="fi" id="editUrl" type="url" placeholder="https://..." />
+    </div>
+    <div class="field">
+      <div class="flabel">說明（支援 Markdown）</div>
+      <textarea class="fi" id="editDesc" rows="5" placeholder="工具用途、特色、適用情境..."></textarea>
     </div>
     <button class="btn-save" onclick="saveEditTool()">儲存變更</button>
   </div>
@@ -1222,8 +1248,6 @@ function render() {
     const catTools = tools.filter(t => t.categoryId === cat.id);
     const colorClass = cat.color || COLORS[idx % COLORS.length];
     const isOpen = !collapsed.has(cat.id);
-    const descOpen = !!openDescs[cat.id];
-    const hasDescs = catTools.some(t => t.description);
 
     return `
     <div class="cat-card">
@@ -1239,25 +1263,21 @@ function render() {
           ? '<div style="color:var(--text-3);font-size:12.5px;padding:10px 0">尚無工具</div>'
           : catTools.map(t => `
             <div class="tool-row">
-              <div class="tool-name">${esc(t.name)}</div>
-              <a class="tool-link" href="${esc(t.url)}" target="_blank" rel="noopener">主要連結 ↗</a>
-              <button class="tool-link" onclick="openEditTool('${t.id}')">編輯</button>
+              <a class="tool-name" href="${esc(t.url)}" target="_blank" rel="noopener">${esc(t.name)}</a>
               <div class="tool-acts">
+                <button class="btn-del-tool" ${t.description ? `onclick="toggleDesc('${t.id}')" title="說明"` : 'type="button" title="無說明" disabled'}>${t.description ? (openDescs[t.id] ? '📝' : '📄') : '📄'}</button>
+                <button class="btn-del-tool" onclick="openEditTool('${t.id}')" title="編輯">✏️</button>
                 <button class="btn-del-tool" onclick="aiReclassify('${t.id}','${esc(t.name)}','${esc(t.url)}')" title="AI 重新分析">🤖</button>
                 <button class="btn-del-tool" onclick="delTool('${t.id}','${esc(t.name)}')" title="刪除">🗑</button>
               </div>
-            </div>`).join('')}
-        ${hasDescs ? `
-          <div class="desc-toggle" onclick="toggleDesc('${cat.id}')">
-            ${descOpen ? '∧ 收起說明' : '∨ 查看說明'}
-          </div>
-          <div class="desc-panel ${descOpen ? 'open' : ''}">
-            ${catTools.filter(t => t.description).map(t => `
+            </div>
+            ${t.description ? `
+              <div class="desc-panel ${openDescs[t.id] ? 'open' : ''}">
               <div class="desc-item">
                 <div class="desc-item-hd">${esc(t.name)}</div>
                 <div class="desc-content">${renderMd(t.description)}</div>
-              </div>`).join('')}
-          </div>` : ''}
+              </div>
+              </div>` : ''}`).join('')}
       </div>
     </div>`;
   }).join('');
@@ -1333,6 +1353,7 @@ window.openEditTool = id => {
   document.getElementById('editName').value = tool.name || '';
   document.getElementById('editUrl').value = tool.url || '';
   document.getElementById('editCat').value = tool.categoryId || '';
+  document.getElementById('editDesc').value = tool.description || '';
   openModal('modalEditTool');
 };
 
@@ -1341,6 +1362,7 @@ window.saveEditTool = async () => {
   const name = document.getElementById('editName').value.trim();
   const url = document.getElementById('editUrl').value.trim();
   const categoryId = document.getElementById('editCat').value;
+  const description = document.getElementById('editDesc').value.trim();
 
   if (!id) return toast('找不到要儲存的工具');
   if (!name) return toast('請填寫工具名稱');
@@ -1351,7 +1373,8 @@ window.saveEditTool = async () => {
     await updateDoc(doc(db, 'tool_manager_tools', id), {
       name,
       url,
-      categoryId
+      categoryId,
+      description
     });
     await log(`編輯工具「${name}」`);
     closeModal('modalEditTool');
@@ -1455,7 +1478,7 @@ ${catList}
 ${text}
 
 請提取所有工具，分配到最合適的分類，回傳 JSON（僅 JSON，不含其他文字）：
-{"tools":[{"name":"工具名稱","url":"https://...","categoryId":"分類ID"}]}`;
+{"tools":[{"name":"工具名稱","url":"https://...","categoryId":"分類ID","description":"一段簡短說明，50字以內"}]}`;
 
   try {
     const parsed = await callOpenAIJSON(prompt);
@@ -1465,10 +1488,12 @@ ${text}
 
     document.getElementById('batchPreviewList').innerHTML = pendingBatch.map(t => {
       const cat = categories.find(c => c.id === t.categoryId);
+      const desc = (t.description || '').trim();
       return `<div class="bp-item">
         <div class="bp-name">${esc(t.name)}</div>
         <div class="bp-url">${esc(t.url)}</div>
         <div class="bp-cat">${cat ? (cat.icon + ' ' + cat.name) : '（未知分類）'}</div>
+        ${desc ? `<div class="bp-url">${esc(desc)}</div>` : ''}
       </div>`;
     }).join('');
 
@@ -1493,7 +1518,7 @@ window.confirmBatch = async () => {
       name: t.name || '',
       url: t.url || '',
       categoryId: t.categoryId || '',
-      description: '',
+      description: t.description || '',
       createdAt: serverTimestamp()
     });
   });
