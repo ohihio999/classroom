@@ -69,18 +69,6 @@
       color: #E8ECFF;
     }
 
-    .sidebar-title {
-      font-size: 14px;
-      font-weight: 600;
-      color: #F4F6FF;
-      letter-spacing: -0.01em;
-      padding-bottom: 14px;
-      border-bottom: 1px solid rgba(173, 187, 255, 0.16);
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-
     .field-label {
       font-size: 11.5px;
       font-weight: 600;
@@ -393,10 +381,12 @@
 
     .tool-name {
       flex: 1;
-      font-size: 13.5px;
+      min-width: 0;
+      font-size: 15px;
       color: var(--text);
       font-weight: 500;
       letter-spacing: -0.005em;
+      word-break: break-word;
     }
 
     .tool-link {
@@ -588,6 +578,14 @@
       color: var(--accent-hover);
       font-family: 'SF Mono', Monaco, Consolas, monospace;
     }
+
+    .field-note {
+      margin-top: 8px;
+      font-size: 12px;
+      line-height: 1.5;
+      color: var(--text-2);
+    }
+    .field-note.warn { color: var(--danger); }
 
     /* ===== BATCH PREVIEW ===== */
     .batch-preview {
@@ -861,27 +859,10 @@
       }
       .sidebar.open { left: 0; }
 
-      .sidebar-close { display: none; }
-    .sidebar-close {
-        display: flex;
-        margin-left: auto;
-        background: rgba(255,255,255,0.1);
-        border: none;
-        color: #DDE3FF;
-        width: 28px; height: 28px;
-        border-radius: 50%;
-        font-size: 14px;
-        cursor: pointer;
-        align-items: center;
-        justify-content: center;
-        flex-shrink: 0;
-      }
-
       .main { padding: 20px 16px 90px; }
 
       .main-title { font-size: 20px; }
       .main-subtitle { font-size: 12px; }
-      .back-link { font-size: 11px; }
 
       .main-hd { gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
       .main-title-wrap { width: 100%; flex: none; }
@@ -892,9 +873,18 @@
       .search-input { font-size: 13.5px; }
       .btn-search { font-size: 12px; padding: 6px 12px; }
 
+      .cat-body { padding: 4px 14px 14px; }
       .cat-name { font-size: 13.5px; }
-      .tool-name { font-size: 13px; }
-      .tool-link { font-size: 11.5px; padding: 5px 8px; }
+      .tool-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto auto auto;
+        align-items: center;
+        column-gap: 6px;
+      }
+      .tool-name { font-size: 14px; }
+      .tool-link { font-size: 11.5px; padding: 4px 6px; }
+      .tool-acts { gap: 2px; }
+      .btn-del-tool { padding: 4px; }
       .tool-acts { opacity: 1; }
 
       .fab { display: flex; }
@@ -907,17 +897,15 @@
 <div class="drawer-overlay" id="drawerOverlay" onclick="toggleDrawer()"></div>
 
 <!-- ===== FAB ===== -->
-<button class="fab" onclick="openModal('modalAddTool')">＋</button>
+<button class="fab" onclick="openPrimaryAddModal()">＋</button>
 
 <!-- ===== SIDEBAR ===== -->
 <div class="sidebar" id="sidebar">
-  <div class="sidebar-title">工具管理 <button class="sidebar-close" onclick="toggleDrawer()">✕</button></div>
-
-  <button class="btn-save" onclick="openModal('modalAddTool');toggleDrawer()">＋ 新增工具</button>
+  <button class="btn-save" onclick="openSidebarAction('modalAddTool')">＋ 新增工具</button>
 
   <hr class="divider" />
 
-  <button class="btn-ai" onclick="openModal('modalBatch');toggleDrawer()">✨ AI 批量解析</button>
+  <button class="btn-ai" onclick="openSidebarAction('modalBatch')">✨ AI 批量解析</button>
 
   <div class="btn-row">
     <button class="btn-outline" onclick="exportHTML()">HTML 匯出</button>
@@ -929,7 +917,6 @@
 <div class="main">
   <div class="main-hd">
     <div class="main-title-wrap">
-      <a class="back-link" href="/index.html">← 維運工具</a>
       <div class="main-title">小程式分類管理</div>
       <div class="main-subtitle">收藏、分類、隨手可用的 AI 工具庫</div>
     </div>
@@ -962,7 +949,7 @@
   <div class="empty" id="emptyState" style="display:none">
     <div class="empty-icon">📦</div>
     <div class="empty-title">還沒有任何工具</div>
-    <div class="empty-sub">從左側新增第一個吧</div>
+    <div class="empty-sub">開始新增第一個工具吧</div>
   </div>
 </div>
 
@@ -977,7 +964,8 @@
     </div>
     <div class="field">
       <div class="flabel">網址</div>
-      <input class="fi" id="fUrl" type="url" placeholder="https://..." />
+      <input class="fi" id="fUrl" type="url" placeholder="https://..." oninput="handleUrlInput()" />
+      <div class="field-note" id="urlDuplicateHint" style="display:none"></div>
       <button class="btn-ai" id="aiSuggestBtn" style="margin-top:8px;font-size:12px;padding:8px 12px;width:100%" onclick="aiSuggest()">🤖 AI 建議名稱與分類</button>
     </div>
     <div class="field">
@@ -1161,6 +1149,39 @@ function getSelectedModel() {
   return localStorage.getItem('openai_model') || 'gpt-4o-mini';
 }
 
+function normalizeUrl(raw) {
+  const input = (raw || '').trim();
+  if (!input) return '';
+  try {
+    const parsed = new URL(input);
+    const pathname = parsed.pathname.replace(/\/+$/, '') || '/';
+    return `${parsed.protocol.toLowerCase()}//${parsed.hostname.toLowerCase()}${parsed.port ? ':' + parsed.port : ''}${pathname}${parsed.search}`;
+  } catch {
+    return input.replace(/\/+$/, '').toLowerCase();
+  }
+}
+
+function findDuplicateToolByUrl(rawUrl, excludeId = '') {
+  const normalized = normalizeUrl(rawUrl);
+  if (!normalized) return null;
+  return tools.find(tool => tool.id !== excludeId && normalizeUrl(tool.url) === normalized) || null;
+}
+
+function updateDuplicateHint() {
+  const hint = document.getElementById('urlDuplicateHint');
+  if (!hint) return;
+  const duplicate = findDuplicateToolByUrl(document.getElementById('fUrl').value);
+  if (!duplicate) {
+    hint.style.display = 'none';
+    hint.textContent = '';
+    hint.className = 'field-note';
+    return;
+  }
+  hint.style.display = 'block';
+  hint.className = 'field-note warn';
+  hint.textContent = `這個網址已存在於「${duplicate.name}」，仍可繼續儲存。`;
+}
+
 async function callOpenAIJSON(prompt) {
   const model = getSelectedModel();
   try {
@@ -1306,6 +1327,12 @@ window.saveTool = async () => {
   if (!url) return toast('請填寫網址');
   if (!categoryId) return toast('請選擇分類');
 
+  const duplicate = findDuplicateToolByUrl(url);
+  if (duplicate) {
+    const shouldContinue = confirm(`這個網址已存在於「${duplicate.name}」。\n仍要繼續儲存嗎？`);
+    if (!shouldContinue) return;
+  }
+
   try {
     await addDoc(collection(db, 'tool_manager_tools'), {
       name, url, categoryId, description,
@@ -1317,6 +1344,7 @@ window.saveTool = async () => {
     document.getElementById('fUrl').value = '';
     document.getElementById('fCat').value = '';
     document.getElementById('fDesc').value = '';
+    updateDuplicateHint();
     closeModal('modalAddTool');
     toast(`✓ 已儲存「${name}」`);
   } catch(e) {
@@ -1444,16 +1472,84 @@ window.runBatch = async () => {
   statusEl.innerHTML = '';
   document.getElementById('batchPreviewWrap').style.display = 'none';
 
-  const catList = categories.map(c => `- ${c.id}: ${c.icon || ''} ${c.name}`).join('\n');
+  const prompt = `你是內容拆分與分類助手。你的工作不是只抓一筆資料，而是要把一段原始文字中的多個可獨立項目拆開，整理成多筆結構化資料。
 
-  const prompt = `你是工具分類助手。現有分類（格式：ID: 名稱）：
-${catList}
+可用分類：
+- ZhElRUPu8Gin1bHcGvIO | 📰 AI趨勢新聞 | AI 產業動態、模型更新、公司公告、新聞整理、時事評論
+- 3Tkn6Kt5JuJXqu71oVXo | 🎓 AI教學影片 | 教學、課程、實作示範、教學站、教學頻道
+- 83ecHDnlxbkxVGcTS260 | 🤖 實用AI工具 | 可直接使用的 AI 工具、平台、助手
+- zNlIwbrzkneQosgQhwlX | 🎮 娛樂休閒 | 算命、塔羅、趣味互動、娛樂型 AI
+- 7YP5hlmdZMp1UmoYPFok | 📚 學習資源 | 資源集合、Padlet、清單整理、資料彙整
+- wyoEUzFOgK6u9oGP9L3W | 🔧 開發者工具 | 程式、部署、Agent、GitHub、技術文件
+- URukm2W3OEPBNlDh0iLz | 📊 簡報講義 | 投影片、講義、簡報文件
+- BcPnXP2KNdMlQQMzkDj3 | 🗓️ 課程活動 | 課程資訊、活動頁、工作坊、研習、會議連結
+- WqogeAmFf5H7KFQAHqyw | 📥 檔案下載 | 下載頁、素材包、文件下載、範本下載
+- VMPlBzNOobP35Hv58sWS | 💬 社群討論 | Discord、LINE 群、Facebook 社團、Telegram 群、討論交流入口
 
-以下是工具清單（格式不限，可能含名稱和網址）：
+拆分規則：
+1. 一段原文可以拆成多筆資料，不要強行合併成一筆。
+2. 只要用途不同，即使來自同一篇文案，也要拆開。
+3. 常見可拆分項目包括：
+   - 課程活動 / 分享會 / 研習 / 會議連結
+   - 下載網站 / 檔案下載
+   - 討論區 / 社群連結 / Discord
+4. 如果同一段文字中同時有活動介紹、下載連結、社群連結，應拆成多筆。
+5. 不要因為網址相同就強行合併；若原文明顯表示是不同活動，可保留多筆。
+6. 每筆都要盡量補上 description，優先保留與該筆最相關的原文內容。
+7. description 請精簡整理，但保留重點，不要胡亂改寫。
+8. 若某段只是補充下載提醒，應放到下載網站那一筆的 description。
+9. 若某段只是社群交流說明，應放到社群討論那一筆的 description。
+10. 若原文沒有足夠資訊，不要亂編。
+
+課程活動命名規則：
+1. 若分類為 課程活動，name 優先格式為：
+   - \`05/03 19:00-21:00｜課名\`
+2. 若只有開始時間沒有結束時間，可退化為：
+   - \`05/03 19:30｜課名\`
+3. 若只有日期沒有時間，可退化為：
+   - \`05/03｜課名\`
+4. 不要加入星期幾。
+5. 若原文有講師名，但課名不清楚，可用講師名作為課名主體。
+6. 若活動名稱明確，優先保留活動名稱。
+
+一般命名規則：
+1. 下載網站類可命名為：
+   - \`XXX 下載網站\`
+2. 社群類可命名為：
+   - \`XXX 討論區\`
+   - \`XXX Discord\`
+3. 名稱盡量簡潔、可讀，不要只是貼整段原文。
+
+輸出欄位規則：
+- name: 項目標題
+- url: 該筆對應連結
+- categoryId: 最適合的分類 ID
+- description: 該筆的備註，盡量保留原文重點；沒有就給空字串
+
+範例1：
+原文：
+5/1 PM 7:30 一起線上研習
+為大家邀請到佳恩老師帶領大家一起學習
+會議連結: https://reurl.cc/EmmgRK
+
+輸出：
+{"tools":[{"name":"05/01 19:30｜佳恩老師","url":"https://reurl.cc/EmmgRK","categoryId":"BcPnXP2KNdMlQQMzkDj3","description":"一起線上研習，佳恩老師帶領大家一起學習。"}]}
+
+範例2：
+原文：
+【免費分享會】Studio0808 AI 影音工具站 — 軟體操作實戰分享！
+時間：5/1 (五) 下午 2:00 ~ 4:00
+下載網站：https://begin0808.github.io/studio0808_video/
+Discord：https://discord.gg/68AGQ29G
+
+輸出：
+{"tools":[{"name":"05/01 14:00-16:00｜Studio0808 AI 影音工具站 — 軟體操作實戰分享！","url":"https://begin0808.github.io/studio0808_video/","categoryId":"BcPnXP2KNdMlQQMzkDj3","description":"免費線上分享會，可跟著講師一起實際操作。"},{"name":"Studio0808 AI 影音工具站 下載網站","url":"https://begin0808.github.io/studio0808_video/","categoryId":"WqogeAmFf5H7KFQAHqyw","description":"軟體檔案較大，請事先下載並解壓縮，方便活動當天跟著操作。"},{"name":"Studio0808 AI 影音工具站 討論區","url":"https://discord.gg/68AGQ29G","categoryId":"VMPlBzNOobP35Hv58sWS","description":"使用上有任何問題，歡迎到 Discord 一起討論交流。"}]}
+
+以下是原始內容：
 ${text}
 
-請提取所有工具，分配到最合適的分類，回傳 JSON（僅 JSON，不含其他文字）：
-{"tools":[{"name":"工具名稱","url":"https://...","categoryId":"分類ID"}]}`;
+請回傳 JSON（僅 JSON，不含其他文字）：
+{"tools":[{"name":"項目名稱","url":"https://...","categoryId":"分類ID","description":"備註"}]}`;
 
   try {
     const parsed = await callOpenAIJSON(prompt);
@@ -1483,9 +1579,32 @@ ${text}
 
 window.confirmBatch = async () => {
   if (!pendingBatch.length) return;
-  const count = pendingBatch.length;
-  const batch = writeBatch(db);
+  const seenUrls = new Set();
+  const existingUrls = new Set(tools.map(t => normalizeUrl(t.url)).filter(Boolean));
+  const newItems = [];
+  let skippedDuplicates = 0;
+
   pendingBatch.forEach(t => {
+    const normalized = normalizeUrl(t.url);
+    if (!normalized || existingUrls.has(normalized) || seenUrls.has(normalized)) {
+      skippedDuplicates += 1;
+      return;
+    }
+    seenUrls.add(normalized);
+    newItems.push(t);
+  });
+
+  if (newItems.length === 0) {
+    pendingBatch = [];
+    document.getElementById('batchPreviewWrap').style.display = 'none';
+    document.getElementById('batchText').value = '';
+    document.getElementById('batchStatus').innerHTML = `<div class="msg-err">⚠️ 全部都是重複網址，未匯入任何工具</div>`;
+    return;
+  }
+
+  const count = newItems.length;
+  const batch = writeBatch(db);
+  newItems.forEach(t => {
     const ref = doc(collection(db, 'tool_manager_tools'));
     batch.set(ref, {
       name: t.name || '',
@@ -1496,13 +1615,13 @@ window.confirmBatch = async () => {
     });
   });
   await batch.commit();
-  await log(`批量匯入 ${count} 個工具`);
+  await log(`批量匯入 ${count} 個工具${skippedDuplicates ? `，略過 ${skippedDuplicates} 個重複網址` : ''}`);
   pendingBatch = [];
   document.getElementById('batchPreviewWrap').style.display = 'none';
   document.getElementById('batchText').value = '';
   document.getElementById('batchStatus').innerHTML = '';
   closeModal('modalBatch');
-  toast(`✓ 已匯入 ${count} 個工具`);
+  toast(`✓ 已匯入 ${count} 個工具${skippedDuplicates ? `，略過 ${skippedDuplicates} 個重複` : ''}`);
 };
 
 // ===== AI Search =====
@@ -1594,6 +1713,26 @@ window.toggleDrawer = () => {
   document.getElementById('drawerOverlay').classList.toggle('open');
 };
 
+window.openSidebarAction = modalId => {
+  openModal(modalId);
+  if (window.innerWidth <= 768) {
+    document.getElementById('sidebar').classList.remove('open');
+    document.getElementById('drawerOverlay').classList.remove('open');
+  }
+};
+
+window.openPrimaryAddModal = () => {
+  if (window.innerWidth <= 768) {
+    openModal('modalBatch');
+    return;
+  }
+  openModal('modalAddTool');
+};
+
+window.handleUrlInput = () => {
+  updateDuplicateHint();
+};
+
 // ===== AI Suggest (sidebar: URL → fill name/cat/desc) =====
 window.aiSuggest = async () => {
   const url = document.getElementById('fUrl').value.trim();
@@ -1605,12 +1744,55 @@ window.aiSuggest = async () => {
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span>分析中...';
 
-  const catList = categories.map(c => `- ${c.id}: ${c.icon || ''} ${c.name}`).join('\n');
-  const prompt = `根據以下網址，推測這是什麼工具，給出建議。
-網址：${url}
+  const prompt = `你是工具分類助手。請根據提供的網址，推測這是什麼工具或內容，並依下列規則回傳最合理的名稱、分類與簡短說明。
 
-現有分類（格式：ID: 名稱）：
-${catList}
+可用分類：
+- ZhElRUPu8Gin1bHcGvIO | 📰 AI趨勢新聞 | AI 產業新聞、模型更新、時事、公告、評論
+- 3Tkn6Kt5JuJXqu71oVXo | 🎓 AI教學影片 | 教學、課程、實作示範、教學站、教學頻道
+- 83ecHDnlxbkxVGcTS260 | 🤖 實用AI工具 | 可直接使用的 AI 工具、平台、助手
+- zNlIwbrzkneQosgQhwlX | 🎮 娛樂休閒 | 算命、塔羅、趣味互動、娛樂型 AI
+- 7YP5hlmdZMp1UmoYPFok | 📚 學習資源 | 資源集合、Padlet、清單整理、資料彙整
+- wyoEUzFOgK6u9oGP9L3W | 🔧 開發者工具 | 程式、部署、Agent、GitHub、技術文件
+- URukm2W3OEPBNlDh0iLz | 📊 簡報講義 | 投影片、講義、簡報文件
+- BcPnXP2KNdMlQQMzkDj3 | 🗓️ 課程活動 | 課程資訊、活動頁、工作坊、研習
+- WqogeAmFf5H7KFQAHqyw | 📥 檔案下載 | 下載頁、素材包、文件下載、範本下載
+- VMPlBzNOobP35Hv58sWS | 💬 社群討論 | Discord、LINE 群、Facebook 社團、Telegram 群、討論交流入口
+
+判斷規則：
+1. 只能選一個 categoryId。
+2. 先判斷這個網址最像哪一類內容，再決定分類。
+3. 若是 YouTube / 教學站 / 教學頻道，優先考慮 AI教學影片。
+4. 若是 Google Slides / Google Docs / Canva / Gamma，優先考慮 簡報講義。
+5. 若是 GitHub / 開發白皮書 / Agent 技術內容，優先考慮 開發者工具。
+6. 若是 Padlet 或資源整理頁，優先考慮 學習資源。
+7. 若是活動介紹、報名頁、研習資訊，優先考慮 課程活動。
+8. 若是下載檔案或素材包頁面，優先考慮 檔案下載。
+9. 若是 Discord、LINE 群、Facebook 社團、Telegram 群等交流入口，優先考慮 社群討論。
+10. 如果分類為 課程活動，name 必須優先整理成 `05/03 19:00-21:00｜課名` 格式：
+   - 先放月/日，再放開始-結束時間，最後放課名
+   - 例：`05/03 19:00-21:00｜NotebookLM 研習`
+   - 如果只有日期沒有完整時段，就盡量保留已知資訊，例如：`05/03｜NotebookLM 研習`
+   - 如果原文有星期幾，不要放進標題
+11. description 請寫保守、簡短、可驗證的描述，50 字以內。
+12. 若無法完全確定，請選最接近的分類，不要留空，也不要亂編過度細節。
+
+範例：
+網址：https://www.youtube.com/watch?v=abc
+輸出：{"name":"AI 教學影片","categoryId":"3Tkn6Kt5JuJXqu71oVXo","description":"介紹 AI 工具使用方式的教學影片"}
+
+網址：https://github.com/example/project
+輸出：{"name":"AI 開發專案","categoryId":"wyoEUzFOgK6u9oGP9L3W","description":"與 AI 開發或代理系統相關的技術專案"}
+
+網址：https://padlet.com/example/resource
+輸出：{"name":"AI 資源整理頁","categoryId":"7YP5hlmdZMp1UmoYPFok","description":"彙整 AI 教學或工具資源的整理頁"}
+
+網址：https://example.com/course
+輸出：{"name":"05/03 19:00-21:00｜NotebookLM 研習","categoryId":"BcPnXP2KNdMlQQMzkDj3","description":"與 NotebookLM 相關的課程或研習活動"}
+
+網址：https://discord.gg/example
+輸出：{"name":"Studio0808 討論區","categoryId":"VMPlBzNOobP35Hv58sWS","description":"提供討論交流與使用問題回報的社群入口"}
+
+網址：${url}
 
 請回傳 JSON（僅 JSON，不含其他文字）：
 {"name":"工具名稱","categoryId":"最適合的分類ID","description":"一段簡短說明，50字以內"}`;
@@ -1635,13 +1817,58 @@ window.aiReclassify = async (toolId, toolName, toolUrl) => {
 
   toast('🤖 AI 分析中...');
 
-  const catList = categories.map(c => `- ${c.id}: ${c.icon || ''} ${c.name}`).join('\n');
-  const prompt = `根據以下工具資訊，建議最適合的名稱與分類。
+  const prompt = `你是工具分類助手。請根據目前工具名稱與網址，重新判斷更合適的名稱、分類與簡短說明。
+
+可用分類：
+- ZhElRUPu8Gin1bHcGvIO | 📰 AI趨勢新聞 | AI 產業新聞、模型更新、時事、公告、評論
+- 3Tkn6Kt5JuJXqu71oVXo | 🎓 AI教學影片 | 教學、課程、實作示範、教學站、教學頻道
+- 83ecHDnlxbkxVGcTS260 | 🤖 實用AI工具 | 可直接使用的 AI 工具、平台、助手
+- zNlIwbrzkneQosgQhwlX | 🎮 娛樂休閒 | 算命、塔羅、趣味互動、娛樂型 AI
+- 7YP5hlmdZMp1UmoYPFok | 📚 學習資源 | 資源集合、Padlet、清單整理、資料彙整
+- wyoEUzFOgK6u9oGP9L3W | 🔧 開發者工具 | 程式、部署、Agent、GitHub、技術文件
+- URukm2W3OEPBNlDh0iLz | 📊 簡報講義 | 投影片、講義、簡報文件
+- BcPnXP2KNdMlQQMzkDj3 | 🗓️ 課程活動 | 課程資訊、活動頁、工作坊、研習
+- WqogeAmFf5H7KFQAHqyw | 📥 檔案下載 | 下載頁、素材包、文件下載、範本下載
+- VMPlBzNOobP35Hv58sWS | 💬 社群討論 | Discord、LINE 群、Facebook 社團、Telegram 群、討論交流入口
+
+判斷規則：
+1. 只能從上述 categoryId 中選一個。
+2. 先判斷這個項目的主要用途，再決定分類。
+3. 如果目前名稱過短、過模糊、或有明顯更清楚的命名方式，可以適度修正名稱。
+4. 若目前名稱已清楚，盡量保留，不要過度改名。
+5. 如果分類為 課程活動，name 必須優先整理成 `05/03 19:00-21:00｜課名` 格式：
+   - 先放月/日，再放開始-結束時間，最後放課名
+   - 例：`05/03 19:00-21:00｜NotebookLM 研習`
+   - 如果只有日期沒有完整時段，就盡量保留已知資訊，例如：`05/03｜NotebookLM 研習`
+   - 如果原文有星期幾，不要放進標題
+6. 若是 Discord、LINE 群、Facebook 社團、Telegram 群等交流入口，優先考慮 社群討論，名稱可整理成 `XXX 討論區` 或 `XXX Discord`。
+7. description 要簡短、保守、50 字以內，不要加入無法從名稱或網址合理推得的細節。
+8. 若網址與名稱出現衝突，以主要用途為準。
+9. 若無法完全確定，選最接近的分類，不要留空。
+
+範例：
+工具名稱（目前）：AI各家更新速度
+網址：https://www.youtube.com/watch?v=CKy5MvG5lIc&t=4s
+輸出：{"name":"AI各家更新速度","categoryId":"ZhElRUPu8Gin1bHcGvIO","description":"整理各家 AI 模型與產品更新動態"}
+
+工具名稱（目前）：brain-alex.com AI教學站
+網址：https://ai-brain-alex.com/
+輸出：{"name":"brain-alex.com AI教學站","categoryId":"3Tkn6Kt5JuJXqu71oVXo","description":"提供 AI 工具與應用教學的教學站"}
+
+工具名稱（目前）：Project Golem（AI 代理人系統）
+網址：https://github.com/Arvincreator/project-golem
+輸出：{"name":"Project Golem（AI 代理人系統）","categoryId":"wyoEUzFOgK6u9oGP9L3W","description":"與 AI agent 開發相關的技術專案"}
+
+工具名稱（目前）：NotebookLM 研習 5/3 19:00-21:00
+網址：https://example.com/course
+輸出：{"name":"05/03 19:00-21:00｜NotebookLM 研習","categoryId":"BcPnXP2KNdMlQQMzkDj3","description":"與 NotebookLM 相關的課程或研習活動"}
+
+工具名稱（目前）：Studio0808 Discord
+網址：https://discord.gg/68AGQ29G
+輸出：{"name":"Studio0808 討論區","categoryId":"VMPlBzNOobP35Hv58sWS","description":"提供討論交流與使用問題回報的社群入口"}
+
 工具名稱（目前）：${toolName}
 網址：${toolUrl}
-
-現有分類（格式：ID: 名稱）：
-${catList}
 
 請回傳 JSON（僅 JSON，不含其他文字）：
 {"name":"建議的工具名稱","categoryId":"最適合的分類ID","description":"一段簡短說明，50字以內"}`;
@@ -1735,6 +1962,8 @@ window.openModal = id => {
 };
 window.closeModal = id => {
   document.getElementById(id).classList.remove('open');
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('drawerOverlay').classList.remove('open');
 };
 
 document.querySelectorAll('.overlay').forEach(el => {
