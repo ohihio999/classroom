@@ -6,7 +6,7 @@ import tempfile
 import time
 import shutil
 from pathlib import Path
-from groq import Groq
+from groq import Groq, RateLimitError
 try:
     import opencc
 except ImportError:
@@ -22,7 +22,24 @@ for _candidate in [
         FFMPEG = _candidate
         break
 
-client = Groq(api_key=os.environ.get("GROQ_API_KEY"), timeout=120.0)
+def _load_api_key() -> str:
+    key = os.environ.get("GROQ_API_KEY", "")
+    if not key:
+        try:
+            import keyring
+            key = keyring.get_password("groq", "api_key") or ""
+        except Exception:
+            pass
+    if not key:
+        raise SystemExit(
+            "找不到 GROQ API Key。請執行一次：\n"
+            "  pip install keyring\n"
+            "  python -c \"import keyring; keyring.set_password('groq', 'api_key', '你的KEY')\"\n"
+            "之後就不需要再設定。"
+        )
+    return key
+
+client = Groq(api_key=_load_api_key(), timeout=120.0)
 _cc = opencc.OpenCC('s2twp')
 
 SUPPORTED = {".mp3", ".mp4", ".wav", ".m4a", ".ogg", ".webm"}
@@ -100,10 +117,20 @@ def blocks_to_srt(all_blocks: list[dict]) -> str:
     return "\n\n".join(parts) + "\n"
 
 
+def _parse_retry_after(err: Exception) -> int:
+    m = re.search(r'try again in (\d+)m(\d+)s', str(err))
+    if m:
+        return int(m.group(1)) * 60 + int(m.group(2)) + 5
+    m = re.search(r'try again in ([\d.]+)s', str(err))
+    if m:
+        return int(float(m.group(1))) + 5
+    return 120
+
+
 def transcribe_chunk(audio_path: Path, index: int, total: int) -> list[dict]:
     """回傳 segments list，每項含 start/end（秒）和 text"""
     print(f"    段落 {index}/{total} 轉錄中...")
-    for attempt in range(3):
+    for attempt in range(5):
         try:
             with open(audio_path, "rb") as f:
                 result = client.audio.transcriptions.create(
@@ -113,22 +140,31 @@ def transcribe_chunk(audio_path: Path, index: int, total: int) -> list[dict]:
                     response_format="verbose_json",
                 )
             return result.segments
+        except RateLimitError as e:
+            wait = _parse_retry_after(e)
+            print(f"    速率限制，等待 {wait} 秒後重試...")
+            time.sleep(wait)
         except Exception as e:
-            if attempt < 2:
-                print(f"    重試（{attempt+1}/3）：{e}")
+            if attempt < 4:
+                print(f"    重試（{attempt+1}/5）：{e}")
                 time.sleep(5)
             else:
                 raise
 
 
 def process_file(audio_path: Path):
+    import json
     output_md = audio_path.parent / f"{audio_path.stem}_逐字稿.md"
     output_srt = audio_path.parent / f"{audio_path.stem}_逐字稿.srt"
+    cache_dir = audio_path.parent / f".{audio_path.stem}_cache"
+
     if output_md.exists():
         print(f"  跳過（逐字稿已存在）：{output_md.name}")
         return
 
+    cache_dir.mkdir(exist_ok=True)
     print(f"  檔案大小：{audio_path.stat().st_size / 1024 / 1024:.1f} MB")
+    print(f"  中斷點暫存：{cache_dir}")
 
     tmp_compressed = None
     tmp_dir = None
@@ -141,15 +177,25 @@ def process_file(audio_path: Path):
 
         all_blocks: list[dict] = []
         for i, chunk in enumerate(chunks, 1):
+            cache_file = cache_dir / f"chunk_{i:03d}.json"
             offset_sec = (i - 1) * CHUNK_SECONDS
-            segments = transcribe_chunk(chunk, i, len(chunks))
-            for seg in segments:
-                s = seg if isinstance(seg, dict) else vars(seg)
-                all_blocks.append({
-                    'start': ms_to_time(int((s['start'] + offset_sec) * 1000)),
-                    'end':   ms_to_time(int((s['end']   + offset_sec) * 1000)),
-                    'text':  s['text'].strip(),
-                })
+
+            if cache_file.exists():
+                print(f"    段落 {i}/{len(chunks)} 從暫存載入（略過 API 呼叫）")
+                blocks = json.loads(cache_file.read_text(encoding="utf-8"))
+            else:
+                segments = transcribe_chunk(chunk, i, len(chunks))
+                blocks = []
+                for seg in segments:
+                    s = seg if isinstance(seg, dict) else vars(seg)
+                    blocks.append({
+                        'start': ms_to_time(int((s['start'] + offset_sec) * 1000)),
+                        'end':   ms_to_time(int((s['end']   + offset_sec) * 1000)),
+                        'text':  s['text'].strip(),
+                    })
+                cache_file.write_text(json.dumps(blocks, ensure_ascii=False), encoding="utf-8")
+
+            all_blocks.extend(blocks)
 
     finally:
         if tmp_compressed and tmp_compressed.exists():
@@ -168,6 +214,8 @@ def process_file(audio_path: Path):
         f.write(f"# {audio_path.stem} 逐字稿\n\n")
         f.write("\n".join(b['text'] for b in all_blocks))
 
+    # 完成後清掉暫存
+    shutil.rmtree(cache_dir, ignore_errors=True)
     print(f"  完成：{output_md.name}  +  {output_srt.name}")
 
 
