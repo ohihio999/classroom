@@ -1,6 +1,11 @@
 <!--
-  版本：v1.0
+  版本：v1.5
   版更記錄：
+  v1.5 (2026-05-01) - 新增 API Key 輸入欄，直接寫入 bat，修正 GROQ_API_KEY 讀不到問題
+  v1.4 (2026-05-01) - bat 改用 Python 3.11 完整路徑，修正 No module named 'groq'
+  v1.3 (2026-05-01) - 改為資料夾輸入，批次轉換資料夾內所有音檔
+  v1.2 (2026-05-01) - 逐字稿輸出改至音檔同資料夾，步驟③改為下載 .bat 執行
+  v1.1 (2026-05-01) - 新增「音檔轉逐字稿」卡片，點擊顯示操作說明與一鍵複製指令
   v1.0 (2026-04-29) - 初始版本，管理員入口頁，Firebase Auth 保護，含小程式分類管理入口
 -->
 <!DOCTYPE html>
@@ -22,6 +27,21 @@
     .tool-icon { font-size: 40px; flex-shrink: 0; }
     .tool-name { font-size: 18px; font-weight: 600; color: #222; margin-bottom: 4px; }
     .tool-desc { font-size: 13px; color: #888; }
+    .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 100; align-items: flex-end; justify-content: center; }
+    .modal-overlay.open { display: flex; }
+    .modal { background: white; border-radius: 20px 20px 0 0; padding: 24px 20px 36px; width: 100%; max-width: 480px; max-height: 85vh; overflow-y: auto; }
+    .modal-title { font-size: 18px; font-weight: 700; margin-bottom: 4px; }
+    .modal-sub { font-size: 13px; color: #888; margin-bottom: 20px; }
+    .modal-close { float: right; background: #eee; border: none; border-radius: 50%; width: 30px; height: 30px; font-size: 16px; cursor: pointer; line-height: 30px; text-align: center; margin-top: -4px; }
+    .step { margin-bottom: 18px; }
+    .step-label { font-size: 12px; font-weight: 600; color: #1976D2; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .cmd-box { background: #f5f5f5; border-radius: 10px; padding: 12px 14px; font-family: monospace; font-size: 13px; color: #333; word-break: break-all; position: relative; }
+    .copy-btn { display: block; width: 100%; margin-top: 8px; background: #1976D2; color: white; border: none; border-radius: 10px; padding: 10px; font-size: 14px; font-weight: 600; cursor: pointer; }
+    .copy-btn:active { background: #1565C0; }
+    .copy-btn.copied { background: #388E3C; }
+    .path-input { width: 100%; border: 1.5px solid #ddd; border-radius: 10px; padding: 10px 12px; font-size: 13px; font-family: monospace; margin-bottom: 8px; outline: none; }
+    .path-input:focus { border-color: #1976D2; }
+    .divider { border: none; border-top: 1px solid #eee; margin: 20px 0; }
   </style>
 </head>
 <body>
@@ -37,6 +57,55 @@
       <div class="tool-desc">收藏、分類、隨手可用的 AI 工具庫</div>
     </div>
   </a>
+  <div class="tool-card" onclick="openTranscribe()">
+    <div class="tool-icon">🎙️</div>
+    <div>
+      <div class="tool-name">音檔轉逐字稿</div>
+      <div class="tool-desc">Groq Whisper，自動壓縮大檔，1 小時約 2 分鐘</div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="transcribeModal" onclick="closeOnOverlay(event)">
+  <div class="modal">
+    <button class="modal-close" onclick="closeTranscribe()">✕</button>
+    <div class="modal-title">🎙️ 音檔轉逐字稿</div>
+    <div class="modal-sub">Groq Whisper Large v3・中文優化・自動壓縮大檔</div>
+
+    <div class="step">
+      <div class="step-label">① 一次性安裝</div>
+      <div class="cmd-box">pip install groq</div>
+      <button class="copy-btn" onclick="copyCmd(this, 'pip install groq')">複製</button>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">② Groq API Key（只需填一次，不會上傳）</div>
+      <input class="path-input" id="apiKey" type="password" placeholder="gsk_xxxxxxxxxxxxxxxx" />
+    </div>
+
+    <div class="step">
+      <div class="step-label">③ 貼上資料夾路徑（批次轉裡面所有音檔）</div>
+      <input class="path-input" id="audioPath" placeholder="C:\OBS" oninput="updateCmd()" />
+    </div>
+
+    <div class="step">
+      <div class="step-label">④ 下載並雙擊執行</div>
+      <div class="cmd-box" id="cmdPreview">python transcribe.py "C:\OBS"</div>
+      <button class="copy-btn" id="runCopyBtn" onclick="downloadBat()">⬇ 下載 transcribe.bat</button>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">⑤ 轉錄完成後，逐字稿在同一資料夾，貼給 Claude</div>
+      <div class="cmd-box" id="claudePreview">用 transcript-training-pack 處理 C:\OBS\檔名_逐字稿.md</div>
+      <button class="copy-btn" id="claudeCopyBtn" onclick="copyClaude()">複製</button>
+    </div>
+
+    <div style="font-size:12px;color:#aaa;margin-top:8px;">工具位置：C:\Users\admin\Desktop\classroom\transcribe-audio\</div>
+  </div>
 </div>
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js';
@@ -57,6 +126,66 @@ onAuthStateChanged(auth, (user) => {
 });
 
 window.logout = async () => { await signOut(auth); location.href = '/login.html'; };
+</script>
+<script>
+const TOOL_DIR = 'C:\\Users\\admin\\Desktop\\classroom\\transcribe-audio';
+
+function openTranscribe() {
+  document.getElementById('transcribeModal').classList.add('open');
+  updateCmd();
+}
+function closeTranscribe() {
+  document.getElementById('transcribeModal').classList.remove('open');
+}
+function closeOnOverlay(e) {
+  if (e.target === document.getElementById('transcribeModal')) closeTranscribe();
+}
+
+function updateCmd() {
+  const raw = document.getElementById('audioPath').value.trim();
+  const path = raw || 'C:\\OBS';
+  document.getElementById('cmdPreview').textContent = `python transcribe.py "${path}"`;
+  document.getElementById('claudePreview').textContent = `用 transcript-training-pack 處理 ${path}\\檔名_逐字稿.md`;
+}
+
+function downloadBat() {
+  const raw = document.getElementById('audioPath').value.trim();
+  const key = document.getElementById('apiKey').value.trim();
+  if (!raw) { alert('請先貼上資料夾路徑'); return; }
+  if (!key) { alert('請先填入 Groq API Key'); return; }
+  const py = 'C:\\Users\\admin\\AppData\\Local\\Programs\\Python\\Python311\\python.exe';
+  const content = `@echo off\nset GROQ_API_KEY=${key}\ncd /d ${TOOL_DIR}\n"${py}" transcribe.py "${raw}"\npause`;
+  const blob = new Blob([content], { type: 'text/plain' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'transcribe.bat';
+  a.click();
+}
+
+function copyCmd(btn, text) {
+  navigator.clipboard.writeText(text);
+  btn.textContent = '已複製 ✓';
+  btn.classList.add('copied');
+  setTimeout(() => { btn.textContent = '複製'; btn.classList.remove('copied'); }, 2000);
+}
+
+function copyRun() {
+  const text = document.getElementById('cmdPreview').textContent;
+  const btn = document.getElementById('runCopyBtn');
+  navigator.clipboard.writeText(text);
+  btn.textContent = '已複製 ✓';
+  btn.classList.add('copied');
+  setTimeout(() => { btn.textContent = '複製指令'; btn.classList.remove('copied'); }, 2000);
+}
+
+function copyClaude() {
+  const text = document.getElementById('claudePreview').textContent;
+  const btn = document.getElementById('claudeCopyBtn');
+  navigator.clipboard.writeText(text);
+  btn.textContent = '已複製 ✓';
+  btn.classList.add('copied');
+  setTimeout(() => { btn.textContent = '複製'; btn.classList.remove('copied'); }, 2000);
+}
 </script>
 </body>
 </html>
