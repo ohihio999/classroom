@@ -1,7 +1,11 @@
 <!--
-  版本：v1.5
+  版本：v1.8
   版更記錄：
+  v1.8 (2026-05-01) - 新增轉錄模式選擇（標準/說話者辨識）與說話者人數下拉，AssemblyAI Key 由後端保管
+  v1.7 (2026-05-01) - header 新增首頁圖示連結
+  v1.6 (2026-05-01) - Groq API Key 改由 Firebase Functions 後端保管，modal 開啟自動載入，移除手動輸入欄
   v1.5 (2026-05-01) - 新增 API Key 輸入欄，直接寫入 bat，修正 GROQ_API_KEY 讀不到問題
+  v1.5 (2026-05-02) - 新增④目的地資料夾欄位，轉完自動搬移音檔＋逐字稿
   v1.4 (2026-05-01) - bat 改用 Python 3.11 完整路徑，修正 No module named 'groq'
   v1.3 (2026-05-01) - 改為資料夾輸入，批次轉換資料夾內所有音檔
   v1.2 (2026-05-01) - 逐字稿輸出改至音檔同資料夾，步驟③改為下載 .bat 執行
@@ -21,6 +25,8 @@
     .header h1 { font-size: 22px; font-weight: 600; }
     .header p { font-size: 13px; opacity: 0.8; margin-top: 4px; }
     .logout { position: absolute; right: 16px; top: 22px; background: none; border: none; color: white; font-size: 13px; cursor: pointer; opacity: 0.8; }
+    .home-link { position: absolute; left: 16px; top: 22px; color: white; font-size: 13px; opacity: 0.8; text-decoration: none; }
+    .home-link:hover { opacity: 1; }
     .tools { padding: 24px 16px; display: flex; flex-direction: column; gap: 14px; max-width: 480px; margin: 0 auto; }
     .tool-card { background: white; border-radius: 14px; padding: 24px 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); cursor: pointer; display: flex; align-items: center; gap: 16px; transition: transform 0.1s, box-shadow 0.1s; text-decoration: none; color: inherit; }
     .tool-card:active { transform: scale(0.98); box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
@@ -42,10 +48,16 @@
     .path-input { width: 100%; border: 1.5px solid #ddd; border-radius: 10px; padding: 10px 12px; font-size: 13px; font-family: monospace; margin-bottom: 8px; outline: none; }
     .path-input:focus { border-color: #1976D2; }
     .divider { border: none; border-top: 1px solid #eee; margin: 20px 0; }
+    .mode-row { display: flex; gap: 10px; }
+    .mode-btn { flex: 1; border: 1.5px solid #ddd; border-radius: 10px; padding: 10px; cursor: pointer; background: white; font-size: 13px; font-weight: 600; color: #666; transition: all 0.15s; text-align: center; }
+    .mode-btn.active { border-color: #1976D2; background: #E3F2FD; color: #1976D2; }
+    .speaker-select { width: 100%; border: 1.5px solid #ddd; border-radius: 10px; padding: 10px 12px; font-size: 13px; outline: none; background: white; margin-top: 10px; }
+    .speaker-select:focus { border-color: #1976D2; }
   </style>
 </head>
 <body>
 <div class="header">
+  <a class="home-link" href="/admin/">🏠 首頁</a>
   <h1>陳佳興專用</h1>
   <button class="logout" onclick="logout()">登出</button>
 </div>
@@ -74,15 +86,28 @@
 
     <div class="step">
       <div class="step-label">① 一次性安裝</div>
-      <div class="cmd-box">pip install groq</div>
-      <button class="copy-btn" onclick="copyCmd(this, 'pip install groq')">複製</button>
+      <div class="cmd-box" id="pipCmd">pip install groq</div>
+      <button class="copy-btn" id="pipCopyBtn" onclick="copyCmd(pipCopyBtn, document.getElementById('pipCmd').textContent)">複製</button>
     </div>
 
     <hr class="divider">
 
     <div class="step">
-      <div class="step-label">② Groq API Key（只需填一次，不會上傳）</div>
-      <input class="path-input" id="apiKey" type="password" placeholder="gsk_xxxxxxxxxxxxxxxx" />
+      <div class="step-label">② 轉錄模式</div>
+      <div class="mode-row">
+        <button class="mode-btn active" id="btnStandard" onclick="setMode('standard')">⚡ 標準<br><span style="font-size:11px;font-weight:400;color:inherit">Groq Whisper・快速</span></button>
+        <button class="mode-btn" id="btnDiarize" onclick="setMode('diarize')">👥 說話者辨識<br><span style="font-size:11px;font-weight:400;color:inherit">AssemblyAI・分辨誰在說話</span></button>
+      </div>
+      <div id="speakerWrap" style="display:none">
+        <select class="speaker-select" id="speakerCount" onchange="updateCmd()">
+          <option value="0">說話者人數：自動偵測</option>
+          <option value="2">2 人</option>
+          <option value="3">3 人</option>
+          <option value="4">4 人</option>
+          <option value="5">5 人</option>
+        </select>
+      </div>
+      <div class="cmd-box" id="keyStatus" style="color:#888;font-family:sans-serif;margin-top:10px;">載入中...</div>
     </div>
 
     <div class="step">
@@ -91,16 +116,21 @@
     </div>
 
     <div class="step">
-      <div class="step-label">④ 下載並雙擊執行</div>
-      <div class="cmd-box" id="cmdPreview">python transcribe.py "C:\OBS"</div>
+      <div class="step-label">④ 目的地資料夾（轉完後搬移音檔＋逐字稿）</div>
+      <input class="path-input" id="destPath" placeholder="C:\OBS\轉檔完成" oninput="updateCmd()" />
+    </div>
+
+    <div class="step">
+      <div class="step-label">⑤ 下載並雙擊執行</div>
+      <div class="cmd-box" id="cmdPreview">python transcribe.py "C:\OBS" --dest "C:\OBS\轉檔完成"</div>
       <button class="copy-btn" id="runCopyBtn" onclick="downloadBat()">⬇ 下載 transcribe.bat</button>
     </div>
 
     <hr class="divider">
 
     <div class="step">
-      <div class="step-label">⑤ 轉錄完成後，逐字稿在同一資料夾，貼給 Claude</div>
-      <div class="cmd-box" id="claudePreview">用 transcript-training-pack 處理 C:\OBS\檔名_逐字稿.md</div>
+      <div class="step-label">⑥ 轉錄完成後，逐字稿在目的地資料夾，貼給 Claude</div>
+      <div class="cmd-box" id="claudePreview">用 transcript-training-pack 處理 C:\OBS\轉檔完成\檔名_逐字稿.md</div>
       <button class="copy-btn" id="claudeCopyBtn" onclick="copyClaude()">複製</button>
     </div>
 
@@ -110,11 +140,15 @@
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js';
 import { getAuth, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js';
+import { getFunctions, httpsCallable } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-functions.js';
 
 const firebaseConfig = { apiKey:"AIzaSyBf0sHTsndFCksNlh46G_2mw9rk5zmPdc0", authDomain:"my-teaching-tools-2b36c.firebaseapp.com", projectId:"my-teaching-tools-2b36c", storageBucket:"my-teaching-tools-2b36c.firebasestorage.app", messagingSenderId:"82693897353", appId:"1:82693897353:web:f667501aad05c536c09a58" };
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
+const functions = getFunctions(app, 'asia-east1');
+const getGroqKeyFn = httpsCallable(functions, 'getGroqKey');
+const getAssemblyAIKeyFn = httpsCallable(functions, 'getAssemblyAIKey');
 const ALLOWED_EMAIL = 'ohihio@gmail.com';
 
 onAuthStateChanged(auth, (user) => {
@@ -126,12 +160,63 @@ onAuthStateChanged(auth, (user) => {
 });
 
 window.logout = async () => { await signOut(auth); location.href = '/login.html'; };
+
+window.fetchGroqKey = async () => {
+  try {
+    const result = await getGroqKeyFn();
+    window._groqKey = result.data.key;
+  } catch (e) {
+    window._groqKey = '';
+  }
+};
+
+window.fetchAssemblyAIKey = async () => {
+  try {
+    const result = await getAssemblyAIKeyFn();
+    window._assemblyAIKey = result.data.key;
+  } catch (e) {
+    window._assemblyAIKey = '';
+  }
+};
+
+window.updateKeyStatus = () => {
+  const el = document.getElementById('keyStatus');
+  const mode = window._currentMode || 'standard';
+  if (mode === 'standard') {
+    if (window._groqKey) { el.textContent = '✓ Groq Key 已從後端載入'; el.style.color = '#388E3C'; }
+    else { el.textContent = '⏳ 載入 Groq Key 中...'; el.style.color = '#888'; }
+  } else {
+    if (window._assemblyAIKey) { el.textContent = '✓ AssemblyAI Key 已從後端載入'; el.style.color = '#388E3C'; }
+    else { el.textContent = '⏳ 載入 AssemblyAI Key 中...'; el.style.color = '#888'; }
+  }
+};
 </script>
 <script>
 const TOOL_DIR = 'C:\\Users\\admin\\Desktop\\classroom\\transcribe-audio';
 
+window._currentMode = 'standard';
+
 function openTranscribe() {
   document.getElementById('transcribeModal').classList.add('open');
+  setMode('standard');
+  updateCmd();
+  window._groqKey = '';
+  window._assemblyAIKey = '';
+  document.getElementById('keyStatus').textContent = '載入中...';
+  document.getElementById('keyStatus').style.color = '#888';
+  if (window.fetchGroqKey) window.fetchGroqKey().then(() => window.updateKeyStatus && window.updateKeyStatus());
+  if (window.fetchAssemblyAIKey) window.fetchAssemblyAIKey();
+}
+
+function setMode(mode) {
+  window._currentMode = mode;
+  document.getElementById('btnStandard').classList.toggle('active', mode === 'standard');
+  document.getElementById('btnDiarize').classList.toggle('active', mode === 'diarize');
+  document.getElementById('speakerWrap').style.display = mode === 'diarize' ? 'block' : 'none';
+  document.getElementById('pipCmd').textContent = mode === 'diarize'
+    ? 'pip install groq assemblyai'
+    : 'pip install groq';
+  if (window.updateKeyStatus) window.updateKeyStatus();
   updateCmd();
 }
 function closeTranscribe() {
@@ -144,18 +229,41 @@ function closeOnOverlay(e) {
 function updateCmd() {
   const raw = document.getElementById('audioPath').value.trim();
   const path = raw || 'C:\\OBS';
-  document.getElementById('cmdPreview').textContent = `python transcribe.py "${path}"`;
-  document.getElementById('claudePreview').textContent = `用 transcript-training-pack 處理 ${path}\\檔名_逐字稿.md`;
+  const destRaw = document.getElementById('destPath').value.trim();
+  const dest = destRaw || 'C:\\OBS\\轉檔完成';
+  const mode = window._currentMode || 'standard';
+  const speakers = document.getElementById('speakerCount')?.value || '0';
+  let cmd = `python transcribe.py "${path}" --dest "${dest}"`;
+  if (mode === 'diarize') cmd += ` --mode diarize --speakers ${speakers}`;
+  document.getElementById('cmdPreview').textContent = cmd;
+  document.getElementById('claudePreview').textContent = `用 transcript-training-pack 處理 ${dest}\\檔名_逐字稿.md`;
 }
 
 function downloadBat() {
   const raw = document.getElementById('audioPath').value.trim();
-  const key = document.getElementById('apiKey').value.trim();
-  if (!raw) { alert('請先貼上資料夾路徑'); return; }
-  if (!key) { alert('請先填入 Groq API Key'); return; }
+  const destRaw = document.getElementById('destPath').value.trim();
+  const path = raw || 'C:\\OBS';
+  const dest = destRaw || 'C:\\OBS\\轉檔完成';
+  const mode = window._currentMode || 'standard';
+  const speakers = document.getElementById('speakerCount')?.value || '0';
+
   const py = 'C:\\Users\\admin\\AppData\\Local\\Programs\\Python\\Python311\\python.exe';
-  const content = `@echo off\nset GROQ_API_KEY=${key}\ncd /d ${TOOL_DIR}\n"${py}" transcribe.py "${raw}"\npause`;
-  const blob = new Blob([content], { type: 'text/plain' });
+  let keyLines = '';
+  let scriptArgs = `"${path}" --dest "${dest}"`;
+
+  if (mode === 'diarize') {
+    const aKey = window._assemblyAIKey || '';
+    if (!aKey) { alert('AssemblyAI Key 尚未載入，請稍後再試'); return; }
+    keyLines = `set "GROQ_API_KEY=${window._groqKey || ''}"\r\nset "ASSEMBLYAI_API_KEY=${aKey}"`;
+    scriptArgs += ` --mode diarize --speakers ${speakers}`;
+  } else {
+    const gKey = window._groqKey || '';
+    if (!gKey) { alert('Groq Key 尚未載入，請稍後再試'); return; }
+    keyLines = `set "GROQ_API_KEY=${gKey}"`;
+  }
+
+  const content = '﻿' + `@echo off\r\n${keyLines}\r\ncd /d "${TOOL_DIR}"\r\n"${py}" transcribe.py ${scriptArgs}\r\npause`;
+  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = 'transcribe.bat';

@@ -5,6 +5,7 @@ import subprocess
 import tempfile
 import time
 import shutil
+import argparse
 from pathlib import Path
 from groq import Groq, RateLimitError
 try:
@@ -13,6 +14,12 @@ except ImportError:
     import subprocess as _sp
     _sp.run([sys.executable, "-m", "pip", "install", "opencc-python-reimplemented", "-q"], check=True)
     import opencc
+try:
+    import assemblyai as aai
+except ImportError:
+    import subprocess as _sp
+    _sp.run([sys.executable, "-m", "pip", "install", "assemblyai", "-q"], check=True)
+    import assemblyai as aai
 
 FFMPEG = os.environ.get("FFMPEG_PATH") or "ffmpeg"
 for _candidate in [
@@ -152,6 +159,41 @@ def transcribe_chunk(audio_path: Path, index: int, total: int) -> list[dict]:
                 raise
 
 
+def process_file_diarize(audio_path: Path, speakers: int):
+    output_md = audio_path.parent / f"{audio_path.stem}_逐字稿.md"
+    if output_md.exists():
+        print(f"  跳過（逐字稿已存在）：{output_md.name}")
+        return
+
+    key = os.environ.get("ASSEMBLYAI_API_KEY", "")
+    if not key:
+        raise SystemExit("找不到 ASSEMBLYAI_API_KEY 環境變數")
+
+    print(f"  上傳至 AssemblyAI（說話者辨識模式）...")
+    aai.settings.api_key = key
+    config = aai.TranscriptionConfig(
+        language_code="zh",
+        speaker_labels=True,
+        speakers_expected=speakers if speakers > 0 else None
+    )
+    transcript = aai.Transcriber().transcribe(str(audio_path), config)
+
+    if transcript.error:
+        raise RuntimeError(f"AssemblyAI 錯誤：{transcript.error}")
+
+    with open(output_md, "w", encoding="utf-8") as f:
+        f.write(f"# {audio_path.stem} 逐字稿\n\n")
+        current_speaker = None
+        for utterance in transcript.utterances:
+            text = _cc.convert(utterance.text)
+            if utterance.speaker != current_speaker:
+                current_speaker = utterance.speaker
+                f.write(f"\n**[說話者{utterance.speaker}]**\n\n")
+            f.write(f"{text}\n")
+
+    print(f"  完成：{output_md.name}")
+
+
 def process_file(audio_path: Path):
     import json
     output_md = audio_path.parent / f"{audio_path.stem}_逐字稿.md"
@@ -219,35 +261,77 @@ def process_file(audio_path: Path):
     print(f"  完成：{output_md.name}  +  {output_srt.name}")
 
 
-def main():
-    if len(sys.argv) < 2:
-        print("用法：python transcribe.py <資料夾路徑 或 音檔路徑>")
-        print("範例：python transcribe.py C:\\OBS")
-        sys.exit(1)
+DEFAULT_FOLDER = "C:/OBS"
+DEFAULT_DONE_FOLDER = r"C:\OBS\轉檔完成"
 
-    target = Path(sys.argv[1])
+
+def main():
+    parser = argparse.ArgumentParser(description='音檔轉逐字稿')
+    parser.add_argument('path', nargs='?', help='音檔或資料夾路徑（省略則互動輸入）')
+    parser.add_argument('--mode', choices=['standard', 'diarize'], default='standard',
+                        help='standard=Groq標準, diarize=AssemblyAI說話者辨識')
+    parser.add_argument('--speakers', type=int, default=0,
+                        help='說話者人數，0=自動偵測（僅 diarize 模式有效）')
+    parser.add_argument('--dest', default=None,
+                        help='轉完後搬移目的地資料夾（省略則互動輸入）')
+    args = parser.parse_args()
+
+    if args.path:
+        input_path = args.path
+        dest_path = args.dest
+    else:
+        raw = input(f"請貼上資料夾路徑（直接按 Enter 使用預設 {DEFAULT_FOLDER}）：\n> ").strip()
+        input_path = raw if raw else DEFAULT_FOLDER
+
+        raw2 = input(f"目的地資料夾（轉完後搬移，直接按 Enter 使用預設 {DEFAULT_DONE_FOLDER}）：\n> ").strip()
+        dest_path = raw2 if raw2 else DEFAULT_DONE_FOLDER
+
+    target = Path(input_path)
 
     if not target.exists():
         print(f"找不到：{target}")
         sys.exit(1)
+
+    def run(f):
+        if args.mode == 'diarize':
+            process_file_diarize(f, args.speakers)
+        else:
+            process_file(f)
 
     if target.is_dir():
         files = sorted(f for f in target.iterdir() if f.suffix.lower() in SUPPORTED)
         if not files:
             print(f"資料夾內沒有音檔（支援：{', '.join(SUPPORTED)}）")
             sys.exit(1)
-        print(f"找到 {len(files)} 個音檔，開始批次轉錄\n")
+        mode_label = '說話者辨識' if args.mode == 'diarize' else '標準'
+        print(f"找到 {len(files)} 個音檔，模式：{mode_label}，開始批次轉錄\n")
         for i, f in enumerate(files, 1):
             print(f"[{i}/{len(files)}] {f.name}")
-            process_file(f)
+            run(f)
         print(f"\n全部完成，逐字稿存在：{target}")
-        print(f"\n下一步：告訴 Claude「用 transcript-training-pack 處理 {target}\\<檔名>_逐字稿.md」")
+
+        if dest_path:
+            dest = Path(dest_path)
+            dest.mkdir(parents=True, exist_ok=True)
+            print(f"\n搬移檔案到：{dest}")
+            for f in files:
+                for candidate in [
+                    f,
+                    f.parent / f"{f.stem}_逐字稿.md",
+                    f.parent / f"{f.stem}_逐字稿.srt",
+                ]:
+                    if candidate.exists():
+                        shutil.move(str(candidate), str(dest / candidate.name))
+                        print(f"  ✓ {candidate.name}")
+            print("搬移完成。")
+
+        print(f"\n下一步：告訴 Claude「用 transcript-training-pack 處理 {dest_path or target}\\<檔名>_逐字稿.md」")
     else:
         if target.suffix.lower() not in SUPPORTED:
             print(f"不支援的格式：{target.suffix}，支援：{', '.join(SUPPORTED)}")
             sys.exit(1)
         print(f"[1/1] {target.name}")
-        process_file(target)
+        run(target)
 
 if __name__ == "__main__":
     main()
