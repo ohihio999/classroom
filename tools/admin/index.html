@@ -76,6 +76,20 @@
       <div class="tool-desc">Groq Whisper，自動壓縮大檔，1 小時約 2 分鐘</div>
     </div>
   </div>
+  <div class="tool-card" onclick="openTranscriptPack()">
+    <div class="tool-icon">📝</div>
+    <div>
+      <div class="tool-name">transcript-training-pack</div>
+      <div class="tool-desc">單一逐字稿 → 培訓報告＋摘要＋心智圖</div>
+    </div>
+  </div>
+  <div class="tool-card" onclick="openCourseFiling()">
+    <div class="tool-icon">📚</div>
+    <div>
+      <div class="tool-name">course-filing</div>
+      <div class="tool-desc">課程歸檔 Obsidian，含知識點拆解＋日記更新</div>
+    </div>
+  </div>
 </div>
 
 <div class="modal-overlay" id="transcribeModal" onclick="closeOnOverlay(event)">
@@ -137,6 +151,114 @@
     <div style="font-size:12px;color:#aaa;margin-top:8px;">工具位置：C:\Users\admin\Desktop\classroom\transcribe-audio\</div>
   </div>
 </div>
+
+<!-- transcript-training-pack modal -->
+<div class="modal-overlay" id="transcriptPackModal" onclick="closeOnOverlay(event)">
+  <div class="modal" style="max-height:90vh">
+    <button class="modal-close" onclick="closeTranscriptPack()">✕</button>
+    <div class="modal-title">📝 transcript-training-pack</div>
+    <div class="modal-sub">單一逐字稿 → 培訓報告＋摘要＋心智圖</div>
+
+    <div class="step">
+      <div class="step-label">① 輸入來源</div>
+      <div class="cmd-box" style="font-family:sans-serif">貼上逐字稿全文、單一檔案，或含逐字稿的資料夾路徑。<br>優先找檔名含：逐字稿、transcript、Transcript</div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">② 命名候選</div>
+      <div class="cmd-box" style="font-family:sans-serif">先根據內容提出 2-4 個候選課程名或檔名，<strong>讓使用者選</strong>，再正式命名。</div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">③ 清理逐字稿</div>
+      <div class="cmd-box" style="font-family:sans-serif">讀 frontmatter、標題、來源、日期。<br>正文取 ## Transcript 後的內容。<br>清口語贅詞、重複句，不改原意。<br>保留：段落順序、時間軸、概念框架、操作流程、比較結構。</div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">④ 產出 4 份成品</div>
+      <div class="cmd-box" style="font-family:sans-serif">
+        <strong>培訓報告.md</strong>（6 章）：學習目標、關鍵概念、參與者理解度、練習與活動、資源與材料、後續培訓<br><br>
+        <strong>摘要.md</strong>（4 章）：摘要總覽、待辦項目、重點記錄、建議行動<br><br>
+        <strong>心智圖.md</strong> — 保留足夠密度，不是只剩骨架<br><br>
+        <strong>心智圖網頁版.html</strong> — Markmap HTML
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">⑤ 輸出位置</div>
+      <div class="cmd-box">C:\Users\admin\Desktop\本機MD檔\30_研究\課程逐字稿整理\YYYYMMDD_課程名\</div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">⑥ 品質檢查</div>
+      <div class="cmd-box" style="font-family:sans-serif">確認四個檔案都有產生、章節完整、比較框架和操作細節有保留。<br>不能亂補外部資訊。</div>
+    </div>
+
+    <div style="font-size:12px;color:#aaa;margin-top:16px">用途：把文章/影片逐字稿轉成摘要成品，適合學習筆記整理。</div>
+  </div>
+</div>
+
+<!-- course-filing modal -->
+<div class="modal-overlay" id="courseFilingModal" onclick="closeOnOverlay(event)">
+  <div class="modal" style="max-height:90vh">
+    <button class="modal-close" onclick="closeCourseFiling()">✕</button>
+    <div class="modal-title">📚 course-filing</div>
+    <div class="modal-sub">課程歸檔 Obsidian，含知識點拆解＋日記更新</div>
+
+    <div class="step">
+      <div class="step-label">① 收集資訊</div>
+      <div class="cmd-box" style="font-family:sans-serif">確認：課程名稱、領域分類、筆記/逐字稿/心智圖三份資料。</div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">② 決定路徑與命名</div>
+      <div class="cmd-box">整理到：<br>30_研究/[領域]/YYYYMMDD課程名稱/</div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">③ 整理主筆記</div>
+      <div class="cmd-box" style="font-family:sans-serif">做成結構化筆記，補 frontmatter、警告 callout、心智圖 wikilink。</div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">④ 處理逐字稿</div>
+      <div class="cmd-box" style="font-family:sans-serif">一份完整逐字稿存到 30_研究。<br>另外從逐字稿抽概念，建立 <strong>40_知識庫</strong> 的原子知識筆記。</div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">⑤ 搬移心智圖</div>
+      <div class="cmd-box" style="font-family:sans-serif">把心智圖放進同一課程資料夾。</div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">⑥ 更新日記</div>
+      <div class="cmd-box" style="font-family:sans-serif">在當日日記記錄這次歸檔與新增知識點。</div>
+    </div>
+
+    <div style="font-size:12px;color:#aaa;margin-top:16px">用途：連摘要、逐字稿、心智圖、知識點、日記一起歸檔到 Obsidian 長期知識庫。</div>
+  </div>
+</div>
+
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js';
 import { getAuth, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js';
@@ -293,6 +415,22 @@ function copyClaude() {
   btn.textContent = '已複製 ✓';
   btn.classList.add('copied');
   setTimeout(() => { btn.textContent = '複製'; btn.classList.remove('copied'); }, 2000);
+}
+
+// transcript-training-pack modal
+function openTranscriptPack() {
+  document.getElementById('transcriptPackModal').classList.add('open');
+}
+function closeTranscriptPack() {
+  document.getElementById('transcriptPackModal').classList.remove('open');
+}
+
+// course-filing modal
+function openCourseFiling() {
+  document.getElementById('courseFilingModal').classList.add('open');
+}
+function closeCourseFiling() {
+  document.getElementById('courseFilingModal').classList.remove('open');
 }
 </script>
 </body>
