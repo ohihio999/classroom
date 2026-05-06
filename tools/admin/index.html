@@ -1,6 +1,7 @@
 <!--
-  版本：v2.7
+  版本：v2.8
   版更記錄：
+  v2.8 (2026-05-07) - yt-dlp.bat 改用 TextEncoder + octet-stream 杜絕瀏覽器補 BOM；加 chcp 65001 支援中文路徑
   v2.7 (2026-05-07) - 修正 yt-dlp.bat：移除 BOM（修正嚜濃echo問題）、% 改成 %%（修正路徑模板被吃掉）
   v2.6 (2026-05-07) - yt-dlp modal 預設開啟即為照片模式，路徑自動填入
   v2.5 (2026-05-07) - yt-dlp 照片模式預設填入 C:\FB抓照片\cookies.txt 與 C:\FB抓照片，不用每次手動貼
@@ -887,8 +888,9 @@ function downloadYtDlpBat() {
   if (window._ytMode === 'photo' && !cookiesPath) { alert('下載 FB 照片需填寫 cookies.txt 路徑'); return; }
   const cmd = _buildYtCmd(url, savePath, cookiesPath);
   const batCmd = cmd.replace(/%/g, '%%');
-  const content = `@echo off\r\n${batCmd}\r\npause`;
-  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+  const content = `@echo off\r\nchcp 65001 >nul\r\n${batCmd}\r\npause`;
+  const encoded = new TextEncoder().encode(content);
+  const blob = new Blob([encoded], { type: 'application/octet-stream' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = 'yt-dlp.bat';
