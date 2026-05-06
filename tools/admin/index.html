@@ -1,6 +1,7 @@
 <!--
-  版本：v2.3
+  版本：v2.4
   版更記錄：
+  v2.4 (2026-05-07) - yt-dlp modal 新增「照片」模式與 cookies.txt 欄位，支援 FB 照片下載（需登入 cookies）
   v2.3 (2026-05-07) - 新增「yt-dlp 影片下載」卡片與 modal，支援 YouTube/FB 影片與音訊下載
   v2.2 (2026-05-05) - 新增「影片檔轉 MP3」卡片與 modal，對應 video-to-mp3 專案
   v2.1 (2026-05-02) - 每張卡片新增編輯與上下排序按鈕，改用靜態 fallback + Firestore 覆寫避免整頁失效
@@ -325,8 +326,8 @@
 <div class="modal-overlay" id="ytDlpModal" onclick="closeOnOverlay(event)">
   <div class="modal">
     <button class="modal-close" onclick="closeYtDlp()">✕</button>
-    <div class="modal-title">⬇️ yt-dlp 影片下載</div>
-    <div class="modal-sub">支援 YouTube、FB、Instagram 等網站，下載影片或僅萃取音訊</div>
+    <div class="modal-title">⬇️ yt-dlp 下載工具</div>
+    <div class="modal-sub">支援 YouTube、FB、Instagram 等網站，下載影片、音訊或照片</div>
 
     <div class="step">
       <div class="step-label">① 一次性安裝</div>
@@ -341,21 +342,28 @@
       <div class="mode-row">
         <button class="mode-btn active" id="btnYtVideo" onclick="setYtMode('video')">🎬 影片<br><span style="font-size:11px;font-weight:400;color:inherit">MP4・最佳畫質</span></button>
         <button class="mode-btn" id="btnYtAudio" onclick="setYtMode('audio')">🎵 僅音訊<br><span style="font-size:11px;font-weight:400;color:inherit">MP3・僅萃取聲音</span></button>
+        <button class="mode-btn" id="btnYtPhoto" onclick="setYtMode('photo')">📷 照片<br><span style="font-size:11px;font-weight:400;color:inherit">FB 照片・需 cookies</span></button>
       </div>
     </div>
 
     <div class="step">
-      <div class="step-label">③ 貼上影片網址</div>
-      <input class="path-input" id="ytUrl" placeholder="https://www.youtube.com/watch?v=..." oninput="updateYtDlpCmd()" />
+      <div class="step-label">③ 貼上網址</div>
+      <input class="path-input" id="ytUrl" placeholder="https://www.facebook.com/photo/?fbid=..." oninput="updateYtDlpCmd()" />
+    </div>
+
+    <div class="step" id="ytCookiesWrap">
+      <div class="step-label">④ cookies.txt 路徑（FB 必填）</div>
+      <div class="cmd-box" style="font-family:sans-serif;font-size:12px;margin-bottom:8px;">用瀏覽器擴充「<strong>Get cookies.txt LOCALLY</strong>」開啟 Facebook 後匯出，存到本機路徑。</div>
+      <input class="path-input" id="ytCookiesPath" placeholder="C:\Users\admin\Desktop\cookies.txt" oninput="updateYtDlpCmd()" />
     </div>
 
     <div class="step">
-      <div class="step-label">④ 儲存資料夾</div>
+      <div class="step-label" id="ytSaveStepLabel">⑤ 儲存資料夾</div>
       <input class="path-input" id="ytSavePath" placeholder="C:\Downloads" oninput="updateYtDlpCmd()" />
     </div>
 
     <div class="step">
-      <div class="step-label">⑤ 下載並雙擊執行</div>
+      <div class="step-label" id="ytRunStepLabel">⑥ 下載並雙擊執行</div>
       <div class="cmd-box" id="ytCmdPreview">yt-dlp -f bestvideo+bestaudio/best --merge-output-format mp4 -o "C:\Downloads\%(title)s.%(ext)s" ""</div>
       <button class="copy-btn" id="ytRunCopyBtn" onclick="downloadYtDlpBat()">⬇ 下載 yt-dlp.bat</button>
     </div>
@@ -833,27 +841,41 @@ function setYtMode(mode) {
   window._ytMode = mode;
   document.getElementById('btnYtVideo').classList.toggle('active', mode === 'video');
   document.getElementById('btnYtAudio').classList.toggle('active', mode === 'audio');
+  document.getElementById('btnYtPhoto').classList.toggle('active', mode === 'photo');
+  // 照片模式顯示 cookies 欄位，其他模式隱藏
+  document.getElementById('ytCookiesWrap').style.display = mode === 'photo' ? 'block' : 'none';
+  // 調整步驟編號
+  const isPhoto = mode === 'photo';
+  document.getElementById('ytSaveStepLabel').textContent = isPhoto ? '⑤ 儲存資料夾' : '④ 儲存資料夾';
+  document.getElementById('ytRunStepLabel').textContent = isPhoto ? '⑥ 下載並雙擊執行' : '⑤ 下載並雙擊執行';
+  document.getElementById('ytUrl').placeholder = mode === 'photo'
+    ? 'https://www.facebook.com/photo/?fbid=...'
+    : 'https://www.youtube.com/watch?v=...';
   updateYtDlpCmd();
+}
+
+function _buildYtCmd(url, savePath, cookiesPath) {
+  const out = `${savePath}\\%(title)s.%(ext)s`;
+  const cookies = cookiesPath ? `--cookies "${cookiesPath}" ` : '';
+  if (window._ytMode === 'audio') return `yt-dlp ${cookies}-x --audio-format mp3 -o "${out}" "${url}"`;
+  if (window._ytMode === 'photo') return `yt-dlp ${cookies}-o "${out}" "${url}"`;
+  return `yt-dlp ${cookies}-f bestvideo+bestaudio/best --merge-output-format mp4 -o "${out}" "${url}"`;
 }
 
 function updateYtDlpCmd() {
   const url = document.getElementById('ytUrl').value.trim() || '';
   const savePath = document.getElementById('ytSavePath').value.trim() || 'C:\\Downloads';
-  const out = `${savePath}\\%(title)s.%(ext)s`;
-  const cmd = window._ytMode === 'audio'
-    ? `yt-dlp -x --audio-format mp3 -o "${out}" "${url}"`
-    : `yt-dlp -f bestvideo+bestaudio/best --merge-output-format mp4 -o "${out}" "${url}"`;
-  document.getElementById('ytCmdPreview').textContent = cmd;
+  const cookiesPath = document.getElementById('ytCookiesPath').value.trim();
+  document.getElementById('ytCmdPreview').textContent = _buildYtCmd(url, savePath, cookiesPath);
 }
 
 function downloadYtDlpBat() {
   const url = document.getElementById('ytUrl').value.trim();
-  if (!url) { alert('請先貼上影片網址'); return; }
+  if (!url) { alert('請先貼上網址'); return; }
   const savePath = document.getElementById('ytSavePath').value.trim() || 'C:\\Downloads';
-  const out = `${savePath}\\%(title)s.%(ext)s`;
-  const cmd = window._ytMode === 'audio'
-    ? `yt-dlp -x --audio-format mp3 -o "${out}" "${url}"`
-    : `yt-dlp -f bestvideo+bestaudio/best --merge-output-format mp4 -o "${out}" "${url}"`;
+  const cookiesPath = document.getElementById('ytCookiesPath').value.trim();
+  if (window._ytMode === 'photo' && !cookiesPath) { alert('下載 FB 照片需填寫 cookies.txt 路徑'); return; }
+  const cmd = _buildYtCmd(url, savePath, cookiesPath);
   const content = '﻿' + `@echo off\r\n${cmd}\r\npause`;
   const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
   const a = document.createElement('a');
