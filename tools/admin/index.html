@@ -1,6 +1,7 @@
 <!--
-  版本：v2.4
+  版本：v2.5
   版更記錄：
+  v2.5 (2026-05-07) - yt-dlp 照片模式預設填入 C:\FB抓照片\cookies.txt 與 C:\FB抓照片，不用每次手動貼
   v2.4 (2026-05-07) - yt-dlp modal 新增「照片」模式與 cookies.txt 欄位，支援 FB 照片下載（需登入 cookies）
   v2.3 (2026-05-07) - 新增「yt-dlp 影片下載」卡片與 modal，支援 YouTube/FB 影片與音訊下載
   v2.2 (2026-05-05) - 新增「影片檔轉 MP3」卡片與 modal，對應 video-to-mp3 專案
@@ -354,7 +355,7 @@
     <div class="step" id="ytCookiesWrap">
       <div class="step-label">④ cookies.txt 路徑（FB 必填）</div>
       <div class="cmd-box" style="font-family:sans-serif;font-size:12px;margin-bottom:8px;">用瀏覽器擴充「<strong>Get cookies.txt LOCALLY</strong>」開啟 Facebook 後匯出，存到本機路徑。</div>
-      <input class="path-input" id="ytCookiesPath" placeholder="C:\Users\admin\Desktop\cookies.txt" oninput="updateYtDlpCmd()" />
+      <input class="path-input" id="ytCookiesPath" placeholder="C:\FB抓照片\cookies.txt" oninput="updateYtDlpCmd()" />
     </div>
 
     <div class="step">
@@ -844,6 +845,13 @@ function setYtMode(mode) {
   document.getElementById('btnYtPhoto').classList.toggle('active', mode === 'photo');
   // 照片模式顯示 cookies 欄位，其他模式隱藏
   document.getElementById('ytCookiesWrap').style.display = mode === 'photo' ? 'block' : 'none';
+  // 照片模式自動填入固定路徑
+  if (mode === 'photo') {
+    const cookiesEl = document.getElementById('ytCookiesPath');
+    const saveEl = document.getElementById('ytSavePath');
+    if (!cookiesEl.value) cookiesEl.value = 'C:\\FB抓照片\\cookies.txt';
+    if (!saveEl.value) saveEl.value = 'C:\\FB抓照片';
+  }
   // 調整步驟編號
   const isPhoto = mode === 'photo';
   document.getElementById('ytSaveStepLabel').textContent = isPhoto ? '⑤ 儲存資料夾' : '④ 儲存資料夾';
