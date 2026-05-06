@@ -1,6 +1,7 @@
 <!--
-  版本：v2.8
+  版本：v2.9
   版更記錄：
+  v2.9 (2026-05-07) - 照片模式改用 gallery-dl（yt-dlp 不支援 FB 靜態照片）；自動切換安裝指令與 bat 檔名
   v2.8 (2026-05-07) - yt-dlp.bat 改用 TextEncoder + octet-stream 杜絕瀏覽器補 BOM；加 chcp 65001 支援中文路徑
   v2.7 (2026-05-07) - 修正 yt-dlp.bat：移除 BOM（修正嚜濃echo問題）、% 改成 %%（修正路徑模板被吃掉）
   v2.6 (2026-05-07) - yt-dlp modal 預設開啟即為照片模式，路徑自動填入
@@ -330,12 +331,12 @@
 <div class="modal-overlay" id="ytDlpModal" onclick="closeOnOverlay(event)">
   <div class="modal">
     <button class="modal-close" onclick="closeYtDlp()">✕</button>
-    <div class="modal-title">⬇️ yt-dlp 下載工具</div>
-    <div class="modal-sub">支援 YouTube、FB、Instagram 等網站，下載影片、音訊或照片</div>
+    <div class="modal-title">⬇️ 下載工具</div>
+    <div class="modal-sub">影片/音訊用 yt-dlp・FB 照片用 gallery-dl</div>
 
     <div class="step">
       <div class="step-label">① 一次性安裝</div>
-      <div class="cmd-box" id="ytInstallCmd">winget install yt-dlp.yt-dlp</div>
+      <div class="cmd-box" id="ytInstallCmd">winget install mikf.gallery-dl</div>
       <button class="copy-btn" id="ytInstallCopyBtn" onclick="copyCmd(ytInstallCopyBtn, document.getElementById('ytInstallCmd').textContent)">複製</button>
     </div>
 
@@ -862,14 +863,23 @@ function setYtMode(mode) {
   document.getElementById('ytUrl').placeholder = mode === 'photo'
     ? 'https://www.facebook.com/photo/?fbid=...'
     : 'https://www.youtube.com/watch?v=...';
+  document.getElementById('ytInstallCmd').textContent = mode === 'photo'
+    ? 'winget install mikf.gallery-dl'
+    : 'winget install yt-dlp.yt-dlp';
+  document.getElementById('ytRunCopyBtn').textContent = mode === 'photo'
+    ? '⬇ 下載 gallery-dl.bat'
+    : '⬇ 下載 yt-dlp.bat';
   updateYtDlpCmd();
 }
 
 function _buildYtCmd(url, savePath, cookiesPath) {
+  if (window._ytMode === 'photo') {
+    const cookies = cookiesPath ? `--cookies "${cookiesPath}" ` : '';
+    return `gallery-dl ${cookies}-d "${savePath}" "${url}"`;
+  }
   const out = `${savePath}\\%(title)s.%(ext)s`;
   const cookies = cookiesPath ? `--cookies "${cookiesPath}" ` : '';
   if (window._ytMode === 'audio') return `yt-dlp ${cookies}-x --audio-format mp3 -o "${out}" "${url}"`;
-  if (window._ytMode === 'photo') return `yt-dlp ${cookies}-o "${out}" "${url}"`;
   return `yt-dlp ${cookies}-f bestvideo+bestaudio/best --merge-output-format mp4 -o "${out}" "${url}"`;
 }
 
@@ -887,13 +897,14 @@ function downloadYtDlpBat() {
   const cookiesPath = document.getElementById('ytCookiesPath').value.trim();
   if (window._ytMode === 'photo' && !cookiesPath) { alert('下載 FB 照片需填寫 cookies.txt 路徑'); return; }
   const cmd = _buildYtCmd(url, savePath, cookiesPath);
-  const batCmd = cmd.replace(/%/g, '%%');
+  const isPhoto = window._ytMode === 'photo';
+  const batCmd = isPhoto ? cmd : cmd.replace(/%/g, '%%');
   const content = `@echo off\r\nchcp 65001 >nul\r\n${batCmd}\r\npause`;
   const encoded = new TextEncoder().encode(content);
   const blob = new Blob([encoded], { type: 'application/octet-stream' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = 'yt-dlp.bat';
+  a.download = isPhoto ? 'gallery-dl.bat' : 'yt-dlp.bat';
   a.click();
 }
 </script>
