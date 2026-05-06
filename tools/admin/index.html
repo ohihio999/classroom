@@ -1,6 +1,7 @@
 <!--
-  版本：v2.9
+  版本：v3.0
   版更記錄：
+  v3.0 (2026-05-07) - 照片模式自動解析 FB 網址中的 set=a.XXX，轉換為相簿網址，輸入框下方顯示轉換結果
   v2.9 (2026-05-07) - 照片模式改用 gallery-dl（yt-dlp 不支援 FB 靜態照片）；自動切換安裝指令與 bat 檔名
   v2.8 (2026-05-07) - yt-dlp.bat 改用 TextEncoder + octet-stream 杜絕瀏覽器補 BOM；加 chcp 65001 支援中文路徑
   v2.7 (2026-05-07) - 修正 yt-dlp.bat：移除 BOM（修正嚜濃echo問題）、% 改成 %%（修正路徑模板被吃掉）
@@ -354,6 +355,7 @@
     <div class="step">
       <div class="step-label">③ 貼上網址</div>
       <input class="path-input" id="ytUrl" placeholder="https://www.facebook.com/photo/?fbid=..." oninput="updateYtDlpCmd()" />
+      <div id="ytUrlHint" style="font-size:12px;color:#1976D2;margin-top:6px;display:none;"></div>
     </div>
 
     <div class="step" id="ytCookiesWrap">
@@ -872,6 +874,12 @@ function setYtMode(mode) {
   updateYtDlpCmd();
 }
 
+function _normalizeFbUrl(raw) {
+  const setMatch = raw.match(/[?&]set=(a\.[^&]+)/);
+  if (setMatch) return `https://www.facebook.com/media/set/?set=${setMatch[1]}`;
+  return raw;
+}
+
 function _buildYtCmd(url, savePath, cookiesPath) {
   if (window._ytMode === 'photo') {
     const cookies = cookiesPath ? `--cookies "${cookiesPath}" ` : '';
@@ -884,15 +892,30 @@ function _buildYtCmd(url, savePath, cookiesPath) {
 }
 
 function updateYtDlpCmd() {
-  const url = document.getElementById('ytUrl').value.trim() || '';
+  const raw = document.getElementById('ytUrl').value.trim() || '';
   const savePath = document.getElementById('ytSavePath').value.trim() || 'C:\\Downloads';
   const cookiesPath = document.getElementById('ytCookiesPath').value.trim();
+  const hint = document.getElementById('ytUrlHint');
+  let url = raw;
+  if (window._ytMode === 'photo' && raw) {
+    const normalized = _normalizeFbUrl(raw);
+    if (normalized !== raw) {
+      url = normalized;
+      hint.textContent = '✓ 自動轉換為相簿網址：' + normalized;
+      hint.style.display = 'block';
+    } else {
+      hint.style.display = 'none';
+    }
+  } else {
+    hint.style.display = 'none';
+  }
   document.getElementById('ytCmdPreview').textContent = _buildYtCmd(url, savePath, cookiesPath);
 }
 
 function downloadYtDlpBat() {
-  const url = document.getElementById('ytUrl').value.trim();
-  if (!url) { alert('請先貼上網址'); return; }
+  const rawUrl = document.getElementById('ytUrl').value.trim();
+  if (!rawUrl) { alert('請先貼上網址'); return; }
+  const url = window._ytMode === 'photo' ? _normalizeFbUrl(rawUrl) : rawUrl;
   const savePath = document.getElementById('ytSavePath').value.trim() || 'C:\\Downloads';
   const cookiesPath = document.getElementById('ytCookiesPath').value.trim();
   if (window._ytMode === 'photo' && !cookiesPath) { alert('下載 FB 照片需填寫 cookies.txt 路徑'); return; }
