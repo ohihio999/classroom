@@ -1,6 +1,7 @@
 <!--
-  版本：v2.5
+  版本：v2.6
   版更記錄：
+  v2.6 (2026-05-07) - yt-dlp modal 預設開啟即為照片模式，路徑自動填入
   v2.5 (2026-05-07) - yt-dlp 照片模式預設填入 C:\FB抓照片\cookies.txt 與 C:\FB抓照片，不用每次手動貼
   v2.4 (2026-05-07) - yt-dlp modal 新增「照片」模式與 cookies.txt 欄位，支援 FB 照片下載（需登入 cookies）
   v2.3 (2026-05-07) - 新增「yt-dlp 影片下載」卡片與 modal，支援 YouTube/FB 影片與音訊下載
@@ -830,7 +831,7 @@ window._ytMode = 'video';
 
 function openYtDlp() {
   document.getElementById('ytDlpModal').classList.add('open');
-  setYtMode('video');
+  setYtMode('photo');
   updateYtDlpCmd();
 }
 
