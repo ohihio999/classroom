@@ -1,6 +1,7 @@
 <!--
-  版本：v2.2
+  版本：v2.3
   版更記錄：
+  v2.3 (2026-05-07) - 新增「yt-dlp 影片下載」卡片與 modal，支援 YouTube/FB 影片與音訊下載
   v2.2 (2026-05-05) - 新增「影片檔轉 MP3」卡片與 modal，對應 video-to-mp3 專案
   v2.1 (2026-05-02) - 每張卡片新增編輯與上下排序按鈕，改用靜態 fallback + Firestore 覆寫避免整頁失效
   v2.0 (2026-05-02) - 改為 Firestore 動態渲染，新增編輯/新增工具功能
@@ -320,6 +321,49 @@
   </div>
 </div>
 
+<!-- yt-dlp modal -->
+<div class="modal-overlay" id="ytDlpModal" onclick="closeOnOverlay(event)">
+  <div class="modal">
+    <button class="modal-close" onclick="closeYtDlp()">✕</button>
+    <div class="modal-title">⬇️ yt-dlp 影片下載</div>
+    <div class="modal-sub">支援 YouTube、FB、Instagram 等網站，下載影片或僅萃取音訊</div>
+
+    <div class="step">
+      <div class="step-label">① 一次性安裝</div>
+      <div class="cmd-box" id="ytInstallCmd">winget install yt-dlp.yt-dlp</div>
+      <button class="copy-btn" id="ytInstallCopyBtn" onclick="copyCmd(ytInstallCopyBtn, document.getElementById('ytInstallCmd').textContent)">複製</button>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">② 下載格式</div>
+      <div class="mode-row">
+        <button class="mode-btn active" id="btnYtVideo" onclick="setYtMode('video')">🎬 影片<br><span style="font-size:11px;font-weight:400;color:inherit">MP4・最佳畫質</span></button>
+        <button class="mode-btn" id="btnYtAudio" onclick="setYtMode('audio')">🎵 僅音訊<br><span style="font-size:11px;font-weight:400;color:inherit">MP3・僅萃取聲音</span></button>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-label">③ 貼上影片網址</div>
+      <input class="path-input" id="ytUrl" placeholder="https://www.youtube.com/watch?v=..." oninput="updateYtDlpCmd()" />
+    </div>
+
+    <div class="step">
+      <div class="step-label">④ 儲存資料夾</div>
+      <input class="path-input" id="ytSavePath" placeholder="C:\Downloads" oninput="updateYtDlpCmd()" />
+    </div>
+
+    <div class="step">
+      <div class="step-label">⑤ 下載並雙擊執行</div>
+      <div class="cmd-box" id="ytCmdPreview">yt-dlp -f bestvideo+bestaudio/best --merge-output-format mp4 -o "C:\Downloads\%(title)s.%(ext)s" ""</div>
+      <button class="copy-btn" id="ytRunCopyBtn" onclick="downloadYtDlpBat()">⬇ 下載 yt-dlp.bat</button>
+    </div>
+
+    <div style="font-size:12px;color:#aaa;margin-top:8px;">也可複製指令直接在終端機執行</div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script type="module">
@@ -344,7 +388,8 @@ const DEFAULT_TOOLS = [
   { id: 'transcribe', title: '音檔轉逐字稿', description: 'Groq Whisper，自動壓縮大檔，1 小時約 2 分鐘', icon: '🎙️', actionType: 'modal', modalFn: 'openTranscribe', order: 1 },
   { id: 'video-to-mp3', title: '影片檔轉 MP3', description: '批次掃描資料夾，把影片轉成同資料夾 MP3', icon: '🎬', actionType: 'modal', modalFn: 'openVideoToMp3', order: 2 },
   { id: 'transcript-pack', title: 'transcript-training-pack', description: '單一逐字稿 → 培訓報告＋摘要＋心智圖', icon: '📝', actionType: 'modal', modalFn: 'openTranscriptPack', order: 3 },
-  { id: 'course-filing', title: 'course-filing', description: '課程歸檔 Obsidian，含知識點拆解＋日記更新', icon: '📚', actionType: 'modal', modalFn: 'openCourseFiling', order: 4 }
+  { id: 'course-filing', title: 'course-filing', description: '課程歸檔 Obsidian，含知識點拆解＋日記更新', icon: '📚', actionType: 'modal', modalFn: 'openCourseFiling', order: 4 },
+  { id: 'yt-dlp', title: 'yt-dlp 影片下載', description: '貼網址下載 YouTube、FB 等影片或音訊', icon: '⬇️', actionType: 'modal', modalFn: 'openYtDlp', order: 5 }
 ];
 
 let toolsState = DEFAULT_TOOLS.map(tool => ({ ...tool }));
@@ -658,6 +703,7 @@ function closeOnOverlay(e) {
   if (e.target === document.getElementById('videoToMp3Modal')) closeVideoToMp3();
   if (e.target === document.getElementById('transcriptPackModal')) closeTranscriptPack();
   if (e.target === document.getElementById('courseFilingModal')) closeCourseFiling();
+  if (e.target === document.getElementById('ytDlpModal')) closeYtDlp();
 }
 
 function updateCmd() {
@@ -768,6 +814,52 @@ function openCourseFiling() {
 }
 function closeCourseFiling() {
   document.getElementById('courseFilingModal').classList.remove('open');
+}
+
+// yt-dlp modal
+window._ytMode = 'video';
+
+function openYtDlp() {
+  document.getElementById('ytDlpModal').classList.add('open');
+  setYtMode('video');
+  updateYtDlpCmd();
+}
+
+function closeYtDlp() {
+  document.getElementById('ytDlpModal').classList.remove('open');
+}
+
+function setYtMode(mode) {
+  window._ytMode = mode;
+  document.getElementById('btnYtVideo').classList.toggle('active', mode === 'video');
+  document.getElementById('btnYtAudio').classList.toggle('active', mode === 'audio');
+  updateYtDlpCmd();
+}
+
+function updateYtDlpCmd() {
+  const url = document.getElementById('ytUrl').value.trim() || '';
+  const savePath = document.getElementById('ytSavePath').value.trim() || 'C:\\Downloads';
+  const out = `${savePath}\\%(title)s.%(ext)s`;
+  const cmd = window._ytMode === 'audio'
+    ? `yt-dlp -x --audio-format mp3 -o "${out}" "${url}"`
+    : `yt-dlp -f bestvideo+bestaudio/best --merge-output-format mp4 -o "${out}" "${url}"`;
+  document.getElementById('ytCmdPreview').textContent = cmd;
+}
+
+function downloadYtDlpBat() {
+  const url = document.getElementById('ytUrl').value.trim();
+  if (!url) { alert('請先貼上影片網址'); return; }
+  const savePath = document.getElementById('ytSavePath').value.trim() || 'C:\\Downloads';
+  const out = `${savePath}\\%(title)s.%(ext)s`;
+  const cmd = window._ytMode === 'audio'
+    ? `yt-dlp -x --audio-format mp3 -o "${out}" "${url}"`
+    : `yt-dlp -f bestvideo+bestaudio/best --merge-output-format mp4 -o "${out}" "${url}"`;
+  const content = '﻿' + `@echo off\r\n${cmd}\r\npause`;
+  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'yt-dlp.bat';
+  a.click();
 }
 </script>
 </body>
