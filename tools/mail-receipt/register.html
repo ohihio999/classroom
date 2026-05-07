@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>登記掛號信</title>
+  <!-- v1.3 2026-05-07：收件人欄 focus 也觸發展開選單（修正清空後不顯示的問題） -->
   <!-- v1.2 2026-05-07：移除寄件人地址（表單、OCR prompt、儲存） -->
   <!-- v1.1 2026-05-07：收件人欄位清空時自動展開全部人員選單 -->
   <style>
@@ -267,22 +268,27 @@ function handleRecipientOCR(ocrText) {
   }
 }
 
-// 手動改收件人：清空時展開全部，有內容時收起
-document.getElementById('recipient').addEventListener('input', function() {
-  if (!this.value.trim()) {
-    const chips = document.getElementById('recipientChips');
-    chips.innerHTML = '';
-    RECIPIENTS.forEach(p => {
-      const btn = document.createElement('button');
-      btn.className = 'recipient-chip';
-      btn.textContent = formatPerson(p);
-      btn.addEventListener('click', () => applyRecipient(p));
-      chips.appendChild(btn);
-    });
-    document.getElementById('recipientPicker').style.display = 'block';
-  } else {
-    document.getElementById('recipientPicker').style.display = 'none';
-  }
+// 收件人欄位空白時展開全部選單
+function showAllRecipientPicker() {
+  const chips = document.getElementById('recipientChips');
+  chips.innerHTML = '';
+  RECIPIENTS.forEach(p => {
+    const btn = document.createElement('button');
+    btn.className = 'recipient-chip';
+    btn.textContent = formatPerson(p);
+    btn.addEventListener('click', () => applyRecipient(p));
+    chips.appendChild(btn);
+  });
+  document.getElementById('recipientPicker').style.display = 'block';
+}
+
+const recipientInput = document.getElementById('recipient');
+recipientInput.addEventListener('input', function() {
+  if (!this.value.trim()) showAllRecipientPicker();
+  else document.getElementById('recipientPicker').style.display = 'none';
+});
+recipientInput.addEventListener('focus', function() {
+  if (!this.value.trim()) showAllRecipientPicker();
 });
 
 document.getElementById('date').value = new Date().toISOString().split('T')[0];
