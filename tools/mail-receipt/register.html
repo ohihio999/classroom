@@ -4,6 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>登記掛號信</title>
+  <!-- v1.2 2026-05-07：移除寄件人地址（表單、OCR prompt、儲存） -->
+  <!-- v1.1 2026-05-07：收件人欄位清空時自動展開全部人員選單 -->
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; }
@@ -123,10 +125,6 @@
       <label>寄件人</label>
       <input type="text" id="sender" placeholder="姓名或單位">
       <div id="senderLookupStatus" style="font-size:12px;color:#388E3C;margin-top:4px;min-height:16px;"></div>
-    </div>
-    <div class="form-group">
-      <label>寄件人地址</label>
-      <input type="text" id="senderAddress" placeholder="自動帶入或手動填寫">
     </div>
     <div class="form-group">
       <label>寄件人電話</label>
@@ -269,9 +267,22 @@ function handleRecipientOCR(ocrText) {
   }
 }
 
-// 手動改收件人時隱藏選單
-document.getElementById('recipient').addEventListener('input', () => {
-  document.getElementById('recipientPicker').style.display = 'none';
+// 手動改收件人：清空時展開全部，有內容時收起
+document.getElementById('recipient').addEventListener('input', function() {
+  if (!this.value.trim()) {
+    const chips = document.getElementById('recipientChips');
+    chips.innerHTML = '';
+    RECIPIENTS.forEach(p => {
+      const btn = document.createElement('button');
+      btn.className = 'recipient-chip';
+      btn.textContent = formatPerson(p);
+      btn.addEventListener('click', () => applyRecipient(p));
+      chips.appendChild(btn);
+    });
+    document.getElementById('recipientPicker').style.display = 'block';
+  } else {
+    document.getElementById('recipientPicker').style.display = 'none';
+  }
 });
 
 document.getElementById('date').value = new Date().toISOString().split('T')[0];
@@ -309,8 +320,7 @@ async function lookupSender(name) {
     const snap = await getDocs(q);
     if (!snap.empty) {
       const s = snap.docs[0].data();
-      if (s.address) document.getElementById('senderAddress').value = s.address;
-      if (s.phone)   document.getElementById('senderPhone').value   = s.phone;
+      if (s.phone) document.getElementById('senderPhone').value = s.phone;
       document.getElementById('senderLookupStatus').textContent = '✅ 已從通訊錄帶入';
     } else {
       document.getElementById('senderLookupStatus').textContent = '🆕 新寄件人，儲存後自動記錄';
@@ -333,8 +343,8 @@ async function upsertSender(name, address, phone) {
 }
 
 // ── OCR ────────────────────────────────────────────
-const FRONT_PROMPT = '這是一封掛號信封的正面。請辨識以下欄位，以純 JSON 回傳（不加 markdown）：{"trackingNumber":"掛號號碼，有三種格式：①國際掛號=2英文+9數字+2英文共13碼（如RA123456789TW、EN513181509JP）②普通掛號條碼=純數字20碼（如91889822000210104007）③順豐快遞=SF開頭+12位數字共14碼（如SF1565030948367）。辨識完整不可遺漏，去除空格後回傳","recipient":"收件人姓名或單位","sender":"寄件人姓名或單位","senderAddress":"寄件人地址（完整含縣市，找不到填空）","senderPhone":"寄件人電話（找不到填空）"}。找不到的填空字串。';
-const BACK_PROMPT  = '這是一封掛號信封的背面。請辨識以下欄位，以純 JSON 回傳（不加 markdown）：{"trackingNumber":"掛號號碼，有三種格式：①國際掛號=2英文+9數字+2英文共13碼（如RA123456789TW、EN513181509JP）②普通掛號條碼=純數字20碼（如91889822000210104007）③順豐快遞=SF開頭+12位數字共14碼（如SF1565030948367）。若有條碼請辨識條碼，辨識完整不可遺漏，去除空格後回傳","recipient":"收件人姓名或單位（若有）","sender":"寄件人姓名或單位（若有）","senderAddress":"寄件人地址（完整含縣市，找不到填空）","senderPhone":"寄件人電話（找不到填空）"}。找不到的填空字串。';
+const FRONT_PROMPT = '這是一封掛號信封的正面。請辨識以下欄位，以純 JSON 回傳（不加 markdown）：{"trackingNumber":"掛號號碼，有三種格式：①國際掛號=2英文+9數字+2英文共13碼（如RA123456789TW、EN513181509JP）②普通掛號條碼=純數字20碼（如91889822000210104007）③順豐快遞=SF開頭+12位數字共14碼（如SF1565030948367）。辨識完整不可遺漏，去除空格後回傳","recipient":"收件人姓名或單位","sender":"寄件人姓名或單位","senderPhone":"寄件人電話（找不到填空）"}。找不到的填空字串。';
+const BACK_PROMPT  = '這是一封掛號信封的背面。請辨識以下欄位，以純 JSON 回傳（不加 markdown）：{"trackingNumber":"掛號號碼，有三種格式：①國際掛號=2英文+9數字+2英文共13碼（如RA123456789TW、EN513181509JP）②普通掛號條碼=純數字20碼（如91889822000210104007）③順豐快遞=SF開頭+12位數字共14碼（如SF1565030948367）。若有條碼請辨識條碼，辨識完整不可遺漏，去除空格後回傳","recipient":"收件人姓名或單位（若有）","sender":"寄件人姓名或單位（若有）","senderPhone":"寄件人電話（找不到填空）"}。找不到的填空字串。';
 
 window.runOCR = async function() {
   const btn = document.getElementById('ocrBtn');
@@ -358,7 +368,6 @@ window.runOCR = async function() {
       trackingNumber: pickBetter(frontResult.trackingNumber, backResult.trackingNumber),
       recipient:      pickBetter(frontResult.recipient,      backResult.recipient),
       sender:         pickBetter(frontResult.sender,         backResult.sender),
-      senderAddress:  pickBetter(frontResult.senderAddress,  backResult.senderAddress),
       senderPhone:    pickBetter(frontResult.senderPhone,    backResult.senderPhone),
     };
 
@@ -366,8 +375,7 @@ window.runOCR = async function() {
     if (merged.recipient) handleRecipientOCR(merged.recipient);
     if (merged.sender) {
       document.getElementById('sender').value = merged.sender;
-      document.getElementById('senderAddress').value = merged.senderAddress || '';
-      document.getElementById('senderPhone').value   = merged.senderPhone   || '';
+      document.getElementById('senderPhone').value = merged.senderPhone || '';
       await lookupSender(merged.sender);
     }
 
@@ -410,13 +418,11 @@ async function saveData() {
   const trackingNumber = document.getElementById('trackingNumber').value.trim();
   const recipient      = document.getElementById('recipient').value.trim();
   const sender         = document.getElementById('sender').value.trim();
-  const senderAddress  = document.getElementById('senderAddress').value.trim();
   const senderPhone    = document.getElementById('senderPhone').value.trim();
   await addDoc(collection(db, 'mail_receipts'), {
     trackingNumber,
     recipient,
     sender,
-    senderAddress,
     senderPhone,
     date: document.getElementById('date').value,
     notes: document.getElementById('notes').value.trim(),
@@ -427,7 +433,7 @@ async function saveData() {
     envelopeImage: images.front ? 'data:image/jpeg;base64,' + images.front : null,
     envelopeBackImage: images.back ? 'data:image/jpeg;base64,' + images.back : null
   });
-  await upsertSender(sender, senderAddress, senderPhone);
+  await upsertSender(sender, '', senderPhone);
   return true;
 }
 
@@ -450,7 +456,7 @@ window.saveAndContinue = async function() {
     ['frontPreview','backPreview'].forEach(id => document.getElementById(id).style.display = 'none');
     ['frontPlaceholder','backPlaceholder'].forEach(id => document.getElementById(id).style.display = 'block');
     ['frontCamera','frontGallery','backCamera','backGallery'].forEach(id => document.getElementById(id).value = '');
-    ['trackingNumber','recipient','sender','senderAddress','senderPhone','notes'].forEach(id => document.getElementById(id).value = '');
+    ['trackingNumber','recipient','sender','senderPhone','notes'].forEach(id => document.getElementById(id).value = '');
     document.getElementById('senderLookupStatus').textContent = '';
     document.getElementById('date').value = new Date().toISOString().split('T')[0];
     document.getElementById('ocrBtn').disabled = true;
