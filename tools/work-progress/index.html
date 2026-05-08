@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>工作進度表</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; padding-bottom: 80px; }
+    :root { --page-max-width: 1180px; }
+
+    .header { background: #1976D2; color: white; padding: 16px 20px; position: sticky; top: 0; z-index: 10; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+    .header-inner { width: 100%; max-width: var(--page-max-width); margin: 0 auto; display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+    .header h1 { font-size: 18px; font-weight: 600; }
+    .header-actions { display: flex; gap: 8px; align-items: center; }
+    .hbtn { background: none; border: none; color: white; font-size: 13px; cursor: pointer; padding: 5px 9px; border-radius: 6px; opacity: 0.9; }
+    .hbtn:hover { background: rgba(255,255,255,0.2); opacity: 1; }
+
+    .page-section { width: 100%; max-width: calc(var(--page-max-width) + 32px); margin: 0 auto; padding-left: 16px; padding-right: 16px; }
+    .stats { display: flex; gap: 10px; padding-top: 12px; padding-bottom: 4px; }
+    .stat { flex: 1; background: white; border-radius: 10px; padding: 12px; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+    .stat-num { font-size: 24px; font-weight: 700; }
+    .stat-label { font-size: 11px; color: #888; margin-top: 2px; }
+    .stat-pending .stat-num { color: #E65100; }
+    .stat-active .stat-num { color: #1976D2; }
+    .stat-total .stat-num { color: #555; }
+
+    .tabs { background: white; display: flex; border-bottom: 2px solid #e0e0e0; overflow-x: auto; }
+    .tab { flex-shrink: 0; padding: 13px 14px; text-align: center; font-size: 13px; cursor: pointer; border-bottom: 3px solid transparent; color: #888; transition: all 0.2s; }
+    .tab.active { color: #1976D2; border-bottom-color: #1976D2; font-weight: 600; }
+
+    .chip-bar { display: flex; gap: 8px; padding-top: 10px; padding-bottom: 10px; overflow-x: auto; background: white; }
+    .chip { flex-shrink: 0; padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 500; cursor: pointer; border: 1px solid #ddd; color: #666; background: white; transition: all 0.15s; }
+    .chip.active { background: #1976D2; color: white; border-color: #1976D2; }
+
+    .list { padding-top: 10px; }
+    .card { background: white; border-radius: 10px; padding: 12px 16px; margin-bottom: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); display: flex; align-items: center; gap: 12px; cursor: pointer; transition: box-shadow 0.15s, transform 0.15s; }
+    .card:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.1); transform: translateY(-1px); }
+    .card-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; overflow: hidden; }
+    .card-title { font-size: 15px; font-weight: 600; color: #222; white-space: nowrap; flex-shrink: 0; }
+    .card-meta { font-size: 12px; color: #888; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .card-meta .due-text { font-weight: 500; }
+    .cat-badge { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 11px; background: #EDE7F6; color: #4527A0; font-weight: 500; flex-shrink: 0; }
+    .card-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+    .badge { padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+    .badge-pending { background: #FFF3E0; color: #E65100; }
+    .badge-inprogress { background: #E3F2FD; color: #1565C0; }
+    .badge-review { background: #F3E5F5; color: #6A1B9A; }
+    .badge-done { background: #E8F5E9; color: #2E7D32; }
+    .archive-note { font-size: 11px; color: #8e24aa; background: #f3e5f5; border-radius: 999px; padding: 3px 8px; }
+    .btn-icon { background: none; border: none; font-size: 17px; cursor: pointer; color: #ccc; padding: 2px; line-height: 1; }
+    .btn-icon:hover { color: #1976D2; }
+    .btn-icon.del:hover { color: #e53935; }
+
+    .cat-section { margin-bottom: 16px; }
+    .cat-header { font-size: 12px; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em; padding: 6px 2px 4px; border-bottom: 1px solid #e5e7eb; margin-bottom: 6px; }
+    .empty { text-align: center; padding: 60px 20px; color: #bbb; }
+    .empty-icon { font-size: 52px; margin-bottom: 12px; }
+    .loading { text-align: center; padding: 50px; color: #bbb; font-size: 15px; }
+
+    .fab { position: fixed; bottom: 28px; right: 24px; width: 60px; height: 60px; border-radius: 50%; background: #1976D2; color: white; border: none; font-size: 32px; cursor: pointer; box-shadow: 0 4px 16px rgba(25,118,210,0.45); display: flex; align-items: center; justify-content: center; z-index: 10; }
+
+    .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 100; align-items: center; justify-content: center; padding: 16px; }
+    .modal-overlay.show { display: flex; }
+    .modal { background: white; border-radius: 14px; padding: 22px; width: 100%; max-width: 420px; max-height: 85vh; overflow-y: auto; }
+    .modal h2 { font-size: 17px; margin-bottom: 16px; color: #333; }
+    .modal label { font-size: 13px; color: #666; display: block; margin-bottom: 5px; margin-top: 12px; }
+    .modal label:first-of-type { margin-top: 0; }
+    .modal input, .modal select, .modal textarea {
+      width: 100%; padding: 11px 12px; border: 1px solid #ddd; border-radius: 8px;
+      font-size: 14px; font-family: inherit; outline: none;
+    }
+    .modal input:focus, .modal select:focus, .modal textarea:focus { border-color: #1976D2; }
+    .modal textarea { resize: vertical; min-height: 60px; }
+    .modal-classify-row { display: flex; gap: 8px; align-items: stretch; margin-top: 5px; }
+    .modal-classify-row select { flex: 1; }
+    .modal-classify-hint { font-size: 12px; color: #888; margin-top: 4px; min-height: 16px; }
+    .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 18px; }
+    .btn { padding: 10px 18px; border-radius: 8px; border: none; cursor: pointer; font-size: 14px; font-weight: 500; }
+    .btn-primary { background: #1976D2; color: white; }
+    .btn-primary:disabled { background: #bbb; cursor: not-allowed; }
+    .btn-secondary { background: #eee; color: #333; }
+    .btn-classify-sm { padding: 10px 12px; border-radius: 8px; border: 1px solid #1976D2; background: white; color: #1976D2; font-size: 13px; cursor: pointer; flex-shrink: 0; }
+    .btn-classify-sm:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .member-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .member-name { width: 100px; font-size: 13px; color: #444; flex-shrink: 0; }
+    .member-email-input { flex: 1; padding: 8px 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; outline: none; }
+    .member-email-input:focus { border-color: #1976D2; }
+
+    @media (max-width: 767px) {
+      .page-section { padding-left: 0; padding-right: 0; max-width: 100%; }
+      .stats { padding-left: 16px; padding-right: 16px; }
+      .chip-bar { padding-left: 16px; padding-right: 16px; }
+      .list { padding-left: 16px; padding-right: 16px; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-inner">
+    <h1>📋 工作進度表</h1>
+    <div class="header-actions">
+      <button class="hbtn" id="btnMemberEmail" style="display:none" onclick="openMemberModal()">⚙️ 成員</button>
+      <button class="hbtn" onclick="location.href='archive.html'">🗃️ 封存區</button>
+      <button class="hbtn" onclick="doSignOut()">登出</button>
+      <button class="hbtn" onclick="location.href='/'">🏠</button>
+    </div>
+  </div>
+</div>
+
+<div class="page-section">
+  <div class="stats" id="stats"></div>
+</div>
+
+<div class="page-section">
+  <div class="tabs">
+    <div class="tab active" onclick="filterTab('all',this)">全部</div>
+    <div class="tab" onclick="filterTab('pending',this)">待處理</div>
+    <div class="tab" onclick="filterTab('in_progress',this)">進行中</div>
+    <div class="tab" onclick="filterTab('review',this)">待確認</div>
+    <div class="tab" onclick="filterTab('done',this)">完成</div>
+  </div>
+</div>
+
+<div class="page-section">
+  <div class="chip-bar">
+    <div class="chip active" onclick="filterCat('all',this)">全部</div>
+    <div class="chip" onclick="filterCat('技術/資訊',this)">技術/資訊</div>
+    <div class="chip" onclick="filterCat('行政/庶務',this)">行政/庶務</div>
+    <div class="chip" onclick="filterCat('業務/對外',this)">業務/對外</div>
+    <div class="chip" onclick="filterCat('其他',this)">其他</div>
+  </div>
+</div>
+
+<div class="page-section">
+  <div class="list" id="list"><div class="loading">載入中…</div></div>
+</div>
+
+<button class="fab" onclick="location.href='register.html'">＋</button>
+
+<div class="modal-overlay" id="editModal">
+  <div class="modal">
+    <h2>✏️ 編輯任務</h2>
+    <label>任務標題</label>
+    <input type="text" id="editTitle">
+    <label>負責人</label>
+    <select id="editAssignee">
+      <option value="Kanny">林玉鈴 (Kanny)</option>
+      <option value="Charles">黃志堅 (Charles)</option>
+      <option value="Cherrie">林毓婷 (Cherrie)</option>
+      <option value="Jacky">黃義正 (Jacky)</option>
+      <option value="Yibi">吳翊平 (Yibi)</option>
+      <option value="Norika">曾書彥 (Norika)</option>
+      <option value="Lisa">王儷蓉 (Lisa)</option>
+      <option value="Seal">許世佑 (Seal)</option>
+      <option value="Steven">陳佳興 (Steven)</option>
+      <option value="Kelly">陳姵存 (Kelly)</option>
+      <option value="Yedda">林宥燁 (Yedda)</option>
+      <option value="Eason">林逸昇 (Eason)</option>
+      <option value="Russell">蘇彥霖 (Russell)</option>
+      <option value="Hina">鍾文綺 (Hina)</option>
+      <option value="Seki">石博仁 (Seki)</option>
+      <option value="Daisy">潘怡穎 (Daisy)</option>
+    </select>
+    <label>截止日期</label>
+    <input type="date" id="editDueDate">
+    <label>狀態</label>
+    <select id="editStatus">
+      <option value="pending">待處理</option>
+      <option value="in_progress">進行中</option>
+      <option value="review">待確認</option>
+      <option value="done">完成</option>
+    </select>
+    <label>分類</label>
+    <div class="modal-classify-row">
+      <select id="editCategory">
+        <option value="">未分類</option>
+        <option value="技術/資訊">技術/資訊</option>
+        <option value="行政/庶務">行政/庶務</option>
+        <option value="業務/對外">業務/對外</option>
+        <option value="其他">其他</option>
+      </select>
+      <button class="btn-classify-sm" id="editClassifyBtn" onclick="autoClassifyEdit()">✨</button>
+    </div>
+    <div class="modal-classify-hint" id="editClassifyHint"></div>
+    <label>說明/備註</label>
+    <textarea id="editDescription"></textarea>
+    <label>可見性</label>
+    <select id="editVisibility">
+      <option value="public">公開</option>
+      <option value="private">私人</option>
+    </select>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeEdit()">取消</button>
+      <button class="btn btn-primary" id="editSaveBtn" onclick="saveEdit()">儲存</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="memberModal">
+  <div class="modal">
+    <h2>⚙️ 成員 Email 設定</h2>
+    <p style="font-size:12px;color:#888;margin-bottom:14px">設定後，提醒信將寄送至對應 Email。</p>
+    <div id="memberList"><p style="color:#bbb;font-size:13px">載入中…</p></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeMemberModal()">取消</button>
+      <button class="btn btn-primary" id="memberSaveBtn" onclick="saveMemberEmails()">儲存</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js';
+import { getAuth, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js';
+import {
+  getFirestore, collection, getDocs, query, where, orderBy,
+  doc, deleteDoc, updateDoc, writeBatch, serverTimestamp
+} from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js';
+import { getFunctions, httpsCallable } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-functions.js';
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBf0sHTsndFCksNlh46G_2mw9rk5zmPdc0",
+  authDomain: "my-teaching-tools-2b36c.firebaseapp.com",
+  projectId: "my-teaching-tools-2b36c",
+  storageBucket: "my-teaching-tools-2b36c.firebasestorage.app",
+  messagingSenderId: "82693897353",
+  appId: "1:82693897353:web:f667501aad05c536c09a58"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const functions = getFunctions(app, 'asia-east1');
+const classifyTaskFn = httpsCallable(functions, 'classifyTask');
+
+const ASSIGNEE_MAP = {
+  Kanny:'林玉鈴 (Kanny)', Charles:'黃志堅 (Charles)', Cherrie:'林毓婷 (Cherrie)',
+  Jacky:'黃義正 (Jacky)', Yibi:'吳翊平 (Yibi)', Norika:'曾書彥 (Norika)',
+  Lisa:'王儷蓉 (Lisa)', Seal:'許世佑 (Seal)', Steven:'陳佳興 (Steven)',
+  Kelly:'陳姵存 (Kelly)', Yedda:'林宥燁 (Yedda)', Eason:'林逸昇 (Eason)',
+  Russell:'蘇彥霖 (Russell)', Hina:'鍾文綺 (Hina)', Seki:'石博仁 (Seki)',
+  Daisy:'潘怡穎 (Daisy)'
+};
+
+const MEMBERS = [
+  { key:'Kanny',  zh:'林玉鈴' }, { key:'Charles', zh:'黃志堅' }, { key:'Cherrie', zh:'林毓婷' },
+  { key:'Jacky',  zh:'黃義正' }, { key:'Yibi',    zh:'吳翊平' }, { key:'Norika',  zh:'曾書彥' },
+  { key:'Lisa',   zh:'王儷蓉' }, { key:'Seal',    zh:'許世佑' }, { key:'Steven',  zh:'陳佳興' },
+  { key:'Kelly',  zh:'陳姵存' }, { key:'Yedda',   zh:'林宥燁' }, { key:'Eason',   zh:'林逸昇' },
+  { key:'Russell',zh:'蘇彥霖' }, { key:'Hina',    zh:'鍾文綺' }, { key:'Seki',    zh:'石博仁' },
+  { key:'Daisy',  zh:'潘怡穎' }
+];
+
+const STATUS_LABEL = { pending:'待處理', in_progress:'進行中', review:'待確認', done:'完成' };
+const STATUS_BADGE = { pending:'badge-pending', in_progress:'badge-inprogress', review:'badge-review', done:'badge-done' };
+
+let allTasks = [], currentUser = null, isAdmin = false;
+let tabFilter = 'all', catFilter = 'all', editingId = null;
+let currentMemberKeys = [];
+
+onAuthStateChanged(auth, async (user) => {
+  if (!user) { location.href = 'login.html'; return; }
+  currentUser = user;
+  isAdmin = user.email === 'ohihio@gmail.com';
+  if (isAdmin) document.getElementById('btnMemberEmail').style.display = '';
+  await loadTasks();
+});
+
+async function loadCurrentMemberKeys() {
+  if (!currentUser?.email || isAdmin) return [];
+  const snap = await getDocs(query(
+    collection(db, 'work_progress_members'),
+    where('email', '==', currentUser.email)
+  ));
+  return snap.docs.map((d) => d.id);
+}
+
+async function loadVisibleTasks() {
+  if (isAdmin) {
+    const snap = await getDocs(query(collection(db, 'work_progress'), orderBy('dueDate', 'asc')));
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  }
+
+  currentMemberKeys = await loadCurrentMemberKeys();
+  const queries = [
+    getDocs(query(collection(db, 'work_progress'), where('visibility', '==', 'public'))),
+    getDocs(query(collection(db, 'work_progress'), where('createdBy', '==', currentUser.uid)))
+  ];
+
+  if (currentMemberKeys.length === 1) {
+    queries.push(getDocs(query(collection(db, 'work_progress'), where('assigneeKey', '==', currentMemberKeys[0]))));
+  } else if (currentMemberKeys.length > 1) {
+    queries.push(getDocs(query(collection(db, 'work_progress'), where('assigneeKey', 'in', currentMemberKeys.slice(0, 10)))));
+  }
+
+  const snaps = await Promise.all(queries);
+  const seen = new Set();
+  const tasks = [];
+  snaps.forEach((snap) => {
+    snap.docs.forEach((d) => {
+      if (!seen.has(d.id)) {
+        seen.add(d.id);
+        tasks.push({ id: d.id, ...d.data() });
+      }
+    });
+  });
+  return tasks.sort((a, b) => (a.dueDate || '9999').localeCompare(b.dueDate || '9999'));
+}
+
+async function loadTasks() {
+  try {
+    allTasks = (await loadVisibleTasks()).filter((task) => task.archived !== true);
+    renderStats();
+    renderList();
+  } catch (e) {
+    document.getElementById('list').innerHTML = `<div class="empty"><div class="empty-icon">⚠️</div><p>${e.message}</p></div>`;
+  }
+}
+
+function renderStats() {
+  const pending = allTasks.filter((t) => t.status === 'pending').length;
+  const active = allTasks.filter((t) => t.status === 'in_progress' || t.status === 'review').length;
+  document.getElementById('stats').innerHTML = `
+    <div class="stat stat-pending"><div class="stat-num">${pending}</div><div class="stat-label">待處理</div></div>
+    <div class="stat stat-active"><div class="stat-num">${active}</div><div class="stat-label">進行中</div></div>
+    <div class="stat stat-total"><div class="stat-num">${allTasks.length}</div><div class="stat-label">全部</div></div>`;
+}
+
+function renderList() {
+  const list = document.getElementById('list');
+  let tasks = allTasks;
+  if (tabFilter !== 'all') tasks = tasks.filter((t) => t.status === tabFilter);
+  if (catFilter !== 'all') tasks = tasks.filter((t) => t.category === catFilter);
+
+  if (!tasks.length) {
+    list.innerHTML = `<div class="empty"><div class="empty-icon">📋</div><p>暫無符合任務</p></div>`;
+    return;
+  }
+
+  function renderCard(t, idx) {
+    const canEdit = t.createdBy === currentUser.uid || isAdmin;
+    const dColor = dueDateColor(t.dueDate);
+    const dLabel = dueDateLabel(t.dueDate);
+    const editBtns = canEdit
+      ? `<button class="btn-icon" onclick="event.stopPropagation();editRecord('${t.id}')">✏️</button>
+         <button class="btn-icon del" onclick="event.stopPropagation();deleteRecord('${t.id}','${escAttr(t.title || '')}')">🗑️</button>`
+      : '';
+    return `<div class="card" onclick="location.href='task.html?id=${encodeURIComponent(t.id)}'">
+      <div class="card-main">
+        <span class="card-title">${idx + 1}. ${escHtml(t.title || '—')}</span>
+      </div>
+      <div class="card-right">
+        <span class="card-meta">👤 ${escHtml(t.assignee || '—')} · <span class="due-text" style="color:${dColor}">📅 ${escHtml(dLabel)}</span></span>
+        ${editBtns}
+        <span class="badge ${STATUS_BADGE[t.status] || 'badge-pending'}">${STATUS_LABEL[t.status] || t.status}</span>
+      </div>
+    </div>`;
+  }
+
+  if (catFilter !== 'all') {
+    list.innerHTML = tasks.map((t, idx) => renderCard(t, idx)).join('');
+    return;
+  }
+
+  const CAT_ORDER = ['技術/資訊', '行政/庶務', '業務/對外', '其他'];
+  const grouped = {};
+  tasks.forEach((t) => {
+    const key = t.category || '其他';
+    if (!grouped[key]) grouped[key] = [];
+    grouped[key].push(t);
+  });
+
+  const keys = [...CAT_ORDER.filter((k) => grouped[k]), ...Object.keys(grouped).filter((k) => !CAT_ORDER.includes(k))];
+  list.innerHTML = keys.map((cat) =>
+    `<div class="cat-section">
+      <div class="cat-header">${escHtml(cat)}</div>
+      ${grouped[cat].map((t, idx) => renderCard(t, idx)).join('')}
+    </div>`
+  ).join('');
+}
+
+function dueDateColor(d) {
+  if (!d) return '#888';
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const due = new Date(`${d}T00:00:00`);
+  const diff = Math.ceil((due - today) / 864e5);
+  return diff < 0 ? '#d32f2f' : diff <= 3 ? '#F57F17' : '#2E7D32';
+}
+
+function dueDateLabel(d) {
+  if (!d) return '未設截止日期';
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const due = new Date(`${d}T00:00:00`);
+  const diff = Math.ceil((due - today) / 864e5);
+  if (diff < 0) return `${d}（已逾期 ${-diff} 天）`;
+  if (diff === 0) return `${d}（今天截止）`;
+  if (diff <= 3) return `${d}（${diff} 天後）`;
+  return d;
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function escAttr(s) {
+  return String(s).replace(/'/g, "\\'").replace(/"/g, '&quot;');
+}
+
+window.filterTab = function(f, el) {
+  tabFilter = f;
+  document.querySelectorAll('.tab').forEach((t) => t.classList.remove('active'));
+  el.classList.add('active');
+  renderList();
+};
+
+window.filterCat = function(c, el) {
+  catFilter = c;
+  document.querySelectorAll('.chip').forEach((t) => t.classList.remove('active'));
+  el.classList.add('active');
+  renderList();
+};
+
+window.deleteRecord = async function(id, label) {
+  if (!confirm(`確定刪除「${label}」？此動作無法復原。`)) return;
+  try {
+    await deleteDoc(doc(db, 'work_progress', id));
+    allTasks = allTasks.filter((t) => t.id !== id);
+    renderStats();
+    renderList();
+  } catch (e) {
+    alert(`刪除失敗：${e.message}`);
+  }
+};
+
+window.editRecord = function(id) {
+  const t = allTasks.find((x) => x.id === id);
+  if (!t) return;
+  editingId = id;
+  document.getElementById('editTitle').value = t.title || '';
+  document.getElementById('editAssignee').value = t.assigneeKey || '';
+  document.getElementById('editDueDate').value = t.dueDate || '';
+  document.getElementById('editStatus').value = t.status || 'pending';
+  document.getElementById('editCategory').value = t.category || '';
+  document.getElementById('editDescription').value = t.description || '';
+  document.getElementById('editVisibility').value = t.visibility || 'public';
+  document.getElementById('editClassifyHint').textContent = '';
+  document.getElementById('editModal').classList.add('show');
+};
+
+window.closeEdit = function() {
+  document.getElementById('editModal').classList.remove('show');
+  editingId = null;
+};
+
+window.saveEdit = async function() {
+  if (!editingId) return;
+  const btn = document.getElementById('editSaveBtn');
+  btn.disabled = true;
+  btn.textContent = '儲存中…';
+  const assigneeKey = document.getElementById('editAssignee').value;
+  try {
+    const data = {
+      title: document.getElementById('editTitle').value.trim(),
+      assignee: ASSIGNEE_MAP[assigneeKey] || assigneeKey,
+      assigneeKey,
+      dueDate: document.getElementById('editDueDate').value,
+      status: document.getElementById('editStatus').value,
+      category: document.getElementById('editCategory').value || '其他',
+      description: document.getElementById('editDescription').value.trim(),
+      visibility: document.getElementById('editVisibility').value,
+      updatedAt: serverTimestamp()
+    };
+    await updateDoc(doc(db, 'work_progress', editingId), data);
+    const idx = allTasks.findIndex((t) => t.id === editingId);
+    if (idx !== -1) allTasks[idx] = { ...allTasks[idx], ...data };
+    renderStats();
+    renderList();
+    closeEdit();
+  } catch (e) {
+    alert(`儲存失敗：${e.message}`);
+  }
+  btn.disabled = false;
+  btn.textContent = '儲存';
+};
+
+window.autoClassifyEdit = async function() {
+  const title = document.getElementById('editTitle').value.trim();
+  if (!title) {
+    document.getElementById('editClassifyHint').textContent = '請先填入任務標題';
+    return;
+  }
+  const btn = document.getElementById('editClassifyBtn');
+  const hint = document.getElementById('editClassifyHint');
+  btn.disabled = true;
+  hint.textContent = '分析中…';
+  try {
+    const desc = document.getElementById('editDescription').value.trim();
+    const result = await classifyTaskFn({ title, description: desc });
+    document.getElementById('editCategory').value = result.data.category;
+    hint.textContent = `✅ 已分類為「${result.data.category}」`;
+  } catch (e) {
+    hint.textContent = `⚠️ 失敗：${e.message}`;
+  }
+  btn.disabled = false;
+};
+
+window.doSignOut = async function() {
+  await signOut(auth);
+  location.href = 'login.html';
+};
+
+window.openMemberModal = async function() {
+  const list = document.getElementById('memberList');
+  list.innerHTML = '<p style="color:#bbb;font-size:13px">載入中…</p>';
+  document.getElementById('memberModal').classList.add('show');
+  try {
+    const snap = await getDocs(collection(db, 'work_progress_members'));
+    const existing = {};
+    snap.forEach((d) => { existing[d.id] = d.data().email || ''; });
+    list.innerHTML = MEMBERS.map((m) => `
+      <div class="member-row">
+        <span class="member-name">${m.zh} (${m.key})</span>
+        <input class="member-email-input" type="email" id="memail_${m.key}" value="${escHtml(existing[m.key] || '')}" placeholder="email@example.com">
+      </div>`).join('');
+  } catch (e) {
+    list.innerHTML = `<p style="color:#d32f2f;font-size:13px">載入失敗：${e.message}</p>`;
+  }
+};
+
+window.closeMemberModal = function() {
+  document.getElementById('memberModal').classList.remove('show');
+};
+
+window.saveMemberEmails = async function() {
+  const btn = document.getElementById('memberSaveBtn');
+  btn.disabled = true;
+  btn.textContent = '儲存中…';
+  try {
+    const batch = writeBatch(db);
+    MEMBERS.forEach((m) => {
+      const email = (document.getElementById(`memail_${m.key}`)?.value || '').trim();
+      batch.set(doc(db, 'work_progress_members', m.key), {
+        zh: m.zh,
+        en: m.key,
+        email,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+    });
+    await batch.commit();
+    closeMemberModal();
+    alert('成員 Email 已儲存');
+  } catch (e) {
+    alert(`儲存失敗：${e.message}`);
+  }
+  btn.disabled = false;
+  btn.textContent = '儲存';
+};
+
+document.getElementById('editModal').addEventListener('click', (e) => {
+  if (e.target.id === 'editModal') closeEdit();
+});
+
+document.getElementById('memberModal').addEventListener('click', (e) => {
+  if (e.target.id === 'memberModal') closeMemberModal();
+});
+</script>
+</body>
+</html>

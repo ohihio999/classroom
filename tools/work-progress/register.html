@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>新增任務 — 工作進度表</title>
+  <!-- v1.0 2026-05-07：建立工作進度表新增任務頁 -->
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; }
+    .header {
+      background: #1976D2; color: white; padding: 16px 20px;
+      display: flex; align-items: center; gap: 12px;
+      position: sticky; top: 0; z-index: 10;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+    .back-btn { background: none; border: none; color: white; font-size: 22px; cursor: pointer; line-height: 1; }
+    .header h1 { font-size: 18px; font-weight: 600; flex: 1; }
+    .hbtn { background: none; border: none; color: white; font-size: 14px; cursor: pointer; padding: 4px 8px; border-radius: 6px; }
+    .hbtn:hover { background: rgba(255,255,255,0.15); }
+    .content { padding: 16px; max-width: 600px; margin: 0 auto; }
+    .section { background: white; border-radius: 12px; padding: 18px; margin-bottom: 14px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+    .form-group { margin-bottom: 14px; }
+    .form-group label { font-size: 13px; color: #666; display: block; margin-bottom: 5px; }
+    .form-group input, .form-group select, .form-group textarea {
+      width: 100%; padding: 12px; border: 1px solid #ddd;
+      border-radius: 8px; font-size: 15px; outline: none; font-family: inherit;
+    }
+    .form-group input:focus, .form-group select:focus, .form-group textarea:focus { border-color: #1976D2; }
+    .form-group textarea { resize: vertical; min-height: 70px; }
+    .required { color: #d32f2f; }
+    .classify-row { display: flex; gap: 10px; align-items: stretch; }
+    .classify-row select { flex: 1; }
+    .btn-classify {
+      padding: 12px 14px; border-radius: 8px; border: 1px solid #1976D2;
+      background: white; color: #1976D2; font-size: 13px; font-weight: 500;
+      cursor: pointer; white-space: nowrap; flex-shrink: 0;
+    }
+    .btn-classify:hover { background: #E3F2FD; }
+    .btn-classify:disabled { opacity: 0.5; cursor: not-allowed; }
+    .classify-hint { font-size: 12px; color: #888; margin-top: 5px; min-height: 16px; }
+    .save-row { display: flex; gap: 10px; margin-top: 6px; }
+    .btn-save {
+      flex: 1; padding: 14px; border-radius: 10px; border: none;
+      background: #1976D2; color: white; font-size: 15px; font-weight: 600; cursor: pointer;
+    }
+    .btn-save:disabled { background: #bbb; cursor: not-allowed; }
+    .btn-cancel {
+      padding: 14px 24px; border-radius: 10px;
+      border: 1px solid #ddd; background: white; color: #666; font-size: 15px; cursor: pointer;
+    }
+    .error-msg { color: #d32f2f; font-size: 13px; margin-top: 8px; min-height: 16px; }
+  </style>
+</head>
+<body>
+<div class="header">
+  <button class="back-btn" onclick="history.back()">←</button>
+  <h1>新增任務</h1>
+  <button class="hbtn" onclick="location.href='/'">🏠</button>
+</div>
+
+<div class="content">
+  <div class="section">
+    <div class="form-group">
+      <label>任務標題 <span class="required">*</span></label>
+      <input type="text" id="title" placeholder="輸入任務標題">
+    </div>
+
+    <div class="form-group">
+      <label>負責人 <span class="required">*</span></label>
+      <select id="assignee">
+        <option value="">請選擇負責人</option>
+        <option value="Kanny">林玉鈴 (Kanny)</option>
+        <option value="Charles">黃志堅 (Charles)</option>
+        <option value="Cherrie">林毓婷 (Cherrie)</option>
+        <option value="Jacky">黃義正 (Jacky)</option>
+        <option value="Yibi">吳翊平 (Yibi)</option>
+        <option value="Norika">曾書彥 (Norika)</option>
+        <option value="Lisa">王儷蓉 (Lisa)</option>
+        <option value="Seal">許世佑 (Seal)</option>
+        <option value="Steven">陳佳興 (Steven)</option>
+        <option value="Kelly">陳姵存 (Kelly)</option>
+        <option value="Yedda">林宥燁 (Yedda)</option>
+        <option value="Eason">林逸昇 (Eason)</option>
+        <option value="Russell">蘇彥霖 (Russell)</option>
+        <option value="Hina">鍾文綺 (Hina)</option>
+        <option value="Seki">石博仁 (Seki)</option>
+        <option value="Daisy">潘怡穎 (Daisy)</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label>截止日期 <span class="required">*</span></label>
+      <input type="date" id="dueDate">
+    </div>
+
+    <div class="form-group">
+      <label>狀態</label>
+      <select id="status">
+        <option value="pending">待處理</option>
+        <option value="in_progress">進行中</option>
+        <option value="review">待確認</option>
+        <option value="done">完成</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label>分類</label>
+      <div class="classify-row">
+        <select id="category">
+          <option value="">未分類</option>
+          <option value="技術/資訊">技術/資訊</option>
+          <option value="行政/庶務">行政/庶務</option>
+          <option value="業務/對外">業務/對外</option>
+          <option value="其他">其他</option>
+        </select>
+        <button class="btn-classify" id="classifyBtn" onclick="autoClassify()">✨ 自動分類</button>
+      </div>
+      <div class="classify-hint" id="classifyHint"></div>
+    </div>
+
+    <div class="form-group">
+      <label>說明/備註</label>
+      <textarea id="description" placeholder="選填，任務詳細說明"></textarea>
+    </div>
+
+    <div class="form-group">
+      <label>可見性</label>
+      <select id="visibility">
+        <option value="public">公開（全體登入者可見）</option>
+        <option value="private">私人（僅建立者與 admin 可見）</option>
+      </select>
+    </div>
+
+    <div class="error-msg" id="errorMsg"></div>
+    <div class="save-row">
+      <button class="btn-save" id="saveBtn" onclick="saveTask()">儲存</button>
+      <button class="btn-cancel" onclick="history.back()">取消</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js';
+import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js';
+import { getFirestore, collection, addDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js';
+import { getFunctions, httpsCallable } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-functions.js';
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBf0sHTsndFCksNlh46G_2mw9rk5zmPdc0",
+  authDomain: "my-teaching-tools-2b36c.firebaseapp.com",
+  projectId: "my-teaching-tools-2b36c",
+  storageBucket: "my-teaching-tools-2b36c.firebasestorage.app",
+  messagingSenderId: "82693897353",
+  appId: "1:82693897353:web:f667501aad05c536c09a58"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const functions = getFunctions(app, 'asia-east1');
+const classifyTaskFn = httpsCallable(functions, 'classifyTask');
+
+const ASSIGNEE_MAP = {
+  Kanny:'林玉鈴 (Kanny)', Charles:'黃志堅 (Charles)', Cherrie:'林毓婷 (Cherrie)',
+  Jacky:'黃義正 (Jacky)', Yibi:'吳翊平 (Yibi)', Norika:'曾書彥 (Norika)',
+  Lisa:'王儷蓉 (Lisa)', Seal:'許世佑 (Seal)', Steven:'陳佳興 (Steven)',
+  Kelly:'陳姵存 (Kelly)', Yedda:'林宥燁 (Yedda)', Eason:'林逸昇 (Eason)',
+  Russell:'蘇彥霖 (Russell)', Hina:'鍾文綺 (Hina)', Seki:'石博仁 (Seki)',
+  Daisy:'潘怡穎 (Daisy)'
+};
+
+let currentUser = null;
+
+onAuthStateChanged(auth, (user) => {
+  if (!user) { location.href = 'login.html'; return; }
+  currentUser = user;
+  // Default due date: today + 7 days
+  const d = new Date();
+  d.setDate(d.getDate() + 7);
+  document.getElementById('dueDate').value = d.toISOString().split('T')[0];
+});
+
+window.autoClassify = async function() {
+  const title = document.getElementById('title').value.trim();
+  if (!title) { document.getElementById('classifyHint').textContent = '請先填入任務標題'; return; }
+  const btn = document.getElementById('classifyBtn');
+  const hint = document.getElementById('classifyHint');
+  btn.disabled = true; hint.textContent = '分析中…';
+  try {
+    const desc = document.getElementById('description').value.trim();
+    const result = await classifyTaskFn({ title, description: desc });
+    document.getElementById('category').value = result.data.category;
+    hint.textContent = `✅ 已自動分類為「${result.data.category}」`;
+  } catch(e) {
+    hint.textContent = '⚠️ 分類失敗：' + e.message;
+  }
+  btn.disabled = false;
+};
+
+window.saveTask = async function() {
+  const title = document.getElementById('title').value.trim();
+  const assigneeKey = document.getElementById('assignee').value;
+  const dueDate = document.getElementById('dueDate').value;
+  const errEl = document.getElementById('errorMsg');
+
+  if (!title) { errEl.textContent = '請填入任務標題'; return; }
+  if (!assigneeKey) { errEl.textContent = '請選擇負責人'; return; }
+  if (!dueDate) { errEl.textContent = '請選擇截止日期'; return; }
+
+  const btn = document.getElementById('saveBtn');
+  btn.disabled = true; btn.textContent = '儲存中…'; errEl.textContent = '';
+
+  try {
+    await addDoc(collection(db, 'work_progress'), {
+      title,
+      assignee: ASSIGNEE_MAP[assigneeKey] || assigneeKey,
+      assigneeKey,
+      dueDate,
+      status: document.getElementById('status').value,
+      category: document.getElementById('category').value || '其他',
+      description: document.getElementById('description').value.trim(),
+      visibility: document.getElementById('visibility').value,
+      archived: false,
+      createdBy: currentUser.uid,
+      createdByEmail: currentUser.email,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    });
+    location.href = 'index.html';
+  } catch(e) {
+    errEl.textContent = '儲存失敗：' + e.message;
+    btn.disabled = false; btn.textContent = '儲存';
+  }
+};
+</script>
+</body>
+</html>

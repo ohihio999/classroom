@@ -1,0 +1,624 @@
+<!-- v1.3.0 | 2026-05-08
+  v1.0.0 — 初版任務詳情頁
+  v1.1.0 — 資訊欄改為緊湊單列顯示；工作進度支援刪除；進度條目樣式優化
+  v1.2.0 — 進度條目加數字排序；內文放大至 28px 置前；作者時間移至底部；✕ 改為 ✏️ 編輯 + 🗑️ 刪除
+  v1.3.0 — 進度條目改單行：數字.內文 時間 ✏️🗑️；數字改純文字；字體縮回 14px；按鈕垂直置中
+-->
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>任務詳情 — 工作進度表</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; padding-bottom: 48px; }
+    :root { --page-max-width: 980px; }
+
+    .header { background: #1976D2; color: white; padding: 16px 20px; position: sticky; top: 0; z-index: 10; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+    .header-inner { width: 100%; max-width: var(--page-max-width); margin: 0 auto; display: flex; align-items: center; gap: 12px; }
+    .back-btn, .hbtn { background: none; border: none; color: white; cursor: pointer; border-radius: 6px; }
+    .back-btn { font-size: 22px; line-height: 1; padding: 4px 8px; }
+    .hbtn { font-size: 13px; padding: 5px 9px; opacity: 0.9; }
+    .back-btn:hover, .hbtn:hover { background: rgba(255,255,255,0.2); opacity: 1; }
+    .header h1 { font-size: 18px; font-weight: 600; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .header-actions { display: flex; gap: 8px; align-items: center; }
+
+    .page { width: 100%; max-width: calc(var(--page-max-width) + 32px); margin: 0 auto; padding: 18px 16px 0; }
+    .panel { background: white; border-radius: 14px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); margin-bottom: 14px; }
+    .loading, .error, .empty { text-align: center; padding: 48px 20px; color: #888; }
+    .error { color: #d32f2f; }
+
+    .task-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 18px; }
+    .task-title-wrap { min-width: 0; }
+    .task-title { font-size: 26px; font-weight: 700; color: #1f2937; line-height: 1.35; }
+    .task-subtitle { margin-top: 8px; font-size: 13px; color: #6b7280; }
+    .task-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 14px; }
+    .field { background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 10px; padding: 12px; }
+    .label { font-size: 12px; color: #6b7280; margin-bottom: 5px; }
+    .value { font-size: 14px; color: #1f2937; font-weight: 500; word-break: break-word; line-height: 1.5; }
+    .block-title { font-size: 14px; color: #374151; font-weight: 700; margin-bottom: 8px; }
+    .text-block { background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 10px; padding: 14px; font-size: 14px; color: #374151; line-height: 1.7; white-space: pre-wrap; word-break: break-word; }
+    .muted { color: #9ca3af; }
+
+    .badge { display: inline-block; padding: 5px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; white-space: nowrap; }
+    .badge-pending { background: #FFF3E0; color: #E65100; }
+    .badge-inprogress { background: #E3F2FD; color: #1565C0; }
+    .badge-review { background: #F3E5F5; color: #6A1B9A; }
+    .badge-done { background: #E8F5E9; color: #2E7D32; }
+    .badge-archived { background: #ede7f6; color: #5e35b1; }
+
+    .btn { padding: 10px 16px; border-radius: 8px; border: none; cursor: pointer; font-size: 14px; font-weight: 600; }
+    .btn-primary { background: #1976D2; color: white; }
+    .btn-secondary { background: #eef2f7; color: #334155; }
+    .btn-danger { background: #fbe9e7; color: #d84315; }
+    .btn-outline { background: white; color: #1976D2; border: 1px solid #1976D2; }
+    .btn:disabled { background: #bbb; color: white; cursor: not-allowed; border-color: #bbb; }
+
+    .progress-list { display: flex; flex-direction: column; gap: 8px; }
+    .progress-item { background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px 14px; }
+    .progress-row { display: flex; align-items: center; gap: 8px; }
+    .progress-num { flex-shrink: 0; font-size: 13px; font-weight: 700; color: #6b7280; min-width: 18px; }
+    .progress-text { flex: 1; font-size: 14px; color: #1f2937; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+    .progress-meta { flex-shrink: 0; font-size: 11px; color: #9ca3af; white-space: nowrap; }
+    .progress-item-actions { display: flex; gap: 2px; flex-shrink: 0; align-items: center; }
+    .progress-composer { margin-top: 14px; }
+    .progress-composer textarea, .modal input, .modal select, .modal textarea {
+      width: 100%; padding: 11px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; font-family: inherit; outline: none;
+    }
+    .progress-composer textarea:focus, .modal input:focus, .modal select:focus, .modal textarea:focus { border-color: #1976D2; }
+    .progress-composer textarea { min-height: 100px; resize: vertical; }
+    .progress-note { margin-top: 6px; font-size: 12px; color: #888; }
+    .progress-actions { display: flex; justify-content: flex-end; margin-top: 10px; }
+
+    .meta-footer { margin-top: 14px; font-size: 12px; color: #9ca3af; }
+
+    /* v1.1.0 compact meta bar */
+    .meta-bar { display: flex; flex-wrap: wrap; gap: 3px 10px; padding: 10px 0; font-size: 13px; color: #374151; border-top: 1px solid #e5e7eb; border-bottom: 1px solid #e5e7eb; margin: 10px 0 16px; }
+    .meta-key { color: #9ca3af; font-size: 11px; margin-right: 2px; }
+    .meta-sep { color: #d1d5db; user-select: none; }
+
+    /* v1.2.0 progress item action buttons */
+    .edit-progress-btn, .del-progress-btn { background: none; border: none; font-size: 16px; cursor: pointer; padding: 4px 6px; border-radius: 5px; line-height: 1; }
+    .edit-progress-btn { color: #6b7280; }
+    .edit-progress-btn:hover { background: #e0f2fe; }
+    .del-progress-btn { color: #9ca3af; }
+    .del-progress-btn:hover { color: #ef4444; background: #fef2f2; }
+
+    .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 100; align-items: center; justify-content: center; padding: 16px; }
+    .modal-overlay.show { display: flex; }
+    .modal { background: white; border-radius: 14px; padding: 22px; width: 100%; max-width: 420px; max-height: 85vh; overflow-y: auto; }
+    .modal h2 { font-size: 17px; margin-bottom: 16px; color: #333; }
+    .modal label { font-size: 13px; color: #666; display: block; margin-bottom: 5px; margin-top: 12px; }
+    .modal label:first-of-type { margin-top: 0; }
+    .modal textarea { resize: vertical; min-height: 72px; }
+    .modal-classify-row { display: flex; gap: 8px; align-items: stretch; margin-top: 5px; }
+    .modal-classify-row select { flex: 1; }
+    .modal-classify-hint { font-size: 12px; color: #888; margin-top: 4px; min-height: 16px; }
+    .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 18px; }
+    .btn-classify-sm { padding: 10px 12px; border-radius: 8px; border: 1px solid #1976D2; background: white; color: #1976D2; font-size: 13px; cursor: pointer; flex-shrink: 0; }
+    .btn-classify-sm:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    @media (max-width: 767px) {
+      .task-head { flex-direction: column; }
+      .task-actions { justify-content: flex-start; }
+      .grid { grid-template-columns: 1fr; }
+      .header-inner { align-items: flex-start; }
+      .header-actions { flex-wrap: wrap; justify-content: flex-end; }
+      .task-title { font-size: 22px; }
+    }
+  </style>
+</head>
+<body>
+<div class="header">
+  <div class="header-inner">
+    <button class="back-btn" onclick="goBack()">←</button>
+    <h1 id="headerTitle">任務詳情</h1>
+    <div class="header-actions">
+      <button class="hbtn" id="archiveEntryBtn" onclick="goArchive()">🗃️ 封存區</button>
+      <button class="hbtn" onclick="location.href='index.html'">📋 工作區</button>
+      <button class="hbtn" onclick="location.href='/'">🏠</button>
+    </div>
+  </div>
+</div>
+
+<div class="page">
+  <div class="panel" id="detailPanel">
+    <div class="loading">載入中…</div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="editModal">
+  <div class="modal">
+    <h2>✏️ 編輯任務</h2>
+    <label>任務標題</label>
+    <input type="text" id="editTitle">
+    <label>負責人</label>
+    <select id="editAssignee">
+      <option value="Kanny">林玉鈴 (Kanny)</option>
+      <option value="Charles">黃志堅 (Charles)</option>
+      <option value="Cherrie">林毓婷 (Cherrie)</option>
+      <option value="Jacky">黃義正 (Jacky)</option>
+      <option value="Yibi">吳翊平 (Yibi)</option>
+      <option value="Norika">曾書彥 (Norika)</option>
+      <option value="Lisa">王儷蓉 (Lisa)</option>
+      <option value="Seal">許世佑 (Seal)</option>
+      <option value="Steven">陳佳興 (Steven)</option>
+      <option value="Kelly">陳姵存 (Kelly)</option>
+      <option value="Yedda">林宥燁 (Yedda)</option>
+      <option value="Eason">林逸昇 (Eason)</option>
+      <option value="Russell">蘇彥霖 (Russell)</option>
+      <option value="Hina">鍾文綺 (Hina)</option>
+      <option value="Seki">石博仁 (Seki)</option>
+      <option value="Daisy">潘怡穎 (Daisy)</option>
+    </select>
+    <label>截止日期</label>
+    <input type="date" id="editDueDate">
+    <label>狀態</label>
+    <select id="editStatus">
+      <option value="pending">待處理</option>
+      <option value="in_progress">進行中</option>
+      <option value="review">待確認</option>
+      <option value="done">完成</option>
+    </select>
+    <label>分類</label>
+    <div class="modal-classify-row">
+      <select id="editCategory">
+        <option value="">未分類</option>
+        <option value="技術/資訊">技術/資訊</option>
+        <option value="行政/庶務">行政/庶務</option>
+        <option value="業務/對外">業務/對外</option>
+        <option value="其他">其他</option>
+      </select>
+      <button class="btn-classify-sm" id="editClassifyBtn" onclick="autoClassifyEdit()">✨</button>
+    </div>
+    <div class="modal-classify-hint" id="editClassifyHint"></div>
+    <label>說明/備註</label>
+    <textarea id="editDescription"></textarea>
+    <label>可見性</label>
+    <select id="editVisibility">
+      <option value="public">公開</option>
+      <option value="private">私人</option>
+    </select>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeEdit()">取消</button>
+      <button class="btn btn-primary" id="editSaveBtn" onclick="saveEdit()">儲存</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="editProgressModal">
+  <div class="modal">
+    <h2>✏️ 編輯進度記錄</h2>
+    <textarea id="editProgressInput" style="min-height:120px;resize:vertical"></textarea>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeEditProgress()">取消</button>
+      <button class="btn btn-primary" id="editProgressSaveBtn" onclick="saveEditProgress()">儲存</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js';
+import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js';
+import { getFirestore, doc, getDoc, updateDoc, collection, getDocs, query, where, serverTimestamp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js';
+import { getFunctions, httpsCallable } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-functions.js';
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBf0sHTsndFCksNlh46G_2mw9rk5zmPdc0",
+  authDomain: "my-teaching-tools-2b36c.firebaseapp.com",
+  projectId: "my-teaching-tools-2b36c",
+  storageBucket: "my-teaching-tools-2b36c.firebasestorage.app",
+  messagingSenderId: "82693897353",
+  appId: "1:82693897353:web:f667501aad05c536c09a58"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const functions = getFunctions(app, 'asia-east1');
+const classifyTaskFn = httpsCallable(functions, 'classifyTask');
+
+const ASSIGNEE_MAP = {
+  Kanny:'林玉鈴 (Kanny)', Charles:'黃志堅 (Charles)', Cherrie:'林毓婷 (Cherrie)',
+  Jacky:'黃義正 (Jacky)', Yibi:'吳翊平 (Yibi)', Norika:'曾書彥 (Norika)',
+  Lisa:'王儷蓉 (Lisa)', Seal:'許世佑 (Seal)', Steven:'陳佳興 (Steven)',
+  Kelly:'陳姵存 (Kelly)', Yedda:'林宥燁 (Yedda)', Eason:'林逸昇 (Eason)',
+  Russell:'蘇彥霖 (Russell)', Hina:'鍾文綺 (Hina)', Seki:'石博仁 (Seki)',
+  Daisy:'潘怡穎 (Daisy)'
+};
+
+const STATUS_LABEL = { pending:'待處理', in_progress:'進行中', review:'待確認', done:'完成' };
+const STATUS_BADGE = { pending:'badge-pending', in_progress:'badge-inprogress', review:'badge-review', done:'badge-done' };
+
+const params = new URLSearchParams(location.search);
+const taskId = params.get('id');
+const from = params.get('from') === 'archive' ? 'archive' : 'index';
+
+let currentUser = null;
+let currentMemberKeys = [];
+let isAdmin = false;
+let task = null;
+
+onAuthStateChanged(auth, async (user) => {
+  if (!user) { location.href = `login.html?redirect=${encodeURIComponent(location.pathname.split('/').pop() + location.search)}`; return; }
+  currentUser = user;
+  isAdmin = user.email === 'ohihio@gmail.com';
+  currentMemberKeys = await loadCurrentMemberKeys();
+  if (!taskId) {
+    renderError('缺少任務 ID');
+    return;
+  }
+  await loadTask();
+});
+
+async function loadCurrentMemberKeys() {
+  if (!currentUser?.email || isAdmin) return [];
+  const snap = await getDocs(query(collection(db, 'work_progress_members'), where('email', '==', currentUser.email)));
+  return snap.docs.map((d) => d.id);
+}
+
+async function loadTask() {
+  try {
+    const snap = await getDoc(doc(db, 'work_progress', taskId));
+    if (!snap.exists()) {
+      renderError('找不到這筆任務');
+      return;
+    }
+    task = { id: snap.id, ...snap.data() };
+    if (!canViewTask(task)) {
+      renderError('你沒有查看這筆任務的權限');
+      return;
+    }
+    renderTask();
+  } catch (e) {
+    renderError(e.message);
+  }
+}
+
+function canViewTask(item) {
+  if (!item || !currentUser) return false;
+  return item.visibility === 'public'
+    || item.createdBy === currentUser.uid
+    || isAdmin
+    || currentMemberKeys.includes(item.assigneeKey);
+}
+
+function canEditMain(item) {
+  return !!item && !!currentUser && (item.createdBy === currentUser.uid || isAdmin);
+}
+
+function canWriteProgress(item) {
+  return canEditMain(item) || currentMemberKeys.includes(item.assigneeKey);
+}
+
+function dueDateLabel(d) {
+  if (!d) return '未設截止日期';
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const due = new Date(`${d}T00:00:00`);
+  const diff = Math.ceil((due - today) / 864e5);
+  if (diff < 0) return `${d}（已逾期 ${-diff} 天）`;
+  if (diff === 0) return `${d}（今天截止）`;
+  if (diff <= 3) return `${d}（${diff} 天後）`;
+  return d;
+}
+
+function formatDateTime(ts) {
+  if (!ts) return '—';
+  if (typeof ts?.toDate === 'function') return ts.toDate().toLocaleString('zh-TW', { hour12: false });
+  if (ts?.seconds) return new Date(ts.seconds * 1000).toLocaleString('zh-TW', { hour12: false });
+  return '—';
+}
+
+function formatVisibility(v) {
+  return v === 'private' ? '私人' : '公開';
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function escHtmlWithBr(s) {
+  return escHtml(s).replace(/\n/g, '<br>');
+}
+
+function normalizeProgressEntries(entries) {
+  if (!Array.isArray(entries)) return [];
+  return [...entries].sort((a, b) => (b?.createdAtMs || 0) - (a?.createdAtMs || 0));
+}
+
+function renderError(message) {
+  document.getElementById('detailPanel').innerHTML = `<div class="error">⚠️ ${escHtml(message)}</div>`;
+}
+
+function renderTask() {
+  document.title = `${task.title || '任務詳情'} — 工作進度表`;
+  document.getElementById('headerTitle').textContent = task.title || '任務詳情';
+  document.getElementById('archiveEntryBtn').style.display = task.archived === true ? 'none' : '';
+
+  const canEdit = canEditMain(task);
+  const canProgress = canWriteProgress(task);
+  const progressEntries = normalizeProgressEntries(task.progressEntries);
+  const badgeClass = STATUS_BADGE[task.status] || 'badge-pending';
+  const badgeLabel = STATUS_LABEL[task.status] || task.status || '—';
+  const archiveBadge = task.archived === true ? `<span class="badge badge-archived">已封存</span>` : '';
+  const actions = [];
+
+  if (canEdit) {
+    actions.push(`<button class="btn btn-outline" onclick="openEdit()">編輯任務</button>`);
+    actions.push(`<button class="btn ${task.archived === true ? 'btn-secondary' : 'btn-danger'}" id="archiveToggleBtn" onclick="toggleArchive()">${task.archived === true ? '解除封存' : '封存任務'}</button>`);
+  }
+
+  const progressComposer = canProgress ? `
+    <div class="progress-composer">
+      <div class="block-title">新增工作進度</div>
+      <textarea id="progressInput" placeholder="輸入這次進度、卡點、下一步"></textarea>
+      <div class="progress-note">只有建立者、負責人與 admin 可以寫入進度。</div>
+      <div class="progress-actions">
+        <button class="btn btn-primary" id="progressSaveBtn" onclick="saveProgressEntry()">新增進度</button>
+      </div>
+    </div>` : '';
+
+  document.getElementById('detailPanel').innerHTML = `
+    <div class="task-head">
+      <div class="task-title-wrap">
+        <div class="task-title">${escHtml(task.title || '—')}</div>
+        <div class="task-subtitle">${archiveBadge} <span class="badge ${badgeClass}">${escHtml(badgeLabel)}</span></div>
+      </div>
+      <div class="task-actions">${actions.join('')}</div>
+    </div>
+
+    <div class="meta-bar">
+      <span><span class="meta-key">負責人</span>${escHtml(task.assignee || '—')}</span>
+      <span class="meta-sep">·</span>
+      <span><span class="meta-key">截止</span>${escHtml(dueDateLabel(task.dueDate))}</span>
+      <span class="meta-sep">·</span>
+      <span><span class="meta-key">分類</span>${escHtml(task.category || '其他')}</span>
+      <span class="meta-sep">·</span>
+      <span><span class="meta-key">可見性</span>${escHtml(formatVisibility(task.visibility))}</span>
+      <span class="meta-sep">·</span>
+      <span><span class="meta-key">建立者</span>${escHtml(task.createdByEmail || '—')}</span>
+      ${task.archived === true ? `<span class="meta-sep">·</span><span><span class="meta-key">封存者</span>${escHtml(task.archivedByEmail || '未知')}</span>` : ''}
+    </div>
+
+    <div style="margin-top:16px">
+      <div class="block-title">工作說明</div>
+      <div class="text-block ${task.description?.trim() ? '' : 'muted'}">${task.description?.trim() ? escHtml(task.description) : '目前沒有補充說明。'}</div>
+    </div>
+
+    <div style="margin-top:18px">
+      <div class="block-title">工作進度</div>
+      <div class="progress-list">
+        ${progressEntries.length ? progressEntries.map((entry, idx) => {
+          const entryId = entry.id || '';
+          const canDel = entryId && (isAdmin || (currentUser && entry.authorUid === currentUser.uid));
+          const timeStr = escHtml(formatDateTime(entry.createdAtMs ? { seconds: Math.floor(entry.createdAtMs / 1000) } : entry.createdAt));
+          const authorStr = escHtml(entry.authorName || entry.authorEmail || '未知使用者');
+          return `
+          <div class="progress-item" id="pe-${escHtml(entryId)}">
+            <div class="progress-row">
+              <span class="progress-num">${idx + 1}.</span>
+              <div class="progress-text">${escHtmlWithBr(entry.content || '')}</div>
+              <span class="progress-meta">${authorStr} ・ ${timeStr}</span>
+              <div class="progress-item-actions">
+                ${canDel ? `<button class="edit-progress-btn" onclick="editProgressEntry('${escHtml(entryId)}')" title="編輯">✏️</button>` : ''}
+                ${canDel ? `<button class="del-progress-btn" onclick="deleteProgressEntry('${escHtml(entryId)}')" title="刪除">🗑️</button>` : ''}
+              </div>
+            </div>
+          </div>`;
+        }).join('') : '<div class="text-block muted">尚無工作進度紀錄。</div>'}
+      </div>
+      ${progressComposer}
+    </div>
+
+    <div class="meta-footer">
+      建立時間：${escHtml(formatDateTime(task.createdAt))}　更新時間：${escHtml(formatDateTime(task.updatedAt))}　封存時間：${escHtml(formatDateTime(task.archivedAt))}
+    </div>
+  `;
+}
+
+window.goBack = function() {
+  if (history.length > 1) {
+    history.back();
+    return;
+  }
+  location.href = from === 'archive' ? 'archive.html' : 'index.html';
+};
+
+window.goArchive = function() {
+  location.href = 'archive.html';
+};
+
+window.saveProgressEntry = async function() {
+  if (!task || !canWriteProgress(task)) return;
+  const inputEl = document.getElementById('progressInput');
+  const btn = document.getElementById('progressSaveBtn');
+  const content = inputEl.value.trim();
+  if (!content) {
+    alert('請先輸入工作進度內容');
+    return;
+  }
+
+  const nextEntry = {
+    id: `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+    content,
+    authorUid: currentUser.uid,
+    authorEmail: currentUser.email || '',
+    authorName: currentUser.displayName || currentUser.email || '未知使用者',
+    createdAtMs: Date.now()
+  };
+
+  btn.disabled = true;
+  btn.textContent = '新增中…';
+  try {
+    const progressEntries = [...(Array.isArray(task.progressEntries) ? task.progressEntries : []), nextEntry];
+    await updateDoc(doc(db, 'work_progress', task.id), {
+      progressEntries,
+      updatedAt: serverTimestamp()
+    });
+    task.progressEntries = progressEntries;
+    task.updatedAt = { seconds: Math.floor(Date.now() / 1000) };
+    renderTask();
+  } catch (e) {
+    alert(`新增進度失敗：${e.message}`);
+  }
+};
+
+let editingProgressId = null;
+
+window.editProgressEntry = function(entryId) {
+  if (!task || !entryId) return;
+  const entry = (task.progressEntries || []).find(e => e.id === entryId);
+  if (!entry) return;
+  editingProgressId = entryId;
+  document.getElementById('editProgressInput').value = entry.content || '';
+  document.getElementById('editProgressModal').classList.add('show');
+};
+
+window.closeEditProgress = function() {
+  editingProgressId = null;
+  document.getElementById('editProgressModal').classList.remove('show');
+};
+
+window.saveEditProgress = async function() {
+  if (!task || !editingProgressId) return;
+  const btn = document.getElementById('editProgressSaveBtn');
+  const content = document.getElementById('editProgressInput').value.trim();
+  if (!content) { alert('內容不能為空'); return; }
+  btn.disabled = true; btn.textContent = '儲存中…';
+  try {
+    const updated = (task.progressEntries || []).map(e =>
+      e.id === editingProgressId ? { ...e, content, editedAtMs: Date.now() } : e
+    );
+    await updateDoc(doc(db, 'work_progress', task.id), {
+      progressEntries: updated,
+      updatedAt: serverTimestamp()
+    });
+    task.progressEntries = updated;
+    closeEditProgress();
+    renderTask();
+  } catch (e) {
+    alert(`儲存失敗：${e.message}`);
+  }
+  btn.disabled = false; btn.textContent = '儲存';
+};
+
+window.deleteProgressEntry = async function(entryId) {
+  if (!task || !entryId) return;
+  if (!confirm('確定要刪除這筆進度記錄？')) return;
+  try {
+    const updated = (task.progressEntries || []).filter(e => e.id !== entryId);
+    await updateDoc(doc(db, 'work_progress', task.id), {
+      progressEntries: updated,
+      updatedAt: serverTimestamp()
+    });
+    task.progressEntries = updated;
+    renderTask();
+  } catch (e) {
+    alert(`刪除失敗：${e.message}`);
+  }
+};
+
+window.toggleArchive = async function() {
+  if (!task || !canEditMain(task)) return;
+  const btn = document.getElementById('archiveToggleBtn');
+  const nextArchived = task.archived !== true;
+  const confirmText = nextArchived ? '確定要封存這筆任務？' : '確定要解除封存這筆任務？';
+  if (!confirm(confirmText)) return;
+
+  btn.disabled = true;
+  btn.textContent = nextArchived ? '封存中…' : '解除中…';
+  try {
+    await updateDoc(doc(db, 'work_progress', task.id), {
+      archived: nextArchived,
+      archivedAt: nextArchived ? serverTimestamp() : null,
+      archivedBy: nextArchived ? currentUser.uid : null,
+      archivedByEmail: nextArchived ? (currentUser.email || '') : null,
+      updatedAt: serverTimestamp()
+    });
+    location.href = nextArchived ? 'archive.html' : 'index.html';
+  } catch (e) {
+    alert(`${nextArchived ? '封存' : '解除封存'}失敗：${e.message}`);
+    btn.disabled = false;
+    btn.textContent = nextArchived ? '封存任務' : '解除封存';
+  }
+};
+
+window.openEdit = function() {
+  if (!task || !canEditMain(task)) return;
+  document.getElementById('editTitle').value = task.title || '';
+  document.getElementById('editAssignee').value = task.assigneeKey || '';
+  document.getElementById('editDueDate').value = task.dueDate || '';
+  document.getElementById('editStatus').value = task.status || 'pending';
+  document.getElementById('editCategory').value = task.category || '';
+  document.getElementById('editDescription').value = task.description || '';
+  document.getElementById('editVisibility').value = task.visibility || 'public';
+  document.getElementById('editClassifyHint').textContent = '';
+  document.getElementById('editModal').classList.add('show');
+};
+
+window.closeEdit = function() {
+  document.getElementById('editModal').classList.remove('show');
+};
+
+window.saveEdit = async function() {
+  if (!task || !canEditMain(task)) return;
+  const btn = document.getElementById('editSaveBtn');
+  const assigneeKey = document.getElementById('editAssignee').value;
+  btn.disabled = true;
+  btn.textContent = '儲存中…';
+  try {
+    const data = {
+      title: document.getElementById('editTitle').value.trim(),
+      assignee: ASSIGNEE_MAP[assigneeKey] || assigneeKey,
+      assigneeKey,
+      dueDate: document.getElementById('editDueDate').value,
+      status: document.getElementById('editStatus').value,
+      category: document.getElementById('editCategory').value || '其他',
+      description: document.getElementById('editDescription').value.trim(),
+      visibility: document.getElementById('editVisibility').value,
+      updatedAt: serverTimestamp()
+    };
+    await updateDoc(doc(db, 'work_progress', task.id), data);
+    task = { ...task, ...data };
+    closeEdit();
+    renderTask();
+  } catch (e) {
+    alert(`儲存失敗：${e.message}`);
+  }
+  btn.disabled = false;
+  btn.textContent = '儲存';
+};
+
+window.autoClassifyEdit = async function() {
+  const title = document.getElementById('editTitle').value.trim();
+  if (!title) {
+    document.getElementById('editClassifyHint').textContent = '請先填入任務標題';
+    return;
+  }
+  const btn = document.getElementById('editClassifyBtn');
+  const hint = document.getElementById('editClassifyHint');
+  btn.disabled = true;
+  hint.textContent = '分析中…';
+  try {
+    const desc = document.getElementById('editDescription').value.trim();
+    const result = await classifyTaskFn({ title, description: desc });
+    document.getElementById('editCategory').value = result.data.category;
+    hint.textContent = `✅ 已分類為「${result.data.category}」`;
+  } catch (e) {
+    hint.textContent = `⚠️ 失敗：${e.message}`;
+  }
+  btn.disabled = false;
+};
+
+document.getElementById('editModal').addEventListener('click', (e) => {
+  if (e.target.id === 'editModal') closeEdit();
+});
+document.getElementById('editProgressModal').addEventListener('click', (e) => {
+  if (e.target.id === 'editProgressModal') closeEditProgress();
+});
+</script>
+</body>
+</html>
