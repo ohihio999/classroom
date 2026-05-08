@@ -4,6 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>工作進度表</title>
+  <!-- v1.1.0 | 2026-05-08
+    v1.0.0 — 初版工作進度表列表頁
+    v1.1.0 — 狀態改為進行中/完成兩選項；移除待處理/待確認 tab 與統計；統計改為進行中/完成/全部
+  -->
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; padding-bottom: 80px; }
@@ -21,8 +25,8 @@
     .stat { flex: 1; background: white; border-radius: 10px; padding: 12px; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
     .stat-num { font-size: 24px; font-weight: 700; }
     .stat-label { font-size: 11px; color: #888; margin-top: 2px; }
-    .stat-pending .stat-num { color: #E65100; }
     .stat-active .stat-num { color: #1976D2; }
+    .stat-done .stat-num { color: #2E7D32; }
     .stat-total .stat-num { color: #555; }
 
     .tabs { background: white; display: flex; border-bottom: 2px solid #e0e0e0; overflow-x: auto; }
@@ -117,9 +121,7 @@
 <div class="page-section">
   <div class="tabs">
     <div class="tab active" onclick="filterTab('all',this)">全部</div>
-    <div class="tab" onclick="filterTab('pending',this)">待處理</div>
     <div class="tab" onclick="filterTab('in_progress',this)">進行中</div>
-    <div class="tab" onclick="filterTab('review',this)">待確認</div>
     <div class="tab" onclick="filterTab('done',this)">完成</div>
   </div>
 </div>
@@ -168,9 +170,7 @@
     <input type="date" id="editDueDate">
     <label>狀態</label>
     <select id="editStatus">
-      <option value="pending">待處理</option>
       <option value="in_progress">進行中</option>
-      <option value="review">待確認</option>
       <option value="done">完成</option>
     </select>
     <label>分類</label>
@@ -253,8 +253,8 @@ const MEMBERS = [
   { key:'Daisy',  zh:'潘怡穎' }
 ];
 
-const STATUS_LABEL = { pending:'待處理', in_progress:'進行中', review:'待確認', done:'完成' };
-const STATUS_BADGE = { pending:'badge-pending', in_progress:'badge-inprogress', review:'badge-review', done:'badge-done' };
+const STATUS_LABEL = { in_progress:'進行中', done:'完成' };
+const STATUS_BADGE = { in_progress:'badge-inprogress', done:'badge-done' };
 
 let allTasks = [], currentUser = null, isAdmin = false;
 let tabFilter = 'all', catFilter = 'all', editingId = null;
@@ -320,11 +320,11 @@ async function loadTasks() {
 }
 
 function renderStats() {
-  const pending = allTasks.filter((t) => t.status === 'pending').length;
-  const active = allTasks.filter((t) => t.status === 'in_progress' || t.status === 'review').length;
+  const active = allTasks.filter((t) => t.status === 'in_progress').length;
+  const done = allTasks.filter((t) => t.status === 'done').length;
   document.getElementById('stats').innerHTML = `
-    <div class="stat stat-pending"><div class="stat-num">${pending}</div><div class="stat-label">待處理</div></div>
     <div class="stat stat-active"><div class="stat-num">${active}</div><div class="stat-label">進行中</div></div>
+    <div class="stat stat-done"><div class="stat-num">${done}</div><div class="stat-label">完成</div></div>
     <div class="stat stat-total"><div class="stat-num">${allTasks.length}</div><div class="stat-label">全部</div></div>`;
 }
 
@@ -441,7 +441,7 @@ window.editRecord = function(id) {
   document.getElementById('editTitle').value = t.title || '';
   document.getElementById('editAssignee').value = t.assigneeKey || '';
   document.getElementById('editDueDate').value = t.dueDate || '';
-  document.getElementById('editStatus').value = t.status || 'pending';
+  document.getElementById('editStatus').value = t.status || 'in_progress';
   document.getElementById('editCategory').value = t.category || '';
   document.getElementById('editDescription').value = t.description || '';
   document.getElementById('editVisibility').value = t.visibility || 'public';

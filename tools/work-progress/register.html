@@ -4,7 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>新增任務 — 工作進度表</title>
-  <!-- v1.0 2026-05-07：建立工作進度表新增任務頁 -->
+  <!-- v1.1.0 | 2026-05-08
+    v1.0.0 — 建立工作進度表新增任務頁
+    v1.1.0 — 負責人預設陳佳興；狀態改為進行中/完成兩選項，預設進行中
+  -->
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; }
@@ -69,7 +72,6 @@
     <div class="form-group">
       <label>負責人 <span class="required">*</span></label>
       <select id="assignee">
-        <option value="">請選擇負責人</option>
         <option value="Kanny">林玉鈴 (Kanny)</option>
         <option value="Charles">黃志堅 (Charles)</option>
         <option value="Cherrie">林毓婷 (Cherrie)</option>
@@ -78,7 +80,7 @@
         <option value="Norika">曾書彥 (Norika)</option>
         <option value="Lisa">王儷蓉 (Lisa)</option>
         <option value="Seal">許世佑 (Seal)</option>
-        <option value="Steven">陳佳興 (Steven)</option>
+        <option value="Steven" selected>陳佳興 (Steven)</option>
         <option value="Kelly">陳姵存 (Kelly)</option>
         <option value="Yedda">林宥燁 (Yedda)</option>
         <option value="Eason">林逸昇 (Eason)</option>
@@ -97,9 +99,7 @@
     <div class="form-group">
       <label>狀態</label>
       <select id="status">
-        <option value="pending">待處理</option>
-        <option value="in_progress">進行中</option>
-        <option value="review">待確認</option>
+        <option value="in_progress" selected>進行中</option>
         <option value="done">完成</option>
       </select>
     </div>

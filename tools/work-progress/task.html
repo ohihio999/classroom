@@ -1,8 +1,9 @@
-<!-- v1.3.0 | 2026-05-08
+<!-- v1.4.0 | 2026-05-08
   v1.0.0 — 初版任務詳情頁
   v1.1.0 — 資訊欄改為緊湊單列顯示；工作進度支援刪除；進度條目樣式優化
   v1.2.0 — 進度條目加數字排序；內文放大至 28px 置前；作者時間移至底部；✕ 改為 ✏️ 編輯 + 🗑️ 刪除
   v1.3.0 — 進度條目改單行：數字.內文 時間 ✏️🗑️；數字改純文字；字體縮回 14px；按鈕垂直置中
+  v1.4.0 — 狀態改為進行中/完成兩選項；移除待處理/待確認
 -->
 <!DOCTYPE html>
 <html lang="zh-TW">
@@ -158,9 +159,7 @@
     <input type="date" id="editDueDate">
     <label>狀態</label>
     <select id="editStatus">
-      <option value="pending">待處理</option>
       <option value="in_progress">進行中</option>
-      <option value="review">待確認</option>
       <option value="done">完成</option>
     </select>
     <label>分類</label>
@@ -230,8 +229,8 @@ const ASSIGNEE_MAP = {
   Daisy:'潘怡穎 (Daisy)'
 };
 
-const STATUS_LABEL = { pending:'待處理', in_progress:'進行中', review:'待確認', done:'完成' };
-const STATUS_BADGE = { pending:'badge-pending', in_progress:'badge-inprogress', review:'badge-review', done:'badge-done' };
+const STATUS_LABEL = { in_progress:'進行中', done:'完成' };
+const STATUS_BADGE = { in_progress:'badge-inprogress', done:'badge-done' };
 
 const params = new URLSearchParams(location.search);
 const taskId = params.get('id');
@@ -341,7 +340,7 @@ function renderTask() {
   const canEdit = canEditMain(task);
   const canProgress = canWriteProgress(task);
   const progressEntries = normalizeProgressEntries(task.progressEntries);
-  const badgeClass = STATUS_BADGE[task.status] || 'badge-pending';
+  const badgeClass = STATUS_BADGE[task.status] || 'badge-inprogress';
   const badgeLabel = STATUS_LABEL[task.status] || task.status || '—';
   const archiveBadge = task.archived === true ? `<span class="badge badge-archived">已封存</span>` : '';
   const actions = [];
