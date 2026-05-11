@@ -4,9 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>新增任務 — 工作進度表</title>
-  <!-- v1.1.0 | 2026-05-08
+  <!-- v1.2.0 | 2026-05-11
     v1.0.0 — 建立工作進度表新增任務頁
     v1.1.0 — 負責人預設陳佳興；狀態改為進行中/完成兩選項，預設進行中
+    v1.2.0 — 新增任務時明確帶入 progressEntries: null，修正 Firestore 規則驗證失敗導致無法儲存的問題
   -->
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -143,7 +144,7 @@
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js';
 import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js';
-import { getFirestore, collection, addDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js';
+import { getFirestore, collection, addDoc, getDocs, query, orderBy, serverTimestamp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js';
 import { getFunctions, httpsCallable } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-functions.js';
 
 const firebaseConfig = {
@@ -172,9 +173,21 @@ const ASSIGNEE_MAP = {
 
 let currentUser = null;
 
-onAuthStateChanged(auth, (user) => {
+async function loadCategories() {
+  try {
+    const snap = await getDocs(query(collection(db, 'work_progress_categories'), orderBy('order', 'asc')));
+    if (!snap.empty) {
+      const cats = snap.docs.map(d => d.data().name).filter(Boolean);
+      const sel = document.getElementById('category');
+      sel.innerHTML = `<option value="">未分類</option>` + cats.map(c => `<option value="${c.replace(/"/g,'&quot;')}">${c.replace(/</g,'&lt;')}</option>`).join('');
+    }
+  } catch(e) { /* keep defaults */ }
+}
+
+onAuthStateChanged(auth, async (user) => {
   if (!user) { location.href = 'login.html'; return; }
   currentUser = user;
+  await loadCategories();
   // Default due date: today + 7 days
   const d = new Date();
   d.setDate(d.getDate() + 7);
@@ -222,6 +235,7 @@ window.saveTask = async function() {
       description: document.getElementById('description').value.trim(),
       visibility: document.getElementById('visibility').value,
       archived: false,
+      progressEntries: null,
       createdBy: currentUser.uid,
       createdByEmail: currentUser.email,
       createdAt: serverTimestamp(),

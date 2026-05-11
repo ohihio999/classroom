@@ -1,9 +1,10 @@
-<!-- v1.4.0 | 2026-05-08
+<!-- v1.5.0 | 2026-05-11
   v1.0.0 — 初版任務詳情頁
   v1.1.0 — 資訊欄改為緊湊單列顯示；工作進度支援刪除；進度條目樣式優化
   v1.2.0 — 進度條目加數字排序；內文放大至 28px 置前；作者時間移至底部；✕ 改為 ✏️ 編輯 + 🗑️ 刪除
   v1.3.0 — 進度條目改單行：數字.內文 時間 ✏️🗑️；數字改純文字；字體縮回 14px；按鈕垂直置中
   v1.4.0 — 狀態改為進行中/完成兩選項；移除待處理/待確認
+  v1.5.0 — 新增進度時可選填時間（預設當下）；編輯進度時可修改時間
 -->
 <!DOCTYPE html>
 <html lang="zh-TW">
@@ -66,6 +67,10 @@
     .progress-meta { flex-shrink: 0; font-size: 11px; color: #9ca3af; white-space: nowrap; }
     .progress-item-actions { display: flex; gap: 2px; flex-shrink: 0; align-items: center; }
     .progress-composer { margin-top: 14px; }
+    .progress-time-row { display: flex; align-items: center; gap: 8px; margin: 10px 0 8px; }
+    .progress-time-label { font-size: 13px; color: #6b7280; white-space: nowrap; }
+    .progress-time-row input[type="datetime-local"] { padding: 8px 10px; border: 1px solid #ddd; border-radius: 8px; font-size: 13px; font-family: inherit; outline: none; }
+    .progress-time-row input[type="datetime-local"]:focus { border-color: #1976D2; }
     .progress-composer textarea, .modal input, .modal select, .modal textarea {
       width: 100%; padding: 11px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; font-family: inherit; outline: none;
     }
@@ -191,6 +196,9 @@
 <div class="modal-overlay" id="editProgressModal">
   <div class="modal">
     <h2>✏️ 編輯進度記錄</h2>
+    <label>時間</label>
+    <input type="datetime-local" id="editProgressTime">
+    <label>內容</label>
     <textarea id="editProgressInput" style="min-height:120px;resize:vertical"></textarea>
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeEditProgress()">取消</button>
@@ -202,7 +210,7 @@
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js';
 import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js';
-import { getFirestore, doc, getDoc, updateDoc, collection, getDocs, query, where, serverTimestamp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js';
+import { getFirestore, doc, getDoc, updateDoc, collection, getDocs, query, where, orderBy, serverTimestamp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js';
 import { getFunctions, httpsCallable } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-functions.js';
 
 const firebaseConfig = {
@@ -240,11 +248,29 @@ let currentUser = null;
 let currentMemberKeys = [];
 let isAdmin = false;
 let task = null;
+let taskCategories = ['技術/資訊', '行政/庶務', '業務/對外', '其他'];
+
+async function loadTaskCategories() {
+  try {
+    const snap = await getDocs(query(collection(db, 'work_progress_categories'), orderBy('order', 'asc')));
+    if (!snap.empty) taskCategories = snap.docs.map(d => d.data().name).filter(Boolean);
+  } catch(e) { /* keep defaults */ }
+}
+
+function populateCategorySelect() {
+  const sel = document.getElementById('editCategory');
+  if (!sel) return;
+  const cur = sel.value;
+  sel.innerHTML = `<option value="">未分類</option>` +
+    taskCategories.map(c => `<option value="${c.replace(/"/g,'&quot;')}">${c.replace(/</g,'&lt;')}</option>`).join('');
+  sel.value = cur;
+}
 
 onAuthStateChanged(auth, async (user) => {
   if (!user) { location.href = `login.html?redirect=${encodeURIComponent(location.pathname.split('/').pop() + location.search)}`; return; }
   currentUser = user;
   isAdmin = user.email === 'ohihio@gmail.com';
+  await loadTaskCategories();
   currentMemberKeys = await loadCurrentMemberKeys();
   if (!taskId) {
     renderError('缺少任務 ID');
@@ -304,6 +330,12 @@ function dueDateLabel(d) {
   return d;
 }
 
+function toDatetimeLocalValue(ms) {
+  const d = new Date(ms);
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 function formatDateTime(ts) {
   if (!ts) return '—';
   if (typeof ts?.toDate === 'function') return ts.toDate().toLocaleString('zh-TW', { hour12: false });
@@ -353,6 +385,10 @@ function renderTask() {
   const progressComposer = canProgress ? `
     <div class="progress-composer">
       <div class="block-title">新增工作進度</div>
+      <div class="progress-time-row">
+        <span class="progress-time-label">時間</span>
+        <input type="datetime-local" id="progressTime">
+      </div>
       <textarea id="progressInput" placeholder="輸入這次進度、卡點、下一步"></textarea>
       <div class="progress-note">只有建立者、負責人與 admin 可以寫入進度。</div>
       <div class="progress-actions">
@@ -416,6 +452,8 @@ function renderTask() {
       建立時間：${escHtml(formatDateTime(task.createdAt))}　更新時間：${escHtml(formatDateTime(task.updatedAt))}　封存時間：${escHtml(formatDateTime(task.archivedAt))}
     </div>
   `;
+  const ptEl = document.getElementById('progressTime');
+  if (ptEl) ptEl.value = toDatetimeLocalValue(Date.now());
 }
 
 window.goBack = function() {
@@ -440,13 +478,15 @@ window.saveProgressEntry = async function() {
     return;
   }
 
+  const timeVal = document.getElementById('progressTime')?.value;
+  const createdAtMs = timeVal ? new Date(timeVal).getTime() : Date.now();
   const nextEntry = {
     id: `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
     content,
     authorUid: currentUser.uid,
     authorEmail: currentUser.email || '',
     authorName: currentUser.displayName || currentUser.email || '未知使用者',
-    createdAtMs: Date.now()
+    createdAtMs
   };
 
   btn.disabled = true;
@@ -473,6 +513,8 @@ window.editProgressEntry = function(entryId) {
   if (!entry) return;
   editingProgressId = entryId;
   document.getElementById('editProgressInput').value = entry.content || '';
+  const ms = entry.createdAtMs || (entry.createdAt?.seconds ? entry.createdAt.seconds * 1000 : Date.now());
+  document.getElementById('editProgressTime').value = toDatetimeLocalValue(ms);
   document.getElementById('editProgressModal').classList.add('show');
 };
 
@@ -485,12 +527,16 @@ window.saveEditProgress = async function() {
   if (!task || !editingProgressId) return;
   const btn = document.getElementById('editProgressSaveBtn');
   const content = document.getElementById('editProgressInput').value.trim();
+  const timeVal = document.getElementById('editProgressTime').value;
   if (!content) { alert('內容不能為空'); return; }
   btn.disabled = true; btn.textContent = '儲存中…';
   try {
-    const updated = (task.progressEntries || []).map(e =>
-      e.id === editingProgressId ? { ...e, content, editedAtMs: Date.now() } : e
-    );
+    const updated = (task.progressEntries || []).map(e => {
+      if (e.id !== editingProgressId) return e;
+      const patch = { ...e, content, editedAtMs: Date.now() };
+      if (timeVal) patch.createdAtMs = new Date(timeVal).getTime();
+      return patch;
+    });
     await updateDoc(doc(db, 'work_progress', task.id), {
       progressEntries: updated,
       updatedAt: serverTimestamp()
@@ -551,6 +597,7 @@ window.openEdit = function() {
   document.getElementById('editAssignee').value = task.assigneeKey || '';
   document.getElementById('editDueDate').value = task.dueDate || '';
   document.getElementById('editStatus').value = task.status || 'pending';
+  populateCategorySelect();
   document.getElementById('editCategory').value = task.category || '';
   document.getElementById('editDescription').value = task.description || '';
   document.getElementById('editVisibility').value = task.visibility || 'public';

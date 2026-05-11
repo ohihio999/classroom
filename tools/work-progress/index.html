@@ -4,9 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>工作進度表</title>
-  <!-- v1.1.0 | 2026-05-08
+  <!-- v1.2.0 | 2026-05-11
     v1.0.0 — 初版工作進度表列表頁
     v1.1.0 — 狀態改為進行中/完成兩選項；移除待處理/待確認 tab 與統計；統計改為進行中/完成/全部
+    v1.2.0 — 動態類別管理（admin 可新增/移除，存 Firestore）；工作項目 ↑↓ 手動排序（admin）
   -->
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -55,6 +56,8 @@
     .btn-icon { background: none; border: none; font-size: 17px; cursor: pointer; color: #ccc; padding: 2px; line-height: 1; }
     .btn-icon:hover { color: #1976D2; }
     .btn-icon.del:hover { color: #e53935; }
+    .chip-manage { background: #f0f9ff; color: #0369a1; border-color: #bae6fd; }
+    .chip-manage:hover { background: #e0f2fe; }
 
     .cat-section { margin-bottom: 16px; }
     .cat-header { font-size: 12px; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em; padding: 6px 2px 4px; border-bottom: 1px solid #e5e7eb; margin-bottom: 6px; }
@@ -127,13 +130,7 @@
 </div>
 
 <div class="page-section">
-  <div class="chip-bar">
-    <div class="chip active" onclick="filterCat('all',this)">全部</div>
-    <div class="chip" onclick="filterCat('技術/資訊',this)">技術/資訊</div>
-    <div class="chip" onclick="filterCat('行政/庶務',this)">行政/庶務</div>
-    <div class="chip" onclick="filterCat('業務/對外',this)">業務/對外</div>
-    <div class="chip" onclick="filterCat('其他',this)">其他</div>
-  </div>
+  <div class="chip-bar" id="chipBar"></div>
 </div>
 
 <div class="page-section">
@@ -211,11 +208,25 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="catModal">
+  <div class="modal">
+    <h2>🏷️ 類別管理</h2>
+    <div id="catList"></div>
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <input type="text" id="newCatInput" placeholder="新類別名稱" style="flex:1">
+      <button class="btn btn-primary" onclick="addCategory()">新增</button>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeCatModal()">關閉</button>
+    </div>
+  </div>
+</div>
+
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js';
 import { getAuth, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js';
 import {
-  getFirestore, collection, getDocs, query, where, orderBy,
+  getFirestore, collection, getDocs, query, where, orderBy, addDoc,
   doc, deleteDoc, updateDoc, writeBatch, serverTimestamp
 } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js';
 import { getFunctions, httpsCallable } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-functions.js';
@@ -256,7 +267,7 @@ const MEMBERS = [
 const STATUS_LABEL = { in_progress:'進行中', done:'完成' };
 const STATUS_BADGE = { in_progress:'badge-inprogress', done:'badge-done' };
 
-let allTasks = [], currentUser = null, isAdmin = false;
+let allTasks = [], currentUser = null, isAdmin = false, categories = [], catDocs = [];
 let tabFilter = 'all', catFilter = 'all', editingId = null;
 let currentMemberKeys = [];
 
@@ -265,8 +276,32 @@ onAuthStateChanged(auth, async (user) => {
   currentUser = user;
   isAdmin = user.email === 'ohihio@gmail.com';
   if (isAdmin) document.getElementById('btnMemberEmail').style.display = '';
+  await loadCategories();
   await loadTasks();
 });
+
+async function loadCategories() {
+  try {
+    const snap = await getDocs(query(collection(db, 'work_progress_categories'), orderBy('order', 'asc')));
+    categories = snap.empty
+      ? ['技術/資訊', '行政/庶務', '業務/對外', '其他']
+      : snap.docs.map(d => d.data().name).filter(Boolean);
+  } catch(e) {
+    categories = ['技術/資訊', '行政/庶務', '業務/對外', '其他'];
+  }
+  renderChipBar();
+}
+
+function renderChipBar() {
+  const bar = document.getElementById('chipBar');
+  if (!bar) return;
+  const items = [{ name: '全部', val: 'all' }, ...categories.map(c => ({ name: c, val: c }))];
+  let html = items.map(({ name, val }) =>
+    `<div class="chip${catFilter === val ? ' active' : ''}" onclick="filterCat('${escAttr(val)}')">${escHtml(name)}</div>`
+  ).join('');
+  if (isAdmin) html += `<div class="chip chip-manage" onclick="openCatModal()">⚙️ 管理</div>`;
+  bar.innerHTML = html;
+}
 
 async function loadCurrentMemberKeys() {
   if (!currentUser?.email || isAdmin) return [];
@@ -328,9 +363,18 @@ function renderStats() {
     <div class="stat stat-total"><div class="stat-num">${allTasks.length}</div><div class="stat-label">全部</div></div>`;
 }
 
+function getSortedTasks(taskList) {
+  return [...taskList].sort((a, b) => {
+    const ao = (a.sortOrder !== null && a.sortOrder !== undefined) ? a.sortOrder : Infinity;
+    const bo = (b.sortOrder !== null && b.sortOrder !== undefined) ? b.sortOrder : Infinity;
+    if (ao !== bo) return ao - bo;
+    return (a.dueDate || '9999').localeCompare(b.dueDate || '9999');
+  });
+}
+
 function renderList() {
   const list = document.getElementById('list');
-  let tasks = allTasks;
+  let tasks = getSortedTasks(allTasks);
   if (tabFilter !== 'all') tasks = tasks.filter((t) => t.status === tabFilter);
   if (catFilter !== 'all') tasks = tasks.filter((t) => t.category === catFilter);
 
@@ -343,6 +387,9 @@ function renderList() {
     const canEdit = t.createdBy === currentUser.uid || isAdmin;
     const dColor = dueDateColor(t.dueDate);
     const dLabel = dueDateLabel(t.dueDate);
+    const sortBtns = isAdmin
+      ? `<button class="btn-icon" onclick="event.stopPropagation();moveTask('${t.id}',-1)" title="上移">↑</button><button class="btn-icon" onclick="event.stopPropagation();moveTask('${t.id}',1)" title="下移">↓</button>`
+      : '';
     const editBtns = canEdit
       ? `<button class="btn-icon" onclick="event.stopPropagation();editRecord('${t.id}')">✏️</button>
          <button class="btn-icon del" onclick="event.stopPropagation();deleteRecord('${t.id}','${escAttr(t.title || '')}')">🗑️</button>`
@@ -353,7 +400,7 @@ function renderList() {
       </div>
       <div class="card-right">
         <span class="card-meta">👤 ${escHtml(t.assignee || '—')} · <span class="due-text" style="color:${dColor}">📅 ${escHtml(dLabel)}</span></span>
-        ${editBtns}
+        ${sortBtns}${editBtns}
         <span class="badge ${STATUS_BADGE[t.status] || 'badge-pending'}">${STATUS_LABEL[t.status] || t.status}</span>
       </div>
     </div>`;
@@ -364,7 +411,7 @@ function renderList() {
     return;
   }
 
-  const CAT_ORDER = ['技術/資訊', '行政/庶務', '業務/對外', '其他'];
+  const CAT_ORDER = categories.length ? categories : ['技術/資訊', '行政/庶務', '業務/對外', '其他'];
   const grouped = {};
   tasks.forEach((t) => {
     const key = t.category || '其他';
@@ -415,10 +462,9 @@ window.filterTab = function(f, el) {
   renderList();
 };
 
-window.filterCat = function(c, el) {
+window.filterCat = function(c) {
   catFilter = c;
-  document.querySelectorAll('.chip').forEach((t) => t.classList.remove('active'));
-  el.classList.add('active');
+  renderChipBar();
   renderList();
 };
 
@@ -506,6 +552,100 @@ window.autoClassifyEdit = async function() {
   btn.disabled = false;
 };
 
+window.moveTask = async function(id, dir) {
+  if (!isAdmin) return;
+  const getVisible = (list) => {
+    let v = getSortedTasks(list);
+    if (tabFilter !== 'all') v = v.filter(t => t.status === tabFilter);
+    if (catFilter !== 'all') v = v.filter(t => t.category === catFilter);
+    return v;
+  };
+
+  let visible = getVisible(allTasks);
+  const idx = visible.findIndex(t => t.id === id);
+  if (idx === -1) return;
+  const swapIdx = idx + dir;
+  if (swapIdx < 0 || swapIdx >= visible.length) return;
+
+  const needsInit = allTasks.some(t => t.sortOrder === null || t.sortOrder === undefined);
+  if (needsInit) {
+    getSortedTasks(allTasks).forEach((t, i) => { t.sortOrder = (i + 1) * 100; });
+    visible = getVisible(allTasks);
+  }
+
+  [visible[idx].sortOrder, visible[swapIdx].sortOrder] = [visible[swapIdx].sortOrder, visible[idx].sortOrder];
+
+  try {
+    const batch = writeBatch(db);
+    if (needsInit) {
+      allTasks.forEach(t => batch.update(doc(db, 'work_progress', t.id), { sortOrder: t.sortOrder }));
+    } else {
+      batch.update(doc(db, 'work_progress', visible[idx].id), { sortOrder: visible[idx].sortOrder, updatedAt: serverTimestamp() });
+      batch.update(doc(db, 'work_progress', visible[swapIdx].id), { sortOrder: visible[swapIdx].sortOrder, updatedAt: serverTimestamp() });
+    }
+    await batch.commit();
+    renderList();
+  } catch(e) {
+    alert(`排序失敗：${e.message}`);
+  }
+};
+
+window.openCatModal = async function() {
+  if (!isAdmin) return;
+  document.getElementById('catModal').classList.add('show');
+  document.getElementById('newCatInput').value = '';
+  await renderCatList();
+};
+
+window.closeCatModal = function() {
+  document.getElementById('catModal').classList.remove('show');
+};
+
+async function renderCatList() {
+  const listEl = document.getElementById('catList');
+  listEl.innerHTML = '<p style="color:#bbb;font-size:13px">載入中…</p>';
+  try {
+    const snap = await getDocs(query(collection(db, 'work_progress_categories'), orderBy('order', 'asc')));
+    catDocs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    listEl.innerHTML = catDocs.length
+      ? catDocs.map(c => `
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+            <span style="flex:1;font-size:14px">${escHtml(c.name)}</span>
+            <button class="btn btn-secondary" style="padding:6px 12px;font-size:12px" onclick="deleteCat('${escAttr(c.id)}','${escAttr(c.name)}')">移除</button>
+          </div>`).join('')
+      : '<p style="color:#bbb;font-size:13px">尚無自訂類別（使用系統預設）</p>';
+  } catch(e) {
+    listEl.innerHTML = `<p style="color:#d32f2f;font-size:13px">載入失敗：${e.message}</p>`;
+  }
+}
+
+window.addCategory = async function() {
+  const input = document.getElementById('newCatInput');
+  const name = input.value.trim();
+  if (!name) return;
+  if (categories.includes(name)) { alert('類別已存在'); return; }
+  try {
+    const maxOrder = catDocs.length ? Math.max(...catDocs.map(c => c.order || 0)) : 0;
+    await addDoc(collection(db, 'work_progress_categories'), { name, order: maxOrder + 1, createdAt: serverTimestamp() });
+    input.value = '';
+    await loadCategories();
+    await renderCatList();
+  } catch(e) {
+    alert(`新增失敗：${e.message}`);
+  }
+};
+
+window.deleteCat = async function(id, name) {
+  if (!confirm(`確定移除「${name}」類別？（現有任務的分類標籤不受影響）`)) return;
+  try {
+    await deleteDoc(doc(db, 'work_progress_categories', id));
+    await loadCategories();
+    await renderCatList();
+  } catch(e) {
+    alert(`移除失敗：${e.message}`);
+  }
+};
+
 window.doSignOut = async function() {
   await signOut(auth);
   location.href = 'login.html';
@@ -564,6 +704,9 @@ document.getElementById('editModal').addEventListener('click', (e) => {
 
 document.getElementById('memberModal').addEventListener('click', (e) => {
   if (e.target.id === 'memberModal') closeMemberModal();
+});
+document.getElementById('catModal').addEventListener('click', (e) => {
+  if (e.target.id === 'catModal') closeCatModal();
 });
 </script>
 </body>
