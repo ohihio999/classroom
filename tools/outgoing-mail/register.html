@@ -45,6 +45,20 @@
     @keyframes spin { to { transform: rotate(360deg); } }
     #resultsSection { display: none; }
     .results-heading { font-size: 14px; font-weight: 600; color: #555; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+    .picker-value { width: 100%; min-height: 42px; padding: 10px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; background: #fafafa; color: #333; display: flex; align-items: center; }
+    .picker-value.empty { color: #999; }
+    .picker-btn { width: 100%; justify-content: center; margin-top: 8px; background: #fff; color: #5C6BC0; border: 1px solid #5C6BC0; }
+    .sheet-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 100; align-items: flex-end; justify-content: center; }
+    .sheet-overlay.show { display: flex; }
+    .sheet { background: white; border-radius: 18px 18px 0 0; width: 100%; max-width: 600px; max-height: 80vh; overflow-y: auto; padding-bottom: 18px; }
+    .sheet-header { display: flex; justify-content: space-between; align-items: center; padding: 18px 20px 12px; border-bottom: 1px solid #f0f0f0; position: sticky; top: 0; background: white; border-radius: 18px 18px 0 0; }
+    .sheet-header h2 { font-size: 16px; color: #333; }
+    .sheet-close { background: #eee; border: none; width: 30px; height: 30px; border-radius: 50%; font-size: 16px; cursor: pointer; color: #666; }
+    .sheet-body { padding: 16px 20px; }
+    .sender-option { display: flex; align-items: center; gap: 10px; padding: 12px 0; border-bottom: 1px solid #f5f5f5; font-size: 14px; color: #333; }
+    .sender-option:last-child { border-bottom: none; }
+    .sender-option input { width: 18px; height: 18px; }
+    .sheet-actions { display: flex; gap: 10px; justify-content: flex-end; padding: 0 20px 8px; }
   </style>
 </head>
 <body>
@@ -95,6 +109,20 @@
   <div style="height:32px"></div>
 </div>
 
+<div class="sheet-overlay" id="senderPickerModal" onclick="closeSenderPicker(event)">
+  <div class="sheet" onclick="event.stopPropagation()">
+    <div class="sheet-header">
+      <h2>選擇寄件人</h2>
+      <button class="sheet-close" onclick="closeSenderPicker()">✕</button>
+    </div>
+    <div class="sheet-body" id="senderPickerOptions"></div>
+    <div class="sheet-actions">
+      <button class="btn btn-gallery" onclick="closeSenderPicker()">取消</button>
+      <button class="btn btn-camera" onclick="applySenderPicker()">OK</button>
+    </div>
+  </div>
+</div>
+
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js';
 import { getFirestore, collection, addDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js';
@@ -106,12 +134,18 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const functions = getFunctions(app, 'asia-east1');
 const ocrFn = httpsCallable(functions, 'ocrEnvelope');
+const SENDER_OPTIONS = [
+  '林玉鈴', '黃志堅', '林毓婷', '黃義正', '吳翊平', '曾書彥', '王儷蓉', '許世佑',
+  '陳佳興', '陳姵存', '林宥燁', '林逸昇', '蘇彥霖', '鍾文綺', '石博仁', '潘怡穎',
+  '台精精密股份有限公司'
+];
 
 // ── State ──────────────────────────────────────────
 let receiptBase64 = null;
 let envelopeSlots = [];
 let slotCounter = 0;
 let records = [];
+let activeSenderRecordIndex = null;
 
 // ── Receipt inputs ─────────────────────────────────
 ['receiptCamera','receiptGallery'].forEach(id => {
@@ -182,8 +216,8 @@ function updateOcrBtn() {
 addEnvelopeSlot();
 
 // ── Batch OCR ──────────────────────────────────────
-const ENVELOPE_PROMPT = '這是一封信封的正面。請辨識以下欄位，以純 JSON 回傳（不加 markdown）：{"senderName":"寄件人公司或姓名","recipientName":"收件人公司或單位","recipientDept":"部門（若無填空）","recipientContact":"聯絡人姓名（若無填空）","recipientAddress":"完整收件地址（含縣市）","content":"信件內容說明（若有標示，否則填空）"}。找不到的欄位填空字串。';
-const RECEIPT_PROMPT = '這是一張郵局掛號收執聯，可能有多筆掛號。台灣掛號號碼格式：2個英文字母＋9位數字＋2個英文字母，共13碼，請仔細辨識每一碼，不可遺漏任何一個字元。以純 JSON 回傳（不加 markdown）：{"items":[{"trackingNumber":"完整13碼掛號號碼","destination":"目的地城市（如高雄市、台北市、台中市，從郵遞區號或地址判斷）"}],"date":"日期 YYYY-MM-DD（民國年轉西元）","postage":"郵費數字（找不到填空）"}。依序列出所有掛號，找不到的填空字串。';
+const ENVELOPE_PROMPT = '這是一封信封的正面。請辨識以下欄位，以純 JSON 回傳（不加 markdown）：{"recipientName":"收件人公司或單位","recipientDept":"部門（若無填空）","recipientContact":"聯絡人姓名（若無填空）","recipientAddress":"完整收件地址（含縣市）","content":"信件內容說明（若有標示，否則填空）"}。找不到的欄位填空字串。';
+const RECEIPT_PROMPT = '這是一張台灣郵局收執聯或執據，可能是限時掛號函件、普通掛號函件執據、掛號包裹執據，也可能有多筆掛號。請優先辨識收據上方那一排掛號號碼，不要把旁邊的「號」字、地址郵遞區號、電話、重量、郵資、單號等其他數字混進去。台灣國內這幾種單據的掛號號碼是 20 碼純數字，空格分組固定為 6-6-2-5-1，例如：917120 100067 20 11000 6、974081 100067 10 40200 0、920996 100067 70 33300 9。如果是國際掛號，才是 13 碼格式：2個英文字母＋9位數字＋2個英文字母。請以純 JSON 回傳（不加 markdown）：{"items":[{"trackingNumber":"完整掛號號碼，20 碼請保留 6-6-2-5-1 空格格式，13 碼請原樣正確輸出","destination":"目的地城市或區域，從地址判斷，例如台北市、台中市、高雄市、桃園市龜山區"}],"date":"日期 YYYY-MM-DD（民國年轉西元）","postage":"郵費數字（找不到填空）"}。依序列出所有掛號，找不到的欄位填空字串。';
 
 window.runBatchOCR = async function() {
   const btn = document.getElementById('ocrAllBtn');
@@ -208,7 +242,7 @@ window.runBatchOCR = async function() {
         const r = await ocrFn({ imageBase64: receiptBase64, mimeType: 'image/jpeg', prompt: RECEIPT_PROMPT });
         const d = r.data || {};
         receiptData = {
-          items: Array.isArray(d.items) ? d.items : [],
+          items: normalizeReceiptItems(Array.isArray(d.items) ? d.items : []),
           date: d.date || today,
           postage: d.postage || ''
         };
@@ -229,7 +263,7 @@ window.runBatchOCR = async function() {
         if (usedIdx.has(j)) continue;
         const dest = (items[j].destination || '').toLowerCase();
         if (dest && addr.includes(dest)) {
-          assigned[i] = items[j].trackingNumber || '';
+          assigned[i] = normalizeTracking(items[j].trackingNumber || '');
           usedIdx.add(j);
           break;
         }
@@ -241,20 +275,21 @@ window.runBatchOCR = async function() {
     envResults.forEach((_, i) => {
       if (assigned[i] !== null) return;
       while (nextJ < items.length && usedIdx.has(nextJ)) nextJ++;
-      assigned[i] = nextJ < items.length ? (items[nextJ].trackingNumber || '') : '';
+      assigned[i] = nextJ < items.length ? normalizeTracking(items[nextJ].trackingNumber || '') : '';
       usedIdx.add(nextJ); nextJ++;
     });
 
     records = envResults.map((env, i) => ({
-      trackingNumber: assigned[i] || '',
-      senderName: env.senderName || '',
+      trackingNumber: normalizeTracking(assigned[i] || ''),
+      senderNames: [],
+      senderName: '',
       recipientName: env.recipientName || '',
       recipientDept: env.recipientDept || '',
       recipientContact: env.recipientContact || '',
       recipientAddress: env.recipientAddress || '',
       content: env.content || '',
       type: '信函',
-      date: receiptData.date,
+      date: today,
       postage: receiptData.postage,
       notes: '',
       status: 'sent'
@@ -289,7 +324,11 @@ function renderRecords() {
         <div class="form-group"><label>聯絡人</label><input id="r${i}_recipientContact" value="${esc(rec.recipientContact)}"></div>
       </div>
       <div class="form-group"><label>收件地址</label><input id="r${i}_recipientAddress" value="${esc(rec.recipientAddress)}"></div>
-      <div class="form-group"><label>寄件人</label><input id="r${i}_senderName" value="${esc(rec.senderName)}"></div>
+      <div class="form-group">
+        <label>寄件人</label>
+        <div class="picker-value ${rec.senderNames?.length ? '' : 'empty'}" id="r${i}_senderDisplay">${esc(getSenderDisplay(rec.senderNames, rec.senderName) || '請選擇寄件人')}</div>
+        <button type="button" class="btn picker-btn" onclick="openSenderPicker(${i})">選擇寄件人</button>
+      </div>
       <div class="form-group"><label>內容/用途</label><input id="r${i}_content" value="${esc(rec.content)}"></div>
       <div class="form-row">
         <div class="form-group"><label>類別</label>
@@ -312,11 +351,14 @@ function renderRecords() {
 window.saveAll = async function() {
   const btn = document.getElementById('saveAllBtn');
   btn.disabled = true; btn.textContent = '儲存中…';
-  const fields = ['trackingNumber','recipientName','recipientDept','recipientContact','recipientAddress','senderName','content','type','postage','date','notes'];
+  const fields = ['trackingNumber','recipientName','recipientDept','recipientContact','recipientAddress','content','type','postage','date','notes'];
   try {
     const writes = records.map((_, i) => {
       const data = { status: 'sent', createdAt: serverTimestamp() };
       fields.forEach(f => { data[f] = (document.getElementById(`r${i}_${f}`)?.value || '').trim(); });
+      const senderNames = Array.isArray(records[i].senderNames) ? records[i].senderNames : [];
+      data.senderNames = senderNames;
+      data.senderName = senderNames.join('、');
       if (receiptBase64) data.receiptImage = 'data:image/jpeg;base64,' + receiptBase64;
       return addDoc(collection(db, 'outgoing_mail'), data);
     });
@@ -339,16 +381,79 @@ function esc(str) {
   return (str || '').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 }
 
+function getSenderDisplay(senderNames, fallback = '') {
+  if (Array.isArray(senderNames) && senderNames.length) return senderNames.join('、');
+  return fallback || '';
+}
+
+function syncRecordFromInputs(index) {
+  const rec = records[index];
+  if (!rec) return;
+  ['trackingNumber','recipientName','recipientDept','recipientContact','recipientAddress','content','type','postage','date','notes'].forEach(field => {
+    const el = document.getElementById(`r${index}_${field}`);
+    if (el) rec[field] = el.value.trim();
+  });
+}
+
+window.openSenderPicker = function(index) {
+  syncRecordFromInputs(index);
+  activeSenderRecordIndex = index;
+  renderSenderPickerOptions(records[index]?.senderNames || []);
+  document.getElementById('senderPickerModal').classList.add('show');
+};
+
+function renderSenderPickerOptions(selectedNames = []) {
+  const container = document.getElementById('senderPickerOptions');
+  container.innerHTML = SENDER_OPTIONS.map(name => `
+    <label class="sender-option">
+      <input type="checkbox" value="${esc(name)}" ${selectedNames.includes(name) ? 'checked' : ''}>
+      <span>${esc(name)}</span>
+    </label>
+  `).join('');
+}
+
+window.closeSenderPicker = function(e) {
+  if (e && e.target !== document.getElementById('senderPickerModal')) return;
+  document.getElementById('senderPickerModal').classList.remove('show');
+};
+
+window.applySenderPicker = function() {
+  if (activeSenderRecordIndex === null || !records[activeSenderRecordIndex]) return;
+  const senderNames = [...document.querySelectorAll('#senderPickerOptions input:checked')].map(el => el.value);
+  records[activeSenderRecordIndex].senderNames = senderNames;
+  records[activeSenderRecordIndex].senderName = senderNames.join('、');
+  const display = document.getElementById(`r${activeSenderRecordIndex}_senderDisplay`);
+  if (display) {
+    display.textContent = getSenderDisplay(senderNames) || '請選擇寄件人';
+    display.classList.toggle('empty', !senderNames.length);
+  }
+  closeSenderPicker();
+};
+
+function normalizeReceiptItems(items) {
+  return items.map(item => ({
+    ...item,
+    trackingNumber: normalizeTracking(item?.trackingNumber || ''),
+    destination: (item?.destination || '').trim()
+  })).filter(item => item.trackingNumber);
+}
+
+function normalizeTracking(value) {
+  const raw = String(value || '').trim().toUpperCase();
+  if (!raw) return '';
+
+  const compact = raw.replace(/號$/u, '').replace(/[^A-Z0-9]/g, '');
+  const domestic = compact.match(/^(\d{6})(\d{6})(\d{2})(\d{5})(\d)$/);
+  if (domestic) return `${domestic[1]} ${domestic[2]} ${domestic[3]} ${domestic[4]} ${domestic[5]}`;
+
+  const international = compact.match(/^([A-Z]{2})(\d{3})(\d{3})(\d{3})([A-Z]{2})$/);
+  if (international) return `${international[1]} ${international[2]} ${international[3]} ${international[4]} ${international[5]}`;
+
+  return raw;
+}
+
 function formatTracking(num) {
-  if (!num) return '';
-  const n = num.replace(/\s+/g, '').toUpperCase();
-  // 國際掛號：AA 000 000 000 TW（13碼）
-  const m13 = n.match(/^([A-Z]{2})(\d{3})(\d{3})(\d{3})([A-Z]{2})$/);
-  if (m13) return `${m13[1]} ${m13[2]} ${m13[3]} ${m13[4]} ${m13[5]}`;
-  // 普通掛號條碼：000000 000000 00 00000 0（20碼純數字）
-  const m20 = n.match(/^(\d{6})(\d{6})(\d{2})(\d{5})(\d{1})$/);
-  if (m20) return `${m20[1]} ${m20[2]} ${m20[3]} ${m20[4]} ${m20[5]}`;
-  return num;
+  return normalizeTracking(num);
 }
 
 function compress(file) {

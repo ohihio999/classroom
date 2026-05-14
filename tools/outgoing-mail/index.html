@@ -24,7 +24,8 @@
     .card-sender { font-size: 13px; color: #888; margin-bottom: 4px; }
     .card-meta { font-size: 12px; color: #bbb; }
     .card-right { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex-shrink: 0; margin-left: 12px; }
-    .btn-delete { background: none; border: none; font-size: 18px; cursor: pointer; color: #ddd; padding: 2px; line-height: 1; }
+    .btn-edit, .btn-delete { background: none; border: none; font-size: 18px; cursor: pointer; color: #ddd; padding: 2px; line-height: 1; }
+    .btn-edit:hover { color: #5C6BC0; }
     .btn-delete:hover { color: #e53935; }
     .fab { position: fixed; bottom: 28px; right: 24px; width: 60px; height: 60px; border-radius: 50%; background: #5C6BC0; color: white; border: none; font-size: 32px; cursor: pointer; box-shadow: 0 4px 16px rgba(92,107,192,0.45); display: flex; align-items: center; justify-content: center; }
     .empty { text-align: center; padding: 60px 20px; color: #bbb; }
@@ -60,6 +61,21 @@
     .detail-value { font-size: 14px; color: #333; flex: 1; word-break: break-all; }
     .detail-value.tracking { font-family: 'Courier New', monospace; font-size: 16px; font-weight: 700; color: #222; letter-spacing: 1px; }
     .detail-img { width: 100%; border-radius: 8px; margin-top: 12px; border: 1px solid #eee; }
+    .edit-form { padding: 16px 20px 24px; }
+    .form-group { margin-bottom: 12px; }
+    .form-group label { font-size: 11px; color: #888; display: block; margin-bottom: 4px; }
+    .form-group input, .form-group select, .form-group textarea { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; outline: none; background: white; }
+    .form-group textarea { min-height: 84px; resize: vertical; }
+    .form-group input:focus, .form-group select:focus, .form-group textarea:focus { border-color: #5C6BC0; }
+    .form-row { display: flex; gap: 10px; }
+    .form-row .form-group { flex: 1; }
+    .sheet-actions { display: flex; gap: 10px; justify-content: flex-end; padding: 0 20px 20px; }
+    .picker-value { width: 100%; min-height: 42px; padding: 10px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; background: #fafafa; color: #333; display: flex; align-items: center; }
+    .picker-value.empty { color: #999; }
+    .picker-btn { width: 100%; margin-top: 8px; background: #fff; color: #5C6BC0; border: 1px solid #5C6BC0; }
+    .sender-option { display: flex; align-items: center; gap: 10px; padding: 12px 0; border-bottom: 1px solid #f5f5f5; font-size: 14px; color: #333; }
+    .sender-option:last-child { border-bottom: none; }
+    .sender-option input { width: 18px; height: 18px; }
   </style>
 </head>
 <body>
@@ -107,15 +123,63 @@
   </div>
 </div>
 
+<div class="detail-overlay" id="editModal" onclick="closeEdit(event)">
+  <div class="detail-sheet" onclick="event.stopPropagation()">
+    <div class="detail-header">
+      <h2>編輯寄件紀錄</h2>
+      <button class="detail-close" onclick="closeEdit()">✕</button>
+    </div>
+    <div class="edit-form" id="editForm"></div>
+    <div class="sheet-actions">
+      <button class="btn btn-secondary" onclick="closeEdit()">取消</button>
+      <button class="btn btn-primary" onclick="saveEdit()">儲存</button>
+    </div>
+  </div>
+</div>
+
+<div class="detail-overlay" id="senderPickerModal" onclick="closeSenderPicker(event)">
+  <div class="detail-sheet" onclick="event.stopPropagation()">
+    <div class="detail-header">
+      <h2>選擇寄件人</h2>
+      <button class="detail-close" onclick="closeSenderPicker()">✕</button>
+    </div>
+    <div class="detail-body" id="senderPickerOptions"></div>
+    <div class="sheet-actions">
+      <button class="btn btn-secondary" onclick="closeSenderPicker()">取消</button>
+      <button class="btn btn-primary" onclick="applySenderPicker()">OK</button>
+    </div>
+  </div>
+</div>
+
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js';
-import { getFirestore, collection, getDocs, query, orderBy, doc, deleteDoc, where } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js';
+import { getFirestore, collection, getDocs, query, orderBy, doc, deleteDoc, where, updateDoc } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js';
 
 const firebaseConfig = { apiKey:"AIzaSyBf0sHTsndFCksNlh46G_2mw9rk5zmPdc0", authDomain:"my-teaching-tools-2b36c.firebaseapp.com", projectId:"my-teaching-tools-2b36c", storageBucket:"my-teaching-tools-2b36c.firebasestorage.app", messagingSenderId:"82693897353", appId:"1:82693897353:web:f667501aad05c536c09a58" };
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 let allRecords = [], searchTerm = '';
+const SENDER_OPTIONS = [
+  '林玉鈴', '黃志堅', '林毓婷', '黃義正', '吳翊平', '曾書彥', '王儷蓉', '許世佑',
+  '陳佳興', '陳姵存', '林宥燁', '林逸昇', '蘇彥霖', '鍾文綺', '石博仁', '潘怡穎',
+  '台精精密股份有限公司'
+];
+let activeEditId = null;
+let activeEditSenderNames = [];
+
+function normalizeSenderNames(record) {
+  if (Array.isArray(record?.senderNames) && record.senderNames.length) {
+    return [...new Set(record.senderNames.map(v => String(v || '').trim()).filter(Boolean))];
+  }
+  const fallback = String(record?.senderName || '').trim();
+  if (!fallback) return [];
+  return [...new Set(fallback.split(/[、,，;；]+/).map(v => v.trim()).filter(Boolean))];
+}
+
+function getSenderPickerOptions(selectedNames = []) {
+  return [...new Set([...(selectedNames || []), ...SENDER_OPTIONS].map(v => String(v || '').trim()).filter(Boolean))];
+}
 
 function formatTrackingNumber(num) {
   if (!num) return '—';
@@ -127,6 +191,15 @@ function formatTrackingNumber(num) {
   const m20 = n.match(/^(\d{6})(\d{6})(\d{2})(\d{5})(\d{1})$/);
   if (m20) return `${m20[1]} ${m20[2]} ${m20[3]} ${m20[4]} ${m20[5]}`;
   return num;
+}
+
+function getSenderDisplay(record) {
+  if (Array.isArray(record?.senderNames) && record.senderNames.length) return record.senderNames.join('、');
+  return record?.senderName || '';
+}
+
+function esc(str) {
+  return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 loadRecords();
@@ -173,10 +246,11 @@ function renderList() {
       <div class="card-main">
         <div class="card-tracking">${formatTrackingNumber(r.trackingNumber)}</div>
         <div class="card-recipient">收：${r.recipientName||'—'}${r.recipientDept?' · '+r.recipientDept:''}</div>
-        <div class="card-sender">寄：${r.senderName||'—'}</div>
+        <div class="card-sender">寄：${getSenderDisplay(r)||'—'}</div>
         <div class="card-meta">${r.date||''}${r.content?' · '+r.content:''}${r.postage?' · '+r.postage+'元':''}</div>
       </div>
       <div class="card-right">
+        <button class="btn-edit" onclick="event.stopPropagation();openEdit('${r.id}')">✏️</button>
         <button class="btn-delete" onclick="event.stopPropagation();deleteRecord('${r.id}','${(r.trackingNumber||'此筆').replace(/'/g,"\\'")}')">🗑️</button>
       </div>
     </div>`).join('');
@@ -207,7 +281,7 @@ window.openDetail = function(id) {
     ${r.recipientDept ? `<div class="detail-row"><span class="detail-label">部門</span><span class="detail-value">${r.recipientDept}</span></div>` : ''}
     ${r.recipientContact ? `<div class="detail-row"><span class="detail-label">聯絡人</span><span class="detail-value">${r.recipientContact}</span></div>` : ''}
     <div class="detail-row"><span class="detail-label">收件地址</span><span class="detail-value">${r.recipientAddress||'—'}</span></div>
-    <div class="detail-row"><span class="detail-label">寄件人</span><span class="detail-value">${r.senderName||'—'}</span></div>
+    <div class="detail-row"><span class="detail-label">寄件人</span><span class="detail-value">${getSenderDisplay(r)||'—'}</span></div>
     ${r.content ? `<div class="detail-row"><span class="detail-label">內容</span><span class="detail-value">${r.content}</span></div>` : ''}
     <div class="detail-row"><span class="detail-label">類別</span><span class="detail-value">${r.type||'—'}</span></div>
     <div class="detail-row"><span class="detail-label">寄出日期</span><span class="detail-value">${r.date||'—'}</span></div>
@@ -221,6 +295,102 @@ window.openDetail = function(id) {
 window.closeDetail = function(e) {
   if (e && e.target !== document.getElementById('detailModal')) return;
   document.getElementById('detailModal').classList.remove('show');
+};
+
+window.openEdit = function(id) {
+  const r = allRecords.find(item => item.id === id);
+  if (!r) return;
+  activeEditId = id;
+  activeEditSenderNames = normalizeSenderNames(r);
+  document.getElementById('editForm').innerHTML = `
+    <div class="form-group"><label>掛號號碼</label><input id="edit_trackingNumber" value="${esc(r.trackingNumber || '')}"></div>
+    <div class="form-group"><label>收件公司/單位</label><input id="edit_recipientName" value="${esc(r.recipientName || '')}"></div>
+    <div class="form-row">
+      <div class="form-group"><label>部門</label><input id="edit_recipientDept" value="${esc(r.recipientDept || '')}"></div>
+      <div class="form-group"><label>聯絡人</label><input id="edit_recipientContact" value="${esc(r.recipientContact || '')}"></div>
+    </div>
+    <div class="form-group"><label>收件地址</label><input id="edit_recipientAddress" value="${esc(r.recipientAddress || '')}"></div>
+    <div class="form-group">
+      <label>寄件人</label>
+      <div class="picker-value ${activeEditSenderNames.length ? '' : 'empty'}" id="edit_senderDisplay">${esc(getSenderDisplay({ senderNames: activeEditSenderNames, senderName: r.senderName }) || '請選擇寄件人')}</div>
+      <button type="button" class="btn picker-btn" onclick="openSenderPicker()">選擇寄件人</button>
+    </div>
+    <div class="form-group"><label>內容/用途</label><input id="edit_content" value="${esc(r.content || '')}"></div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>類別</label>
+        <select id="edit_type">
+          <option value="信函" ${r.type === '信函' ? 'selected' : ''}>信函</option>
+          <option value="包裹" ${r.type === '包裹' ? 'selected' : ''}>包裹</option>
+          <option value="其他" ${r.type === '其他' ? 'selected' : ''}>其他</option>
+        </select>
+      </div>
+      <div class="form-group"><label>郵費（元）</label><input id="edit_postage" value="${esc(r.postage || '')}"></div>
+    </div>
+    <div class="form-group"><label>寄出日期</label><input type="date" id="edit_date" value="${esc(r.date || '')}"></div>
+    <div class="form-group"><label>備註</label><textarea id="edit_notes">${esc(r.notes || '')}</textarea></div>
+  `;
+  document.getElementById('editModal').classList.add('show');
+};
+
+window.closeEdit = function(e) {
+  if (e && e.target !== document.getElementById('editModal')) return;
+  document.getElementById('editModal').classList.remove('show');
+};
+
+window.openSenderPicker = function() {
+  const container = document.getElementById('senderPickerOptions');
+  container.innerHTML = getSenderPickerOptions(activeEditSenderNames).map(name => `
+    <label class="sender-option">
+      <input type="checkbox" value="${esc(name)}" ${activeEditSenderNames.includes(name) ? 'checked' : ''}>
+      <span>${esc(name)}</span>
+    </label>
+  `).join('');
+  document.getElementById('senderPickerModal').classList.add('show');
+};
+
+window.closeSenderPicker = function(e) {
+  if (e && e.target !== document.getElementById('senderPickerModal')) return;
+  document.getElementById('senderPickerModal').classList.remove('show');
+};
+
+window.applySenderPicker = function() {
+  activeEditSenderNames = [...document.querySelectorAll('#senderPickerOptions input:checked')].map(el => el.value);
+  const display = document.getElementById('edit_senderDisplay');
+  if (display) {
+    display.textContent = activeEditSenderNames.join('、') || '請選擇寄件人';
+    display.classList.toggle('empty', !activeEditSenderNames.length);
+  }
+  closeSenderPicker();
+};
+
+window.saveEdit = async function() {
+  if (!activeEditId) return;
+  const payload = {
+    trackingNumber: document.getElementById('edit_trackingNumber').value.trim(),
+    recipientName: document.getElementById('edit_recipientName').value.trim(),
+    recipientDept: document.getElementById('edit_recipientDept').value.trim(),
+    recipientContact: document.getElementById('edit_recipientContact').value.trim(),
+    recipientAddress: document.getElementById('edit_recipientAddress').value.trim(),
+    senderNames: activeEditSenderNames,
+    senderName: activeEditSenderNames.join('、'),
+    content: document.getElementById('edit_content').value.trim(),
+    type: document.getElementById('edit_type').value.trim(),
+    postage: document.getElementById('edit_postage').value.trim(),
+    date: document.getElementById('edit_date').value,
+    notes: document.getElementById('edit_notes').value.trim(),
+  };
+  try {
+    await updateDoc(doc(db, 'outgoing_mail', activeEditId), payload);
+    const idx = allRecords.findIndex(r => r.id === activeEditId);
+    if (idx >= 0) allRecords[idx] = { ...allRecords[idx], ...payload };
+    renderStats();
+    renderList();
+    if (document.getElementById('detailModal').classList.contains('show')) openDetail(activeEditId);
+    closeEdit();
+  } catch (e) {
+    alert('儲存失敗：' + e.message);
+  }
 };
 
 // 匯出
@@ -243,7 +413,7 @@ window.doExport = async function() {
     if (!rows.length) { alert('該時段無紀錄'); return; }
     const headers = ['掛號號碼','寄件人','收件人','單位','聯絡人','收件地址','內容','類別','寄出日期','郵費','備註'];
     const csv = [headers, ...rows.map(r => [
-      formatTrackingNumber(r.trackingNumber||''), r.senderName||'', r.recipientName||'', r.recipientDept||'',
+      formatTrackingNumber(r.trackingNumber||''), getSenderDisplay(r)||'', r.recipientName||'', r.recipientDept||'',
       r.recipientContact||'', r.recipientAddress||'', r.content||'', r.type||'',
       r.date||'', r.postage||'', r.notes||''
     ])].map(row => row.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
