@@ -1,3 +1,4 @@
+<!-- v1.1.0 | 2026-05-25 | feat: 顯示信封照片；照片欄位改用 Storage URL，舊 base64 保留 fallback -->
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
@@ -76,6 +77,13 @@
     .sender-option { display: flex; align-items: center; gap: 10px; padding: 12px 0; border-bottom: 1px solid #f5f5f5; font-size: 14px; color: #333; }
     .sender-option:last-child { border-bottom: none; }
     .sender-option input { width: 18px; height: 18px; }
+    .sender-options { border: 1px solid #1a73e8; border-radius: 8px; padding: 10px; margin-top: 8px; background: white; }
+    .sender-options-label { font-size: 12px; color: #777; margin-bottom: 8px; }
+    .sender-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    .sender-chip { border: none; border-radius: 18px; padding: 8px 14px; background: #e3f2fd; color: #0057c2; font-size: 14px; cursor: pointer; }
+    .sender-chip.selected { background: #1a73e8; color: white; }
+    .sender-chip:hover { background: #d3eafd; }
+    .sender-chip.selected:hover { background: #0b57d0; }
   </style>
 </head>
 <body>
@@ -137,20 +145,6 @@
   </div>
 </div>
 
-<div class="detail-overlay" id="senderPickerModal" onclick="closeSenderPicker(event)">
-  <div class="detail-sheet" onclick="event.stopPropagation()">
-    <div class="detail-header">
-      <h2>選擇寄件人</h2>
-      <button class="detail-close" onclick="closeSenderPicker()">✕</button>
-    </div>
-    <div class="detail-body" id="senderPickerOptions"></div>
-    <div class="sheet-actions">
-      <button class="btn btn-secondary" onclick="closeSenderPicker()">取消</button>
-      <button class="btn btn-primary" onclick="applySenderPicker()">OK</button>
-    </div>
-  </div>
-</div>
-
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js';
 import { getFirestore, collection, getDocs, query, orderBy, doc, deleteDoc, where, updateDoc } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js';
@@ -161,24 +155,28 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 let allRecords = [], searchTerm = '';
 const SENDER_OPTIONS = [
-  '林玉鈴', '黃志堅', '林毓婷', '黃義正', '吳翊平', '曾書彥', '王儷蓉', '許世佑',
-  '陳佳興', '陳姵存', '林宥燁', '林逸昇', '蘇彥霖', '鍾文綺', '石博仁', '潘怡穎',
-  '台精精密股份有限公司'
+  '林玉鈴 (Kanny)', '黃志堅 (Charles)', '林毓婷 (Cherrie)', '黃義正 (Jacky)',
+  '吳翊平 (Yibi)', '曾書彥 (Norika)', '王儷蓉 (Lisa)', '許世佑 (Seal)',
+  '陳佳興 (Steven)', '陳姵存 (Kelly)', '林宥燁 (Yedda)', '林逸昇 (Eason)',
+  '蘇彥霖 (Russell)', '鍾文綺 (Hina)', '石博仁 (Seki)', '潘怡穎 (Daisy)',
+  '台精精密股份有限公司 (Seiko Instruments Taiwan Inc.)'
 ];
 let activeEditId = null;
 let activeEditSenderNames = [];
 
 function normalizeSenderNames(record) {
+  const normalizeOption = name => {
+    const value = String(name || '').trim();
+    if (!value) return '';
+    if (SENDER_OPTIONS.includes(value)) return value;
+    return SENDER_OPTIONS.find(option => option.startsWith(`${value} (`)) || value;
+  };
   if (Array.isArray(record?.senderNames) && record.senderNames.length) {
-    return [...new Set(record.senderNames.map(v => String(v || '').trim()).filter(Boolean))];
+    return [...new Set(record.senderNames.map(normalizeOption).filter(Boolean))];
   }
   const fallback = String(record?.senderName || '').trim();
   if (!fallback) return [];
-  return [...new Set(fallback.split(/[、,，;；]+/).map(v => v.trim()).filter(Boolean))];
-}
-
-function getSenderPickerOptions(selectedNames = []) {
-  return [...new Set([...(selectedNames || []), ...SENDER_OPTIONS].map(v => String(v || '').trim()).filter(Boolean))];
+  return [...new Set(fallback.split(/[、,，;；]+/).map(normalizeOption).filter(Boolean))];
 }
 
 function formatTrackingNumber(num) {
@@ -287,7 +285,8 @@ window.openDetail = function(id) {
     <div class="detail-row"><span class="detail-label">寄出日期</span><span class="detail-value">${r.date||'—'}</span></div>
     ${r.postage ? `<div class="detail-row"><span class="detail-label">郵費</span><span class="detail-value">${r.postage} 元</span></div>` : ''}
     ${r.notes ? `<div class="detail-row"><span class="detail-label">備註</span><span class="detail-value">${r.notes}</span></div>` : ''}
-    ${r.receiptImage ? `<img class="detail-img" src="${r.receiptImage}" alt="收執聯">` : ''}
+    ${(r.receiptImageUrl || r.receiptImage) ? `<img class="detail-img" src="${r.receiptImageUrl || r.receiptImage}" alt="收執聯">` : ''}
+    ${r.envelopeImageUrl ? `<img class="detail-img" src="${r.envelopeImageUrl}" alt="信封">` : ''}
   `;
   document.getElementById('detailModal').classList.add('show');
 };
@@ -313,7 +312,7 @@ window.openEdit = function(id) {
     <div class="form-group">
       <label>寄件人</label>
       <div class="picker-value ${activeEditSenderNames.length ? '' : 'empty'}" id="edit_senderDisplay">${esc(getSenderDisplay({ senderNames: activeEditSenderNames, senderName: r.senderName }) || '請選擇寄件人')}</div>
-      <button type="button" class="btn picker-btn" onclick="openSenderPicker()">選擇寄件人</button>
+      ${renderSenderOptions()}
     </div>
     <div class="form-group"><label>內容/用途</label><input id="edit_content" value="${esc(r.content || '')}"></div>
     <div class="form-row">
@@ -338,30 +337,28 @@ window.closeEdit = function(e) {
   document.getElementById('editModal').classList.remove('show');
 };
 
-window.openSenderPicker = function() {
-  const container = document.getElementById('senderPickerOptions');
-  container.innerHTML = getSenderPickerOptions(activeEditSenderNames).map(name => `
-    <label class="sender-option">
-      <input type="checkbox" value="${esc(name)}" ${activeEditSenderNames.includes(name) ? 'checked' : ''}>
-      <span>${esc(name)}</span>
-    </label>
-  `).join('');
-  document.getElementById('senderPickerModal').classList.add('show');
-};
+function renderSenderOptions() {
+  return `
+    <div class="sender-options">
+      <div class="sender-options-label">請點選寄件人：</div>
+      <div class="sender-chips">
+        ${SENDER_OPTIONS.map(name => `<button type="button" class="sender-chip ${activeEditSenderNames.includes(name) ? 'selected' : ''}" onclick="toggleEditSenderName('${esc(name)}')">${esc(name)}</button>`).join('')}
+      </div>
+    </div>
+  `;
+}
 
-window.closeSenderPicker = function(e) {
-  if (e && e.target !== document.getElementById('senderPickerModal')) return;
-  document.getElementById('senderPickerModal').classList.remove('show');
-};
-
-window.applySenderPicker = function() {
-  activeEditSenderNames = [...document.querySelectorAll('#senderPickerOptions input:checked')].map(el => el.value);
+window.toggleEditSenderName = function(name) {
+  activeEditSenderNames = activeEditSenderNames.includes(name)
+    ? activeEditSenderNames.filter(item => item !== name)
+    : [...activeEditSenderNames, name];
   const display = document.getElementById('edit_senderDisplay');
   if (display) {
     display.textContent = activeEditSenderNames.join('、') || '請選擇寄件人';
     display.classList.toggle('empty', !activeEditSenderNames.length);
   }
-  closeSenderPicker();
+  const options = document.querySelector('.sender-options');
+  if (options) options.outerHTML = renderSenderOptions();
 };
 
 window.saveEdit = async function() {

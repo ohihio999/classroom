@@ -1,3 +1,4 @@
+<!-- v1.3.0 | 2026-05-25 | refactor: 照片改存 Firebase Storage，Firestore 只存下載 URL -->
 <!-- v1.2.0 | 2026-05-25 | feat: 儲存時加存信封正面照片（envelopeImage） -->
 <!-- v1.1.0 | 2026-05-25 | fix: 收執聯郵資改抓各筆本件郵資，不再共用總金額 -->
 <!DOCTYPE html>
@@ -122,11 +123,13 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js';
 import { getFirestore, collection, addDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js';
 import { getFunctions, httpsCallable } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-functions.js';
+import { getStorage, ref, uploadString, getDownloadURL } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-storage.js';
 
 const firebaseConfig = { apiKey:"AIzaSyBf0sHTsndFCksNlh46G_2mw9rk5zmPdc0", authDomain:"my-teaching-tools-2b36c.firebaseapp.com", projectId:"my-teaching-tools-2b36c", storageBucket:"my-teaching-tools-2b36c.firebasestorage.app", messagingSenderId:"82693897353", appId:"1:82693897353:web:f667501aad05c536c09a58" };
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
+const storage = getStorage(app);
 const functions = getFunctions(app, 'asia-east1');
 const ocrFn = httpsCallable(functions, 'ocrEnvelope');
 const SENDER_OPTIONS = [
@@ -363,14 +366,24 @@ window.saveAll = async function() {
   const fields = ['trackingNumber','recipientName','recipientDept','recipientContact','recipientAddress','content','type','postage','date','notes'];
   try {
     const envelopeImgs = envelopeSlots.filter(s => s.base64);
-    const writes = records.map((_, i) => {
+    const ts = Date.now();
+    const writes = records.map(async (_, i) => {
       const data = { status: 'sent', createdAt: serverTimestamp() };
       fields.forEach(f => { data[f] = (document.getElementById(`r${i}_${f}`)?.value || '').trim(); });
       const senderNames = Array.isArray(records[i].senderNames) ? records[i].senderNames : [];
       data.senderNames = senderNames;
       data.senderName = senderNames.join('、');
-      if (receiptBase64) data.receiptImage = 'data:image/jpeg;base64,' + receiptBase64;
-      if (envelopeImgs[i]?.base64) data.envelopeImage = 'data:image/jpeg;base64,' + envelopeImgs[i].base64;
+      const imgPath = `outgoing_mail/${ts}_${i}`;
+      if (receiptBase64) {
+        const rRef = ref(storage, `${imgPath}/receipt.jpg`);
+        await uploadString(rRef, receiptBase64, 'base64', { contentType: 'image/jpeg' });
+        data.receiptImageUrl = await getDownloadURL(rRef);
+      }
+      if (envelopeImgs[i]?.base64) {
+        const eRef = ref(storage, `${imgPath}/envelope.jpg`);
+        await uploadString(eRef, envelopeImgs[i].base64, 'base64', { contentType: 'image/jpeg' });
+        data.envelopeImageUrl = await getDownloadURL(eRef);
+      }
       return addDoc(collection(db, 'outgoing_mail'), data);
     });
     await Promise.all(writes);
