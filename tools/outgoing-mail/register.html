@@ -1,3 +1,4 @@
+<!-- v1.2.0 | 2026-05-25 | feat: 儲存時加存信封正面照片（envelopeImage） -->
 <!-- v1.1.0 | 2026-05-25 | fix: 收執聯郵資改抓各筆本件郵資，不再共用總金額 -->
 <!DOCTYPE html>
 <html lang="zh-TW">
@@ -361,6 +362,7 @@ window.saveAll = async function() {
   btn.disabled = true; btn.textContent = '儲存中…';
   const fields = ['trackingNumber','recipientName','recipientDept','recipientContact','recipientAddress','content','type','postage','date','notes'];
   try {
+    const envelopeImgs = envelopeSlots.filter(s => s.base64);
     const writes = records.map((_, i) => {
       const data = { status: 'sent', createdAt: serverTimestamp() };
       fields.forEach(f => { data[f] = (document.getElementById(`r${i}_${f}`)?.value || '').trim(); });
@@ -368,6 +370,7 @@ window.saveAll = async function() {
       data.senderNames = senderNames;
       data.senderName = senderNames.join('、');
       if (receiptBase64) data.receiptImage = 'data:image/jpeg;base64,' + receiptBase64;
+      if (envelopeImgs[i]?.base64) data.envelopeImage = 'data:image/jpeg;base64,' + envelopeImgs[i].base64;
       return addDoc(collection(db, 'outgoing_mail'), data);
     });
     await Promise.all(writes);
