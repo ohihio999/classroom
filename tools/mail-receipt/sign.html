@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>領取簽收</title>
+  <!-- v1.1 2026-06-04：簽名改存白底 JPEG（原本 PNG 未壓縮，加上信封照常超過 Firestore 單文件 1MB 上限導致簽收失敗） -->
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; }
@@ -218,6 +219,18 @@ function initCanvas() {
   canvas.addEventListener('mouseleave', () => { drawing = false; });
 }
 
+// 簽名畫布為透明背景，PNG 體積大；輸出前先鋪白底再轉 JPEG，大幅縮小 base64 體積
+function exportSignatureJpeg() {
+  const out = document.createElement('canvas');
+  out.width = canvas.width;
+  out.height = canvas.height;
+  const octx = out.getContext('2d');
+  octx.fillStyle = '#ffffff';
+  octx.fillRect(0, 0, out.width, out.height);
+  octx.drawImage(canvas, 0, 0);
+  return out.toDataURL('image/jpeg', 0.7);
+}
+
 window.clearCanvas = function() {
   if (canvas && ctx) {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -236,7 +249,7 @@ window.confirmReceipt = async function() {
   btn.textContent = '處理中…';
 
   try {
-    const signatureImage = canvas.toDataURL('image/png');
+    const signatureImage = exportSignatureJpeg();
     await updateDoc(doc(db, 'mail_receipts', docId), {
       status: 'received',
       receivedAt: serverTimestamp(),

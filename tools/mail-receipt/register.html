@@ -4,6 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>登記掛號信</title>
+  <!-- v1.5 2026-06-04：信封儲存縮圖再縮小（600/0.7→480/0.6），預留簽名空間避免簽收時超過 Firestore 1MB 上限 -->
+  <!-- v1.4 2026-05-20：OCR 與儲存用不同壓縮品質，避免 Firestore 1MB 上限 -->
   <!-- v1.3 2026-05-07：收件人欄 focus 也觸發展開選單（修正清空後不顯示的問題） -->
   <!-- v1.2 2026-05-07：移除寄件人地址（表單、OCR prompt、儲存） -->
   <!-- v1.1 2026-05-07：收件人欄位清空時自動展開全部人員選單 -->
@@ -294,13 +296,29 @@ recipientInput.addEventListener('focus', function() {
 document.getElementById('date').value = new Date().toISOString().split('T')[0];
 
 // ── State ──────────────────────────────────────────
-let images = { front: null, back: null };
+let images = { front: null, back: null };        // OCR 用高畫質
+let imagesSmall = { front: null, back: null };   // Firestore 儲存用縮圖
 
 // ── Photo inputs ───────────────────────────────────
+function compressFromImage(imgEl, maxPx, quality) {
+  let w = imgEl.naturalWidth, h = imgEl.naturalHeight;
+  const scale = Math.min(1, maxPx / Math.max(w, h));
+  w = Math.round(w * scale); h = Math.round(h * scale);
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  c.getContext('2d').drawImage(imgEl, 0, 0, w, h);
+  return c.toDataURL('image/jpeg', quality).split(',')[1];
+}
+
 function setupInput(inputId, side) {
   document.getElementById(inputId).addEventListener('change', async e => {
     const file = e.target.files[0]; if (!file) return;
-    images[side] = await compress(file);
+    const url = URL.createObjectURL(file);
+    const img = await new Promise(resolve => {
+      const i = new Image(); i.onload = () => resolve(i); i.src = url;
+    });
+    URL.revokeObjectURL(url);
+    images[side]      = compressFromImage(img, 1200, 0.8);  // OCR 用（高畫質，不入庫）
+    imagesSmall[side] = compressFromImage(img,  480, 0.6);  // 儲存用（縮小以預留簽名空間，避免 1MB 上限）
     const preview = document.getElementById(side === 'front' ? 'frontPreview' : 'backPreview');
     const placeholder = document.getElementById(side === 'front' ? 'frontPlaceholder' : 'backPlaceholder');
     preview.src = 'data:image/jpeg;base64,' + images[side];
@@ -362,10 +380,10 @@ window.runOCR = async function() {
     // 正面與反面並行辨識
     const [frontResult, backResult] = await Promise.all([
       images.front
-        ? ocrEnvelope({ imageBase64: images.front, mimeType: 'image/jpeg', prompt: FRONT_PROMPT }).then(r => r.data || {}).catch(() => ({}))
+        ? ocrEnvelope({ imageBase64: images.front, mimeType: 'image/jpeg', prompt: FRONT_PROMPT }).then(r => r.data || {}).catch(err => { showStatus('❌ 正面：' + (err.message || err.code || '辨識失敗'), 'error'); return {}; })
         : Promise.resolve({}),
       images.back
-        ? ocrEnvelope({ imageBase64: images.back, mimeType: 'image/jpeg', prompt: BACK_PROMPT }).then(r => r.data || {}).catch(() => ({}))
+        ? ocrEnvelope({ imageBase64: images.back, mimeType: 'image/jpeg', prompt: BACK_PROMPT }).then(r => r.data || {}).catch(err => { showStatus('❌ 反面：' + (err.message || err.code || '辨識失敗'), 'error'); return {}; })
         : Promise.resolve({})
     ]);
 
@@ -386,7 +404,15 @@ window.runOCR = async function() {
     }
 
     const sides = [images.front && '正面', images.back && '反面'].filter(Boolean).join('＋');
-    showStatus(`✅ ${sides}辨識完成，請確認欄位`, 'success');
+    const found = [];
+    if (merged.trackingNumber) found.push('掛號號碼');
+    if (merged.recipient)      found.push('收件人');
+    if (merged.sender)         found.push('寄件人');
+    if (found.length > 0) {
+      showStatus(`✅ ${sides}辨識完成：找到 ${found.join('、')}`, 'success');
+    } else {
+      showStatus(`⚠️ ${sides}辨識完成，但未找到任何資料（圖片可能不清晰或角度偏斜）`, 'error');
+    }
   } catch(e) {
     showStatus('❌ ' + e.message, 'error');
   } finally {
@@ -436,8 +462,8 @@ async function saveData() {
     createdAt: serverTimestamp(),
     receivedAt: null,
     signatureImage: null,
-    envelopeImage: images.front ? 'data:image/jpeg;base64,' + images.front : null,
-    envelopeBackImage: images.back ? 'data:image/jpeg;base64,' + images.back : null
+    envelopeImage: imagesSmall.front ? 'data:image/jpeg;base64,' + imagesSmall.front : null,
+    envelopeBackImage: imagesSmall.back ? 'data:image/jpeg;base64,' + imagesSmall.back : null
   });
   await upsertSender(sender, '', senderPhone);
   return true;
@@ -459,6 +485,7 @@ window.saveAndContinue = async function() {
     if (!await saveData()) { btn.disabled = false; btn.textContent = '儲存並繼續'; return; }
     // 清空
     images = { front: null, back: null };
+    imagesSmall = { front: null, back: null };
     ['frontPreview','backPreview'].forEach(id => document.getElementById(id).style.display = 'none');
     ['frontPlaceholder','backPlaceholder'].forEach(id => document.getElementById(id).style.display = 'block');
     ['frontCamera','frontGallery','backCamera','backGallery'].forEach(id => document.getElementById(id).value = '');
@@ -478,20 +505,6 @@ function showStatus(msg, type = '') {
   el.className = 'ocr-status' + (type ? ' ' + type : '');
 }
 
-function compress(file) {
-  return new Promise(resolve => {
-    const img = new Image(), url = URL.createObjectURL(file);
-    img.onload = () => {
-      const MAX = 1200; let w = img.width, h = img.height;
-      if (w > MAX) { h = h * MAX / w; w = MAX; }
-      const c = document.createElement('canvas'); c.width = w; c.height = h;
-      c.getContext('2d').drawImage(img, 0, 0, w, h);
-      URL.revokeObjectURL(url);
-      resolve(c.toDataURL('image/jpeg', 0.8).split(',')[1]);
-    };
-    img.src = url;
-  });
-}
 </script>
 </body>
 </html>
