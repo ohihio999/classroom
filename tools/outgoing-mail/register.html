@@ -1,3 +1,4 @@
+<!-- v1.4.0 | 2026-06-08 | ui: 信封照片區塊移到收執聯上方（兩區塊對調），功能不變 -->
 <!-- v1.3.0 | 2026-05-25 | refactor: 照片改存 Firebase Storage，Firestore 只存下載 URL -->
 <!-- v1.2.0 | 2026-05-25 | feat: 儲存時加存信封正面照片（envelopeImage） -->
 <!-- v1.1.0 | 2026-05-25 | fix: 收執聯郵資改抓各筆本件郵資，不再共用總金額 -->
@@ -81,6 +82,13 @@
 
 <div class="content">
 
+  <!-- 信封 -->
+  <div class="section">
+    <div class="section-title">✉️ 信封照片（每封一張）</div>
+    <div id="envelopeSlots"></div>
+    <button class="add-envelope-btn" onclick="addEnvelopeSlot()">＋ 新增信封</button>
+  </div>
+
   <!-- 收執聯 -->
   <div class="section">
     <div class="section-title">🧾 收執聯（一張對應全部）</div>
@@ -95,13 +103,6 @@
     </div>
     <input type="file" id="receiptCamera" accept="image/*" capture="environment">
     <input type="file" id="receiptGallery" accept="image/*">
-  </div>
-
-  <!-- 信封 -->
-  <div class="section">
-    <div class="section-title">✉️ 信封照片（每封一張）</div>
-    <div id="envelopeSlots"></div>
-    <button class="add-envelope-btn" onclick="addEnvelopeSlot()">＋ 新增信封</button>
   </div>
 
   <!-- 一次辨識 -->
