@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>掛號信簽收</title>
+  <!-- v1.4 2026-06-11：編輯紀錄的「收件人」改為點選名單（chip 選單，同登記頁），點欄位展開 17 人，點一下填入 -->
   <!-- v1.3 2026-05-07：新增收件人搜尋欄 -->
   <!-- v1.2 2026-05-07：新增一鍵全刪除功能 -->
   <!-- v1.1 2026-05-07：新增編輯功能（✏️ 按鈕 + 編輯 Modal） -->
@@ -60,6 +61,13 @@
     .search-bar { padding: 10px 16px 4px; }
     .search-bar input { width: 100%; padding: 10px 14px; border: 1px solid #ddd; border-radius: 20px; font-size: 14px; outline: none; background: white; }
     .search-bar input:focus { border-color: #1976D2; }
+    /* 收件人候選選單（編輯紀錄用） */
+    .recipient-picker { display: none; margin: -8px 0 14px; background: #fff; border: 1px solid #1976D2; border-radius: 8px; padding: 8px; }
+    .recipient-picker-label { font-size: 11px; color: #888; margin-bottom: 6px; }
+    .recipient-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .recipient-chip { padding: 6px 12px; border-radius: 20px; background: #E3F2FD; color: #1565C0; font-size: 13px; font-weight: 500; cursor: pointer; border: none; }
+    .recipient-chip:hover { background: #BBDEFB; }
+    .recipient-chip:active { background: #1976D2; color: white; }
   </style>
 </head>
 <body>
@@ -105,7 +113,11 @@
     <label>掛號號碼</label>
     <input type="text" id="editTracking" style="font-family:'Courier New',monospace;letter-spacing:1px">
     <label>收件人</label>
-    <input type="text" id="editRecipient">
+    <input type="text" id="editRecipient" autocomplete="off">
+    <div class="recipient-picker" id="editRecipientPicker">
+      <div class="recipient-picker-label">請點選收件人：</div>
+      <div class="recipient-chips" id="editRecipientChips"></div>
+    </div>
     <label>寄件人</label>
     <input type="text" id="editSender">
     <label>日期</label>
@@ -133,6 +145,55 @@ const firebaseConfig = { apiKey:"AIzaSyBf0sHTsndFCksNlh46G_2mw9rk5zmPdc0", authD
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 let allRecords = [], currentFilter = 'all', editingId = null, searchQuery = '';
+
+// ── 公司收件人名單（與 register.html 一致）──
+const RECIPIENTS = [
+  { zh: '林玉鈴', en: 'Kanny' },
+  { zh: '黃志堅', en: 'Charles' },
+  { zh: '林毓婷', en: 'Cherrie' },
+  { zh: '黃義正', en: 'Jacky' },
+  { zh: '吳翊平', en: 'Yibi' },
+  { zh: '曾書彥', en: 'Norika' },
+  { zh: '王儷蓉', en: 'Lisa' },
+  { zh: '許世佑', en: 'Seal' },
+  { zh: '陳佳興', en: 'Steven' },
+  { zh: '陳姵存', en: 'Kelly' },
+  { zh: '林宥燁', en: 'Yedda' },
+  { zh: '林逸昇', en: 'Eason' },
+  { zh: '蘇彥霖', en: 'Russell' },
+  { zh: '鍾文綺', en: 'Hina' },
+  { zh: '石博仁', en: 'Seki' },
+  { zh: '潘怡穎', en: 'Daisy' },
+  { zh: '台精精密股份有限公司', en: 'Seiko Instruments Taiwan Inc.' },
+];
+function formatPerson(p) { return `${p.zh} (${p.en})`; }
+
+function showEditRecipientPicker() {
+  const chips = document.getElementById('editRecipientChips');
+  chips.innerHTML = '';
+  RECIPIENTS.forEach(p => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'recipient-chip';
+    btn.textContent = formatPerson(p);
+    btn.addEventListener('click', () => {
+      document.getElementById('editRecipient').value = formatPerson(p);
+      document.getElementById('editRecipientPicker').style.display = 'none';
+    });
+    chips.appendChild(btn);
+  });
+  document.getElementById('editRecipientPicker').style.display = 'block';
+}
+function hideEditRecipientPicker() {
+  document.getElementById('editRecipientPicker').style.display = 'none';
+}
+
+const editRecipientInput = document.getElementById('editRecipient');
+editRecipientInput.addEventListener('focus', showEditRecipientPicker);
+editRecipientInput.addEventListener('input', function() {
+  if (!this.value.trim()) showEditRecipientPicker();
+  else hideEditRecipientPicker();
+});
 
 loadRecords();
 
@@ -223,11 +284,13 @@ window.editRecord = function(id) {
   document.getElementById('editDate').value      = r.date || '';
   document.getElementById('editNotes').value     = r.notes || '';
   document.getElementById('editStatus').value    = r.status || 'pending';
+  hideEditRecipientPicker();
   document.getElementById('editModal').classList.add('show');
 };
 
 window.closeEdit = () => {
   document.getElementById('editModal').classList.remove('show');
+  hideEditRecipientPicker();
   editingId = null;
 };
 
