@@ -1,3 +1,4 @@
+<!-- v1.6.0 | 2026-06-17 | fix: 收執聯辨識改以執據列印順序為主、信封依城市/區配對且照片正確對應；強化掛號號碼 prompt（提示同張中段碼相同、前6碼為遞增流水號要逐字核對）；收執聯影像解析度1200→1600、品質0.8→0.92 -->
 <!-- v1.5.0 | 2026-06-11 | feat: 收執聯 OCR 加辨識「全球快遞 Global Express」託運單號，抓「託運單號：」後的純數字（原樣不分組）填入掛號號碼 -->
 <!-- v1.4.0 | 2026-06-08 | ui: 信封照片區塊移到收執聯上方（兩區塊對調），功能不變 -->
 <!-- v1.3.0 | 2026-05-25 | refactor: 照片改存 Firebase Storage，Firestore 只存下載 URL -->
@@ -152,7 +153,7 @@ let records = [];
 ['receiptCamera','receiptGallery'].forEach(id => {
   document.getElementById(id).addEventListener('change', async e => {
     const file = e.target.files[0]; if (!file) return;
-    receiptBase64 = await compress(file);
+    receiptBase64 = await compress(file, 1600, 0.92);
     const preview = document.getElementById('receiptPreview');
     preview.src = 'data:image/jpeg;base64,' + receiptBase64;
     preview.style.display = 'block';
@@ -218,7 +219,7 @@ addEnvelopeSlot();
 
 // ── Batch OCR ──────────────────────────────────────
 const ENVELOPE_PROMPT = '這是一封信封的正面。請辨識以下欄位，以純 JSON 回傳（不加 markdown）：{"recipientName":"收件人公司或單位","recipientDept":"部門（若無填空）","recipientContact":"聯絡人姓名（若無填空）","recipientAddress":"完整收件地址（含縣市）","content":"信件內容說明（若有標示，否則填空）"}。找不到的欄位填空字串。';
-const RECEIPT_PROMPT = '這是一張寄件單據，可能是台灣郵局收執聯／執據，也可能是「全球快遞 Global Express」的託運單，請先判斷是哪一種再抓掛號號碼。\n\n【若是全球快遞 Global Express 託運單】（單據左上角有 Global Express 圖示或「全球快遞」字樣）：掛號號碼請抓「託運單號：」這個標籤右邊那一串純數字（例如 託運單號：4007991724 → 抓 4007991724），原樣連續輸出、不要加空格分組。絕對不要抓左邊手寫的「會編」（如 A0452138）、也不要抓右邊條碼下方的數字。這種單通常只有一筆，items 只回一筆即可。\n\n【若是台灣郵局收執聯／執據】（限時掛號、普通掛號、掛號包裹執據，可能多筆）：請優先辨識收據上方那一排掛號號碼，不要把旁邊的「號」字、地址郵遞區號、電話、重量、郵資、單號等其他數字混進去。台灣國內這幾種單據的掛號號碼是 20 碼純數字，空格分組固定為 6-6-2-5-1，例如：917120 100067 20 11000 6、974081 100067 10 40200 0、920996 100067 70 33300 9。如果是國際掛號，才是 13 碼格式：2個英文字母＋9位數字＋2個英文字母。收執聯下方明細表最右欄是「本件郵資」，每筆掛號各自不同，請逐筆抓取，不要用最上方的總應收現金代替。\n\n請以純 JSON 回傳（不加 markdown）：{"items":[{"trackingNumber":"完整掛號號碼／託運單號。郵局 20 碼請保留 6-6-2-5-1 空格格式，13 碼請原樣正確輸出，全球快遞託運單號請原樣連續純數字不分組","destination":"目的地城市或區域，從地址判斷，例如台北市、台中市、高雄市、桃園市龜山區","postage":"本件郵資欄的數字（元），每筆各自抓，找不到填空"}],"date":"日期 YYYY-MM-DD（民國年轉西元）","postage":"總郵費備用（找不到填空）"}。依序列出所有掛號／託運單號，找不到的欄位填空字串。';
+const RECEIPT_PROMPT = '這是一張寄件單據，可能是台灣郵局收執聯／執據，也可能是「全球快遞 Global Express」的託運單，請先判斷是哪一種再抓掛號號碼。\n\n【若是全球快遞 Global Express 託運單】（單據左上角有 Global Express 圖示或「全球快遞」字樣）：掛號號碼請抓「託運單號：」這個標籤右邊那一串純數字（例如 託運單號：4007991724 → 抓 4007991724），原樣連續輸出、不要加空格分組。絕對不要抓左邊手寫的「會編」（如 A0452138）、也不要抓右邊條碼下方的數字。這種單通常只有一筆，items 只回一筆即可。\n\n【若是台灣郵局收執聯／執據】（限時掛號、普通掛號、掛號包裹執據，可能多筆）：\n- 下方明細表的每一列就是一筆掛號。請「由上到下、逐列」依單據實際列印順序輸出 items：第 1 筆對應第 1 列、第 2 筆對應第 2 列…不可重排、不可跳號。items 的筆數要等於明細表的列數，不可多生也不可漏掉。\n- 每筆掛號號碼是 20 碼純數字，空格分組固定為 6-6-2-5-1，例如：917120 100067 20 11000 6、974081 100067 10 40200 0。若是國際掛號才是 13 碼：2個英文字母＋9位數字＋2個英文字母。\n- 重要結構規律，請務必用來逐字核對、降低看錯：在同一張收執聯裡，每一列掛號號碼「中段的 8 碼」（第 7~14 碼，例如 100067 10）幾乎都完全相同；最前面的 6 碼是「遞增的流水序號」，各列彼此很接近且通常由上往下遞增（例如 903828、903830、903831、903833、903834）。請特別放大、逐字確認最前面這 6 碼，不要把相近的數字（0與8、1與7、3與8、5與6）看錯，也不要把不同列的號碼互相套用或重複。\n- 不要把旁邊的「號」字、寄達地郵遞區號、電話、重量、郵資、總金額等其他數字混進掛號號碼。\n- destination 請填該列左側的「寄達地」，盡量包含「區」層級（例如 台北市松山區、桃園市桃園區、新北市汐止區），這會用來和信封地址配對。\n- 明細表最右欄是「本件郵資」，每筆掛號各自不同，請逐筆抓取，不要用最上方的總應收現金代替。\n\n請以純 JSON 回傳（不加 markdown）：{"items":[{"trackingNumber":"完整掛號號碼／託運單號。郵局 20 碼請保留 6-6-2-5-1 空格格式，13 碼請原樣正確輸出，全球快遞託運單號請原樣連續純數字不分組","destination":"寄達地，盡量含區，例如台北市松山區","postage":"本件郵資欄的數字（元），每筆各自抓，找不到填空"}],"date":"日期 YYYY-MM-DD（民國年轉西元）","postage":"總郵費備用（找不到填空）"}。items 請務必依單據由上到下的列印順序排列，找不到的欄位填空字串。';
 
 window.runBatchOCR = async function() {
   const btn = document.getElementById('ocrAllBtn');
@@ -229,9 +230,9 @@ window.runBatchOCR = async function() {
   try {
     const today = new Date().toISOString().split('T')[0];
 
-    // 所有信封並行辨識
-    const envelopePromises = envelopeSlots
-      .filter(s => s.base64)
+    // 所有信封並行辨識（保留各自的圖片，後面配對與存檔要用）
+    const activeSlots = envelopeSlots.filter(s => s.base64);
+    const envelopePromises = activeSlots
       .map(s => ocrFn({ imageBase64: s.base64, mimeType: 'image/jpeg', prompt: ENVELOPE_PROMPT })
         .then(r => r.data || {})
         .catch(e => ({ __ocrError: e.message || '信封辨識失敗' })));
@@ -258,56 +259,61 @@ window.runBatchOCR = async function() {
       throw new Error(`信封 ${failedIndex + 1} 辨識失敗：${envResults[failedIndex].__ocrError}`);
     }
 
-    // 合併：依地址智慧配對掛號號碼，配不到再依序補
-    const items = [...receiptData.items];
-    const assigned = new Array(envResults.length).fill(null);
-    const assignedPostage = new Array(envResults.length).fill('');
-    const usedIdx = new Set();
-
-    // 第一輪：地址包含目的地城市的直接配對
-    envResults.forEach((env, i) => {
-      const addr = (env.recipientAddress || '').toLowerCase();
-      for (let j = 0; j < items.length; j++) {
-        if (usedIdx.has(j)) continue;
-        const dest = (items[j].destination || '').toLowerCase();
-        if (dest && addr.includes(dest)) {
-          assigned[i] = normalizeTracking(items[j].trackingNumber || '');
-          assignedPostage[i] = items[j].postage || '';
-          usedIdx.add(j);
-          break;
-        }
-      }
-    });
-
-    // 第二輪：未配對的依序填剩餘號碼
-    let nextJ = 0;
-    envResults.forEach((_, i) => {
-      if (assigned[i] !== null) return;
-      while (nextJ < items.length && usedIdx.has(nextJ)) nextJ++;
-      if (nextJ < items.length) {
-        assigned[i] = normalizeTracking(items[nextJ].trackingNumber || '');
-        assignedPostage[i] = items[nextJ].postage || '';
-      } else {
-        assigned[i] = '';
-      }
-      usedIdx.add(nextJ); nextJ++;
-    });
-
-    records = envResults.map((env, i) => ({
-      trackingNumber: normalizeTracking(assigned[i] || ''),
+    // 合併：以收執聯（執據）的列印順序為主，逐筆配對最合適的信封
+    const buildRecord = (item, env, envBase64) => ({
+      trackingNumber: normalizeTracking(item?.trackingNumber || ''),
       senderNames: [],
       senderName: '',
-      recipientName: env.recipientName || '',
-      recipientDept: env.recipientDept || '',
-      recipientContact: env.recipientContact || '',
-      recipientAddress: env.recipientAddress || '',
-      content: env.content || '',
+      recipientName: env?.recipientName || '',
+      recipientDept: env?.recipientDept || '',
+      recipientContact: env?.recipientContact || '',
+      recipientAddress: env?.recipientAddress || '',
+      content: env?.content || '',
       type: '信函',
       date: today,
-      postage: assignedPostage[i] || receiptData.postage,
+      postage: (item?.postage) || receiptData.postage || '',
       notes: '',
-      status: 'sent'
-    }));
+      status: 'sent',
+      envelopeBase64: envBase64 || null
+    });
+
+    const usedEnv = new Set();
+    const addrOf = i => (envResults[i]?.recipientAddress || '').toLowerCase().replace(/\s/g, '');
+    const pickEnvelope = item => {
+      const dest = (item?.destination || '').toLowerCase().replace(/\s/g, '');
+      if (dest) {
+        // 1) 整個寄達地（含區）相符
+        for (let i = 0; i < envResults.length; i++)
+          if (!usedEnv.has(i) && addrOf(i).includes(dest)) return i;
+        // 2) 只比對「區」或「市/縣」層級
+        const level = dest.match(/[一-龥]{1,3}區/)?.[0]
+          || dest.match(/[一-龥]{1,3}[市縣]/)?.[0];
+        if (level)
+          for (let i = 0; i < envResults.length; i++)
+            if (!usedEnv.has(i) && addrOf(i).includes(level)) return i;
+      }
+      // 3) 配不到就依序給下一個未使用的信封
+      for (let i = 0; i < envResults.length; i++) if (!usedEnv.has(i)) return i;
+      return -1;
+    };
+
+    if (receiptData.items.length) {
+      // 有收執聯：輸出順序＝執據由上到下 1→N
+      records = receiptData.items.map(item => {
+        const idx = pickEnvelope(item);
+        const env = idx >= 0 ? envResults[idx] : null;
+        const b64 = idx >= 0 ? activeSlots[idx]?.base64 : null;
+        if (idx >= 0) usedEnv.add(idx);
+        return buildRecord(item, env, b64);
+      });
+      // 沒被任何執據列配到的信封，補在最後，避免資料遺漏
+      envResults.forEach((env, i) => {
+        if (!usedEnv.has(i)) records.push(buildRecord(null, env, activeSlots[i]?.base64));
+      });
+    } else {
+      // 沒有收執聯：維持以信封為主
+      records = envResults.map((env, i) => buildRecord(null, env, activeSlots[i]?.base64));
+    }
 
     renderRecords();
     document.getElementById('resultsSection').style.display = 'block';
@@ -330,7 +336,7 @@ function renderRecords() {
     const div = document.createElement('div');
     div.className = 'record-card';
     div.innerHTML = `
-      <div class="record-card-title">第 ${i + 1} 封</div>
+      <div class="record-card-title">第 ${i + 1} 筆</div>
       <div class="form-group"><label>掛號號碼</label><input id="r${i}_trackingNumber" value="${esc(formatTracking(rec.trackingNumber))}" style="font-family:'Courier New',monospace;letter-spacing:1px"></div>
       <div class="form-group"><label>收件公司/單位</label><input id="r${i}_recipientName" value="${esc(rec.recipientName)}"></div>
       <div class="form-row">
@@ -367,7 +373,6 @@ window.saveAll = async function() {
   btn.disabled = true; btn.textContent = '儲存中…';
   const fields = ['trackingNumber','recipientName','recipientDept','recipientContact','recipientAddress','content','type','postage','date','notes'];
   try {
-    const envelopeImgs = envelopeSlots.filter(s => s.base64);
     const ts = Date.now();
     const writes = records.map(async (_, i) => {
       const data = { status: 'sent', createdAt: serverTimestamp() };
@@ -381,9 +386,10 @@ window.saveAll = async function() {
         await uploadString(rRef, receiptBase64, 'base64', { contentType: 'image/jpeg' });
         data.receiptImageUrl = await getDownloadURL(rRef);
       }
-      if (envelopeImgs[i]?.base64) {
+      const envB64 = records[i].envelopeBase64;
+      if (envB64) {
         const eRef = ref(storage, `${imgPath}/envelope.jpg`);
-        await uploadString(eRef, envelopeImgs[i].base64, 'base64', { contentType: 'image/jpeg' });
+        await uploadString(eRef, envB64, 'base64', { contentType: 'image/jpeg' });
         data.envelopeImageUrl = await getDownloadURL(eRef);
       }
       return addDoc(collection(db, 'outgoing_mail'), data);
@@ -476,16 +482,16 @@ function formatTracking(num) {
   return normalizeTracking(num);
 }
 
-function compress(file) {
+function compress(file, MAX = 1200, quality = 0.8) {
   return new Promise(resolve => {
     const img = new Image(), url = URL.createObjectURL(file);
     img.onload = () => {
-      const MAX = 1200; let w = img.width, h = img.height;
+      let w = img.width, h = img.height;
       if (w > MAX) { h = h * MAX / w; w = MAX; }
       const c = document.createElement('canvas'); c.width = w; c.height = h;
       c.getContext('2d').drawImage(img, 0, 0, w, h);
       URL.revokeObjectURL(url);
-      resolve(c.toDataURL('image/jpeg', 0.8).split(',')[1]);
+      resolve(c.toDataURL('image/jpeg', quality).split(',')[1]);
     };
     img.src = url;
   });
