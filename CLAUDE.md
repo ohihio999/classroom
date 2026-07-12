@@ -23,6 +23,7 @@
 - `tools/mail-receipt/` — 掛號信簽收
 - `tools/outgoing-mail/` — 寄件追蹤
 - `tools/tool-manager/` — 小程式分類管理（Firebase + GPT API）
+- `tools/ai-usage/` — AI 額度儀表板（Claude/Codex 官方額度，手機看；數據由 `ai-usage-collector/collect.ps1` 每 5 分鐘經工作排程器寫入 Firestore `ai_usage/current`）
 
 ## 工作注意事項
 - 人員資料一律去識別化（只用編號或代號）

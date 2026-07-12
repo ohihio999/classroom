@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<!--
+  AI 額度儀表板 — 三大 AI CLI 月訂閱使用量
+  版號：v1.0.0
+  版更記錄：
+  - v1.0.0 (2026-07-12) 初版：Claude / Codex 官方額度即時顯示（Firestore onSnapshot），Gemini 官方連結卡片
+-->
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI 額度儀表板</title>
+<style>
+  :root {
+    --page:        #f9f9f7;
+    --surface:     #fcfcfb;
+    --ink:         #0b0b0b;
+    --ink-2:       #52514e;
+    --ink-muted:   #898781;
+    --hairline:    #e1e0d9;
+    --border:      rgba(11,11,11,0.10);
+    --track:       #eeede8;
+    --fill-normal: #2a78d6;
+    --fill-warn:   #fab219;
+    --fill-crit:   #d03b3b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --page:        #0d0d0d;
+      --surface:     #1a1a19;
+      --ink:         #ffffff;
+      --ink-2:       #c3c2b7;
+      --ink-muted:   #898781;
+      --hairline:    #2c2c2a;
+      --border:      rgba(255,255,255,0.10);
+      --track:       #2c2c2a;
+      --fill-normal: #3987e5;
+      --fill-warn:   #fab219;
+      --fill-crit:   #d03b3b;
+    }
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", "Microsoft JhengHei", sans-serif;
+    background: var(--page);
+    color: var(--ink);
+    min-height: 100vh;
+    padding: 16px;
+  }
+  .wrap { max-width: 560px; margin: 0 auto; }
+  h1 { font-size: 1.25rem; font-weight: 700; margin: 8px 0 2px; }
+  .sub { color: var(--ink-muted); font-size: 0.8rem; margin-bottom: 16px; }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 14px;
+  }
+  .card-head {
+    display: flex; align-items: center; gap: 8px;
+    padding-bottom: 10px; margin-bottom: 12px;
+    border-bottom: 1px solid var(--hairline);
+  }
+  .card-head h2 { font-size: 1rem; font-weight: 700; flex: 1; }
+  .badge {
+    font-size: 0.7rem; color: var(--ink-2);
+    border: 1px solid var(--border); border-radius: 999px;
+    padding: 2px 8px;
+  }
+  .meter { margin-bottom: 14px; }
+  .meter:last-child { margin-bottom: 2px; }
+  .meter-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+  .meter-label { font-size: 0.85rem; color: var(--ink-2); }
+  .meter-val { font-size: 1.05rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .bar { height: 8px; background: var(--track); border-radius: 4px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 4px; background: var(--fill-normal); transition: width 0.4s ease; }
+  .bar-fill.warn { background: var(--fill-warn); }
+  .bar-fill.crit { background: var(--fill-crit); }
+  .meter-reset { font-size: 0.72rem; color: var(--ink-muted); margin-top: 4px; }
+  .state-note { font-size: 0.85rem; color: var(--ink-2); line-height: 1.6; }
+  .err { color: var(--fill-crit); font-size: 0.85rem; }
+  .link-btn {
+    display: block; text-align: center; text-decoration: none;
+    margin-top: 12px; padding: 10px;
+    border: 1px solid var(--border); border-radius: 8px;
+    color: var(--ink); font-size: 0.9rem; font-weight: 600;
+  }
+  .link-btn:active { background: var(--track); }
+  footer {
+    text-align: center; color: var(--ink-muted);
+    font-size: 0.75rem; line-height: 1.7; margin: 20px 0 8px;
+  }
+  .stale { color: var(--fill-crit); font-weight: 600; }
+  .loading { text-align: center; color: var(--ink-muted); padding: 40px 0; font-size: 0.9rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>AI 額度儀表板</h1>
+  <div class="sub">Claude / Codex 官方額度・電腦開機時每 5 分鐘更新</div>
+  <div id="app"><div class="loading">載入中…</div></div>
+  <footer id="foot"></footer>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getFirestore, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBf0sHTsndFCksNlh46G_2mw9rk5zmPdc0",
+  authDomain: "my-teaching-tools-2b36c.firebaseapp.com",
+  projectId: "my-teaching-tools-2b36c",
+  storageBucket: "my-teaching-tools-2b36c.firebasestorage.app",
+  messagingSenderId: "82693897353",
+  appId: "1:82693897353:web:f667501aad05c536c09a58"
+};
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+const $app = document.getElementById("app");
+const $foot = document.getElementById("foot");
+
+function fmtTime(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d)) return "";
+  const pad = n => String(n).padStart(2, "0");
+  return `${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function meter(label, m) {
+  if (!m || m.percent == null) return "";
+  const p = Math.max(0, Math.min(100, Number(m.percent)));
+  const cls = p >= 90 ? "crit" : p >= 70 ? "warn" : "";
+  const reset = m.resetsAt ? `<div class="meter-reset">重置 ${fmtTime(m.resetsAt)}</div>` : "";
+  return `<div class="meter">
+    <div class="meter-top"><span class="meter-label">${label}</span><span class="meter-val">${p}%</span></div>
+    <div class="bar"><div class="bar-fill ${cls}" style="width:${p}%"></div></div>
+    ${reset}
+  </div>`;
+}
+
+function card(title, badge, body) {
+  const b = badge ? `<span class="badge">${badge}</span>` : "";
+  return `<section class="card"><div class="card-head"><h2>${title}</h2>${b}</div>${body}</section>`;
+}
+
+function render(data) {
+  let html = "";
+
+  const c = data.claude || {};
+  html += card("Claude", "", c.status === "ok"
+    ? meter("5 小時窗口", c.fiveHour) + meter("週額度（全部）", c.sevenDay) + (c.model ? meter(`週額度（${c.model.name}）`, c.model) : "")
+    : `<div class="err">讀取失敗：${c.error || "無資料"}</div>`);
+
+  const x = data.codex || {};
+  html += card("Codex", x.planType ? x.planType.toUpperCase() : "", x.status === "ok"
+    ? meter("5 小時窗口", x.fiveHour) + meter("週額度", x.sevenDay)
+      + (x.asOf ? `<div class="meter-reset">數據時間 ${fmtTime(x.asOf)}（取自最近一次 Codex 使用）</div>` : "")
+    : `<div class="err">讀取失敗：${x.error || "無資料"}</div>`);
+
+  html += card("Gemini", "", `
+    <div class="state-note">Google 未提供訂閱額度查詢，請至官方頁面查看。</div>
+    <a class="link-btn" href="https://one.google.com/" target="_blank" rel="noopener">開啟 Google One 訂閱頁</a>`);
+
+  $app.innerHTML = html;
+
+  const t = data.collectedAt ? new Date(data.collectedAt) : null;
+  if (t && !isNaN(t)) {
+    const mins = Math.round((Date.now() - t.getTime()) / 60000);
+    const staleTag = mins > 15 ? ` <span class="stale">（已 ${mins} 分鐘未更新，電腦可能沒開機）</span>` : "";
+    $foot.innerHTML = `更新時間 ${fmtTime(data.collectedAt)}${staleTag}`;
+  }
+}
+
+onSnapshot(doc(db, "ai_usage", "current"), snap => {
+  if (!snap.exists()) {
+    $app.innerHTML = `<div class="loading">還沒有數據，請先在電腦上跑一次收集腳本。</div>`;
+    return;
+  }
+  try {
+    render(JSON.parse(snap.data().data || "{}"));
+  } catch (e) {
+    $app.innerHTML = `<div class="err">數據解析失敗：${e.message}</div>`;
+  }
+}, err => {
+  $app.innerHTML = `<div class="err">Firestore 連線失敗：${err.message}</div>`;
+});
+</script>
+</body>
+</html>
