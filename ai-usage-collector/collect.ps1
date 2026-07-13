@@ -1,7 +1,8 @@
 <#
   collect.ps1 — AI 額度收集腳本（AI 額度儀表板後端）
-  版號：v1.0.0
+  版號：v1.1.0
   版更記錄：
+  - v1.1.0 (2026-07-13) Codex 0.134 改版適配：rate_limits 不再固定 primary=5h/secondary=週，改用 window_minutes 判斷窗口；缺的窗口寫 null
   - v1.0.0 (2026-07-12) 初版：抓 Claude OAuth 用量端點 + Codex session rate_limits，寫入 Firestore ai_usage/current
 
   資料來源：
@@ -72,12 +73,22 @@ try {
         if ($null -eq $u) { return $null }
         [DateTimeOffset]::FromUnixTimeSeconds([long]$u).ToLocalTime().ToString("yyyy-MM-ddTHH:mm:sszzz")
     }
+    # Codex 0.134 起 rate_limits 可能只剩單一窗口（primary=週、secondary=null），
+    # 不能再假設 primary=5h/secondary=週，改用 window_minutes 分類（<=1440 分鐘視為 5 小時窗口）
+    $wins = @($rl.primary, $rl.secondary) | Where-Object { $_ -and $null -ne $_.used_percent }
+    $five = $wins | Where-Object { $null -ne $_.window_minutes -and $_.window_minutes -le 1440 } | Select-Object -First 1
+    $week = $wins | Where-Object { $null -ne $_.window_minutes -and $_.window_minutes -gt 1440 } | Select-Object -First 1
+    if (-not $five -and -not $week -and $wins.Count -gt 0) {
+        # 舊格式保險：沒有 window_minutes 就照位置解讀
+        $five = $wins[0]
+        if ($wins.Count -gt 1) { $week = $wins[1] }
+    }
     $result.codex = [ordered]@{
         status   = "ok"
         planType = "$($rl.plan_type)"
         asOf     = $asOf
-        fiveHour = @{ percent = [math]::Round($rl.primary.used_percent, 1); resetsAt = ConvertFrom-Unix $rl.primary.resets_at }
-        sevenDay = @{ percent = [math]::Round($rl.secondary.used_percent, 1); resetsAt = ConvertFrom-Unix $rl.secondary.resets_at }
+        fiveHour = if ($five) { @{ percent = [math]::Round($five.used_percent, 1); resetsAt = ConvertFrom-Unix $five.resets_at } } else { $null }
+        sevenDay = if ($week) { @{ percent = [math]::Round($week.used_percent, 1); resetsAt = ConvertFrom-Unix $week.resets_at } } else { $null }
     }
 } catch {
     $result.codex = @{ status = "error"; error = $_.Exception.Message }

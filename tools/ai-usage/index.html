@@ -1,8 +1,9 @@
 <!DOCTYPE html>
 <!--
   AI 額度儀表板 — 三大 AI CLI 月訂閱使用量
-  版號：v1.0.0
+  版號：v1.1.0
   版更記錄：
+  - v1.1.0 (2026-07-13) 配合 Codex 0.134 改版：某窗口無數據時顯示說明，不再顯示錯置數字
   - v1.0.0 (2026-07-12) 初版：Claude / Codex 官方額度即時顯示（Firestore onSnapshot），Gemini 官方連結卡片
 -->
 <html lang="zh-Hant">
@@ -157,6 +158,7 @@ function render(data) {
   const x = data.codex || {};
   html += card("Codex", x.planType ? x.planType.toUpperCase() : "", x.status === "ok"
     ? meter("5 小時窗口", x.fiveHour) + meter("週額度", x.sevenDay)
+      + (!x.fiveHour && x.sevenDay ? `<div class="state-note">此版 Codex 僅回報週額度，無 5 小時窗口數據。</div>` : "")
       + (x.asOf ? `<div class="meter-reset">數據時間 ${fmtTime(x.asOf)}（取自最近一次 Codex 使用）</div>` : "")
     : `<div class="err">讀取失敗：${x.error || "無資料"}</div>`);
 
