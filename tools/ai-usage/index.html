@@ -1,8 +1,9 @@
 <!DOCTYPE html>
 <!--
   AI 額度儀表板 — 三大 AI CLI 月訂閱使用量
-  版號：v1.1.0
+  版號：v1.2.0
   版更記錄：
+  - v1.2.0 (2026-07-14) Gemini 卡片接真實額度（retrieveUserQuota 逐模型剩餘比例）：有用量的模型顯示進度條，全 0% 收斂成一行
   - v1.1.0 (2026-07-13) 配合 Codex 0.134 改版：某窗口無數據時顯示說明，不再顯示錯置數字
   - v1.0.0 (2026-07-12) 初版：Claude / Codex 官方額度即時顯示（Firestore onSnapshot），Gemini 官方連結卡片
 -->
@@ -162,9 +163,24 @@ function render(data) {
       + (x.asOf ? `<div class="meter-reset">數據時間 ${fmtTime(x.asOf)}（取自最近一次 Codex 使用）</div>` : "")
     : `<div class="err">讀取失敗：${x.error || "無資料"}</div>`);
 
-  html += card("Gemini", "", `
-    <div class="state-note">Google 未提供訂閱額度查詢，請至官方頁面查看。</div>
-    <a class="link-btn" href="https://one.google.com/" target="_blank" rel="noopener">開啟 Google One 訂閱頁</a>`);
+  const g = data.gemini || {};
+  let gBody;
+  if (g.status === "ok" && Array.isArray(g.models) && g.models.length) {
+    const used = g.models.filter(m => m.percent > 0).sort((a, b) => b.percent - a.percent);
+    const zeros = g.models.length - used.length;
+    gBody = used.map(m => meter(m.name.replace(/^gemini-/, ""), m)).join("");
+    if (used.length === 0) {
+      gBody += `<div class="state-note">全部 ${g.models.length} 個模型今日 0%</div>`
+        + (g.models[0].resetsAt ? `<div class="meter-reset">重置 ${fmtTime(g.models[0].resetsAt)}</div>` : "");
+    } else if (zeros > 0) {
+      gBody += `<div class="meter-reset">其餘 ${zeros} 個模型 0%</div>`;
+    }
+  } else if (g.status === "error") {
+    gBody = `<div class="err">讀取失敗：${g.error || "無資料"}</div>`;
+  } else {
+    gBody = `<div class="state-note">尚無 Gemini 數據，等收集腳本下一輪更新。</div>`;
+  }
+  html += card("Gemini", g.tier ? g.tier.toUpperCase().replace("-TIER", "") : "", gBody);
 
   $app.innerHTML = html;
 

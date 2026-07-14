@@ -1,14 +1,16 @@
 <#
   collect.ps1 — AI 額度收集腳本（AI 額度儀表板後端）
-  版號：v1.1.0
+  版號：v1.2.0
   版更記錄：
+  - v1.2.0 (2026-07-14) 新增 Gemini 額度：走 Gemini CLI 同款 retrieveUserQuota API（refresh token → loadCodeAssist → retrieveUserQuota），逐模型剩餘比例
   - v1.1.0 (2026-07-13) Codex 0.134 改版適配：rate_limits 不再固定 primary=5h/secondary=週，改用 window_minutes 判斷窗口；缺的窗口寫 null
   - v1.0.0 (2026-07-12) 初版：抓 Claude OAuth 用量端點 + Codex session rate_limits，寫入 Firestore ai_usage/current
 
   資料來源：
   - Claude：https://api.anthropic.com/api/oauth/usage（token 讀本機 ~\.claude\.credentials.json，不外傳）
   - Codex：~\.codex\sessions 最新 rollout jsonl 內的 rate_limits 事件
-  - Gemini：官方無額度查詢端點，前端只放連結，此腳本不處理
+  - Gemini：cloudcode-pa.googleapis.com v1internal:retrieveUserQuota（token 讀本機 ~\.gemini\oauth_creds.json 換發，不外傳；
+    OAuth client 為 Gemini CLI 內建的公開 installed-app client；額度用完時 API 會省略 remainingFraction，視為 100% 用完）
 
   排程：Windows 工作排程器每 5 分鐘執行一次（工作名稱 AI-Usage-Collector）
 #>
@@ -25,6 +27,7 @@ $result = [ordered]@{
     collectedAt = (Get-Date).ToString("yyyy-MM-ddTHH:mm:sszzz")
     claude      = $null
     codex       = $null
+    gemini      = $null
 }
 
 # ---------- Claude ----------
@@ -95,6 +98,59 @@ try {
     Write-Log "Codex 失敗: $($_.Exception.Message)"
 }
 
+# ---------- Gemini ----------
+try {
+    # OAuth client 執行時從本機 Gemini CLI 安裝檔抽取（repo 公開，不可硬編碼；GitHub push protection 也會擋）
+    $gClientId = $null; $gClientSecret = $null
+    foreach ($bf in Get-ChildItem "$env:APPDATA\npm\node_modules\@google\gemini-cli\bundle\*.js" -ErrorAction Stop) {
+        if (-not $gClientId) {
+            $m = Select-String -Path $bf.FullName -Pattern 'OAUTH_CLIENT_ID\s*=\s*"([^"]+)"' | Select-Object -First 1
+            if ($m) { $gClientId = $m.Matches[0].Groups[1].Value }
+        }
+        if (-not $gClientSecret) {
+            $m = Select-String -Path $bf.FullName -Pattern 'OAUTH_CLIENT_SECRET\s*=\s*"([^"]+)"' | Select-Object -First 1
+            if ($m) { $gClientSecret = $m.Matches[0].Groups[1].Value }
+        }
+        if ($gClientId -and $gClientSecret) { break }
+    }
+    if (-not $gClientId -or -not $gClientSecret) { throw "本機 Gemini CLI bundle 找不到 OAuth client（CLI 是否已移除或改版？）" }
+    $gCred = Get-Content "$env:USERPROFILE\.gemini\oauth_creds.json" -Raw | ConvertFrom-Json
+    $gTok = Invoke-RestMethod -Method Post -Uri "https://oauth2.googleapis.com/token" -TimeoutSec 30 -Body @{
+        client_id     = $gClientId
+        client_secret = $gClientSecret
+        refresh_token = $gCred.refresh_token
+        grant_type    = "refresh_token"
+    }
+    $gHead = @{ Authorization = "Bearer $($gTok.access_token)" }
+    $gLoad = Invoke-RestMethod -Method Post -Uri "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist" `
+        -Headers $gHead -ContentType "application/json" -TimeoutSec 30 -Body '{"metadata":{"pluginType":"GEMINI"}}'
+    $gQuota = Invoke-RestMethod -Method Post -Uri "https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota" `
+        -Headers $gHead -ContentType "application/json" -TimeoutSec 30 `
+        -Body (@{ project = $gLoad.cloudaicompanionProject } | ConvertTo-Json)
+    if (-not $gQuota.buckets) { throw "retrieveUserQuota 沒回 buckets" }
+    $models = @()
+    foreach ($b in $gQuota.buckets) {
+        if (-not $b.modelId) { continue }
+        # 額度用完時 API 會省略 remainingFraction（proto 省略零值），視為 100% 用完
+        $frac = if ($null -ne $b.remainingFraction) { [double]$b.remainingFraction } else { 0 }
+        # ConvertFrom-Json 會把 ISO 字串轉成 DateTime，這裡統一輸出成 UTC ISO 格式（前端才不會差 8 小時）
+        $reset = if ($b.resetTime -is [datetime]) { $b.resetTime.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'") } else { "$($b.resetTime)" }
+        $models += [ordered]@{
+            name     = "$($b.modelId)"
+            percent  = [math]::Round((1 - $frac) * 100, 1)
+            resetsAt = $reset
+        }
+    }
+    $result.gemini = [ordered]@{
+        status = "ok"
+        tier   = "$($gLoad.currentTier.id)"
+        models = $models
+    }
+} catch {
+    $result.gemini = @{ status = "error"; error = $_.Exception.Message }
+    Write-Log "Gemini 失敗: $($_.Exception.Message)"
+}
+
 # ---------- 寫入 Firestore ----------
 try {
     $dataJson = $result | ConvertTo-Json -Depth 8 -Compress
@@ -109,7 +165,7 @@ try {
            "&updateMask.fieldPaths=data&updateMask.fieldPaths=updatedAt"
     Invoke-RestMethod -Method Patch -Uri $uri -ContentType "application/json; charset=utf-8" `
         -Body ([System.Text.Encoding]::UTF8.GetBytes($body)) -TimeoutSec 30 | Out-Null
-    Write-Log "OK claude=$($result.claude.status) codex=$($result.codex.status)"
+    Write-Log "OK claude=$($result.claude.status) codex=$($result.codex.status) gemini=$($result.gemini.status)"
 } catch {
     Write-Log "Firestore 寫入失敗: $($_.Exception.Message)"
     exit 1
