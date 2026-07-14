@@ -1,7 +1,10 @@
 <#
   collect.ps1 — AI 額度收集腳本（AI 額度儀表板後端）
-  版號：v1.2.0
+  版號：v1.3.0
   版更記錄：
+  - v1.3.0 (2026-07-14) Gemini 去 npm 依賴：OAuth client 常數改讀 repo 外私有設定檔
+    `~\.ai-usage-collector\gemini-oauth-client.json`；設定檔不存在時才回退抽 npm bundle 並自動補寫，
+    之後即使移除 npm @google/gemini-cli 套件也不會斷（額度端點仍用舊 retrieveUserQuota，token 仍讀 ~\.gemini\oauth_creds.json）
   - v1.2.0 (2026-07-14) 新增 Gemini 額度：走 Gemini CLI 同款 retrieveUserQuota API（refresh token → loadCodeAssist → retrieveUserQuota），逐模型剩餘比例
   - v1.1.0 (2026-07-13) Codex 0.134 改版適配：rate_limits 不再固定 primary=5h/secondary=週，改用 window_minutes 判斷窗口；缺的窗口寫 null
   - v1.0.0 (2026-07-12) 初版：抓 Claude OAuth 用量端點 + Codex session rate_limits，寫入 Firestore ai_usage/current
@@ -10,7 +13,8 @@
   - Claude：https://api.anthropic.com/api/oauth/usage（token 讀本機 ~\.claude\.credentials.json，不外傳）
   - Codex：~\.codex\sessions 最新 rollout jsonl 內的 rate_limits 事件
   - Gemini：cloudcode-pa.googleapis.com v1internal:retrieveUserQuota（token 讀本機 ~\.gemini\oauth_creds.json 換發，不外傳；
-    OAuth client 為 Gemini CLI 內建的公開 installed-app client；額度用完時 API 會省略 remainingFraction，視為 100% 用完）
+    OAuth client 為 Gemini CLI 內建的公開 installed-app client，v1.3.0 起改讀 ~\.ai-usage-collector\gemini-oauth-client.json，
+    首次或設定檔遺失時回退抽 npm bundle 補寫；額度用完時 API 會省略 remainingFraction，視為 100% 用完）
 
   排程：Windows 工作排程器每 5 分鐘執行一次（工作名稱 AI-Usage-Collector）
 #>
@@ -100,20 +104,36 @@ try {
 
 # ---------- Gemini ----------
 try {
-    # OAuth client 執行時從本機 Gemini CLI 安裝檔抽取（repo 公開，不可硬編碼；GitHub push protection 也會擋）
+    # OAuth client（公開 installed-app client，repo 公開不可硬編碼）：優先讀 repo 外私有設定檔；
+    # 設定檔遺失時才回退抽 npm bundle 並自動補寫，之後即使移除 npm gemini 套件也不會斷。
     $gClientId = $null; $gClientSecret = $null
-    foreach ($bf in Get-ChildItem "$env:APPDATA\npm\node_modules\@google\gemini-cli\bundle\*.js" -ErrorAction Stop) {
-        if (-not $gClientId) {
-            $m = Select-String -Path $bf.FullName -Pattern 'OAUTH_CLIENT_ID\s*=\s*"([^"]+)"' | Select-Object -First 1
-            if ($m) { $gClientId = $m.Matches[0].Groups[1].Value }
-        }
-        if (-not $gClientSecret) {
-            $m = Select-String -Path $bf.FullName -Pattern 'OAUTH_CLIENT_SECRET\s*=\s*"([^"]+)"' | Select-Object -First 1
-            if ($m) { $gClientSecret = $m.Matches[0].Groups[1].Value }
-        }
-        if ($gClientId -and $gClientSecret) { break }
+    $gCfgFile = Join-Path $env:USERPROFILE ".ai-usage-collector\gemini-oauth-client.json"
+    if (Test-Path $gCfgFile) {
+        $gc = Get-Content $gCfgFile -Raw | ConvertFrom-Json
+        $gClientId = $gc.clientId; $gClientSecret = $gc.clientSecret
     }
-    if (-not $gClientId -or -not $gClientSecret) { throw "本機 Gemini CLI bundle 找不到 OAuth client（CLI 是否已移除或改版？）" }
+    if (-not $gClientId -or -not $gClientSecret) {
+        # 回退：從 npm bundle 抽取一次並補寫私有設定檔
+        foreach ($bf in Get-ChildItem "$env:APPDATA\npm\node_modules\@google\gemini-cli\bundle\*.js" -ErrorAction SilentlyContinue) {
+            if (-not $gClientId) {
+                $m = Select-String -Path $bf.FullName -Pattern 'OAUTH_CLIENT_ID\s*=\s*"([^"]+)"' | Select-Object -First 1
+                if ($m) { $gClientId = $m.Matches[0].Groups[1].Value }
+            }
+            if (-not $gClientSecret) {
+                $m = Select-String -Path $bf.FullName -Pattern 'OAUTH_CLIENT_SECRET\s*=\s*"([^"]+)"' | Select-Object -First 1
+                if ($m) { $gClientSecret = $m.Matches[0].Groups[1].Value }
+            }
+            if ($gClientId -and $gClientSecret) { break }
+        }
+        if ($gClientId -and $gClientSecret) {
+            $gCfgDir = Split-Path $gCfgFile -Parent
+            if (-not (Test-Path $gCfgDir)) { New-Item -ItemType Directory -Path $gCfgDir | Out-Null }
+            @{ clientId = $gClientId; clientSecret = $gClientSecret; extractedAt = (Get-Date).ToString("yyyy-MM-ddTHH:mm:sszzz"); source = "npm @google/gemini-cli bundle (auto-backfill)" } |
+                ConvertTo-Json | Set-Content -Path $gCfgFile -Encoding UTF8
+            Write-Log "Gemini OAuth client 已從 npm bundle 補寫私有設定檔"
+        }
+    }
+    if (-not $gClientId -or -not $gClientSecret) { throw "找不到 Gemini OAuth client（私有設定檔 $gCfgFile 不存在，且 npm bundle 也抽不到）" }
     $gCred = Get-Content "$env:USERPROFILE\.gemini\oauth_creds.json" -Raw | ConvertFrom-Json
     $gTok = Invoke-RestMethod -Method Post -Uri "https://oauth2.googleapis.com/token" -TimeoutSec 30 -Body @{
         client_id     = $gClientId
