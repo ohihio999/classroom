@@ -1,6 +1,9 @@
 <!--
-  版本：v3.0
+  版本：v3.3
   版更記錄：
+  v3.3 (2026-07-19) - 新增「LINE 對話整理」卡片，連結本機 line_digest_web（127.0.0.1:8766；LINE 網頁自 v0.3 起改用 8766，避免與 Skill 管理器/Poring dashboard 搶 8765）
+  v3.2 (2026-07-14) - 新增「AI 額度儀表板」(/ai-usage/) 與「Skill 管理器」(127.0.0.1:8765) 卡片；卡片上下排序改依格線欄數移動（修正多欄版面排序錯位）
+  v3.1 (2026-05-31) - 新增「影片進度表」卡片，連結至 /影片進度表/
   v3.0 (2026-05-07) - 照片模式自動解析 FB 網址中的 set=a.XXX，轉換為相簿網址，輸入框下方顯示轉換結果
   v2.9 (2026-05-07) - 照片模式改用 gallery-dl（yt-dlp 不支援 FB 靜態照片）；自動切換安裝指令與 bat 檔名
   v2.8 (2026-05-07) - yt-dlp.bat 改用 TextEncoder + octet-stream 杜絕瀏覽器補 BOM；加 chcp 65001 支援中文路徑
@@ -39,13 +42,15 @@
     .logout { position: absolute; right: 16px; top: 22px; background: none; border: none; color: white; font-size: 13px; cursor: pointer; opacity: 0.8; }
     .home-link { position: absolute; left: 16px; top: 22px; color: white; font-size: 13px; opacity: 0.8; text-decoration: none; }
     .home-link:hover { opacity: 1; }
-    .tools { padding: 24px 16px; display: flex; flex-direction: column; gap: 14px; max-width: 480px; margin: 0 auto; }
-    .tool-card-wrap { position: relative; }
-    .tool-card { background: white; border-radius: 14px; padding: 24px 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); cursor: pointer; display: flex; align-items: center; gap: 16px; transition: transform 0.1s, box-shadow 0.1s; text-decoration: none; color: inherit; }
+    .tools { width: min(100%, 1780px); margin: 0 auto; padding: 28px 30px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px 40px; align-items: stretch; }
+    .tool-card-wrap { position: relative; min-width: 0; }
+    .tool-card { min-height: 136px; height: 100%; background: white; border-radius: 14px; padding: 28px 34px 30px; box-shadow: 0 8px 18px rgba(0,0,0,0.08); cursor: pointer; display: grid; grid-template-columns: 58px 1fr; align-items: center; gap: 26px; transition: transform 0.1s, box-shadow 0.1s; text-decoration: none; color: inherit; position: relative; }
     .tool-card:active { transform: scale(0.98); box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
-    .tool-icon { font-size: 40px; flex-shrink: 0; }
+    .tool-icon { font-size: 44px; line-height: 1; flex-shrink: 0; text-align: center; }
+    .tool-main { min-width: 0; padding-bottom: 18px; }
     .tool-name { font-size: 18px; font-weight: 600; color: #222; margin-bottom: 4px; }
     .tool-desc { font-size: 13px; color: #888; }
+    .tool-created-at { position: absolute; right: 18px; bottom: 12px; color: #aaa; font-size: 11px; line-height: 1; }
     .tool-actions { position: absolute; top: 10px; right: 10px; display: flex; gap: 6px; opacity: 0; pointer-events: none; transition: opacity 0.15s; }
     .tool-card-wrap:hover .tool-actions, .tool-card-wrap:focus-within .tool-actions { opacity: 1; pointer-events: auto; }
     .tool-action-btn { border: none; border-radius: 999px; width: 30px; height: 30px; background: rgba(255,255,255,0.95); box-shadow: 0 2px 8px rgba(0,0,0,0.12); font-size: 13px; cursor: pointer; color: #444; }
@@ -86,6 +91,10 @@
     .toast.show { opacity: 1; }
     @media (hover: none) {
       .tool-actions { opacity: 1; pointer-events: auto; }
+    }
+    @media (max-width: 960px) {
+      .tools { display: flex; flex-direction: column; gap: 14px; max-width: 600px; margin: 0 auto; padding: 24px 16px; }
+      .tool-card { min-height: 112px; padding: 24px 22px; grid-template-columns: 54px 1fr; gap: 18px; }
     }
   </style>
 </head>
@@ -399,17 +408,22 @@ const ALLOWED_EMAIL = 'ohihio@gmail.com';
 const TOOLS_COL = 'admin_tools';
 const ICON_OPTIONS = ['🗂️','🎙️','📝','📚','📌','📎','📦','⚙️','🛠️','💡','📊','🧾','📁','🔧','🔍','🚀','⭐','✅'];
 const DEFAULT_TOOLS = [
-  { id: 'tool-manager', title: '小程式分類管理', description: '收藏、分類、隨手可用的 AI 工具庫', icon: '🗂️', actionType: 'link', href: '/tool-manager/', order: 0 },
-  { id: 'transcribe', title: '音檔轉逐字稿', description: 'Groq Whisper，自動壓縮大檔，1 小時約 2 分鐘', icon: '🎙️', actionType: 'modal', modalFn: 'openTranscribe', order: 1 },
-  { id: 'video-to-mp3', title: '影片檔轉 MP3', description: '批次掃描資料夾，把影片轉成同資料夾 MP3', icon: '🎬', actionType: 'modal', modalFn: 'openVideoToMp3', order: 2 },
-  { id: 'transcript-pack', title: 'transcript-training-pack', description: '單一逐字稿 → 培訓報告＋摘要＋心智圖', icon: '📝', actionType: 'modal', modalFn: 'openTranscriptPack', order: 3 },
-  { id: 'course-filing', title: 'course-filing', description: '課程歸檔 Obsidian，含知識點拆解＋日記更新', icon: '📚', actionType: 'modal', modalFn: 'openCourseFiling', order: 4 },
-  { id: 'yt-dlp', title: 'yt-dlp 影片下載', description: '貼網址下載 YouTube、FB 等影片或音訊', icon: '⬇️', actionType: 'modal', modalFn: 'openYtDlp', order: 5 }
+  { id: 'tool-manager', title: '小程式分類管理', description: '收藏、分類、隨手可用的 AI 工具庫', icon: '🗂️', actionType: 'link', href: '/tool-manager/', order: 0, createdAt: '2026-04-29T00:00:00+08:00' },
+  { id: 'transcribe', title: '音檔轉逐字稿', description: 'Groq Whisper，自動壓縮大檔，1 小時約 2 分鐘', icon: '🎙️', actionType: 'modal', modalFn: 'openTranscribe', order: 1, createdAt: '2026-05-01T00:00:00+08:00' },
+  { id: 'video-to-mp3', title: '影片檔轉 MP3', description: '批次掃描資料夾，把影片轉成同資料夾 MP3', icon: '🎬', actionType: 'modal', modalFn: 'openVideoToMp3', order: 2, createdAt: '2026-05-05T00:00:00+08:00' },
+  { id: 'transcript-pack', title: 'transcript-training-pack', description: '單一逐字稿 → 培訓報告＋摘要＋心智圖', icon: '📝', actionType: 'modal', modalFn: 'openTranscriptPack', order: 3, createdAt: '2026-05-02T00:00:00+08:00' },
+  { id: 'course-filing', title: 'course-filing', description: '課程歸檔 Obsidian，含知識點拆解＋日記更新', icon: '📚', actionType: 'modal', modalFn: 'openCourseFiling', order: 4, createdAt: '2026-05-02T00:00:00+08:00' },
+  { id: 'yt-dlp', title: 'yt-dlp 影片下載', description: '貼網址下載 YouTube、FB 等影片或音訊', icon: '⬇️', actionType: 'modal', modalFn: 'openYtDlp', order: 5, createdAt: '2026-05-07T00:00:00+08:00' },
+  { id: 'video-progress', title: '影片進度表', description: '追蹤影片製作進度，9 個步驟橫向顯示', icon: '🎞️', actionType: 'link', href: '/影片進度表/', order: 6, createdAt: '2026-05-31T00:00:00+08:00' },
+  { id: 'ai-usage', title: 'AI 額度儀表板', description: '查看 Claude、Codex、Gemini 使用額度', icon: '📊', actionType: 'link', href: '/ai-usage/', order: 7, createdAt: '2026-07-14T00:00:00+08:00' },
+  { id: 'skill-manager-local', title: 'Skill 管理器', description: '三 AI 共用的本機 Skill 管理頁', icon: '🛠️', actionType: 'link', href: 'http://127.0.0.1:8765/', order: 8, createdAt: '2026-07-14T00:00:00+08:00' },
+  { id: 'line-digest-local', title: 'LINE 對話整理', description: '本機 LINE 群組對話整理成 Obsidian 摘要', icon: '💬', actionType: 'link', href: 'http://127.0.0.1:8766/', order: 9, createdAt: '2026-07-19T00:00:00+08:00' }
 ];
 
 let toolsState = DEFAULT_TOOLS.map(tool => ({ ...tool }));
 let editingToolId = '';
 let selectedIcon = ICON_OPTIONS[0];
+const DESKTOP_GRID_COLUMNS = 3;
 
 onAuthStateChanged(auth, (user) => {
   if (!user) { location.href = '/login.html'; return; }
@@ -471,8 +485,10 @@ window.saveToolEdit = async () => {
   }
 };
 
-window.moveToolUp = (toolId) => moveTool(toolId, -1);
-window.moveToolDown = (toolId) => moveTool(toolId, 1);
+window.moveToolLeft = (toolId) => moveTool(toolId, -1);
+window.moveToolRight = (toolId) => moveTool(toolId, 1);
+window.moveToolUp = (toolId) => moveTool(toolId, -getSortColumnCount());
+window.moveToolDown = (toolId) => moveTool(toolId, getSortColumnCount());
 
 window.fetchGroqKey = async () => {
   try {
@@ -535,7 +551,7 @@ async function seedDefaultTools() {
       href: tool.href || '',
       modalFn: tool.modalFn || '',
       order: tool.order,
-      createdAt: seededAt,
+      createdAt: tool.createdAt || seededAt,
       updatedAt: seededAt
     }, { merge: true });
   });
@@ -548,26 +564,40 @@ function normalizeOrder() {
   toolsState = toolsState.map((tool, index) => ({ ...tool, order: index }));
 }
 
+function reindexToolOrder() {
+  toolsState = toolsState.map((tool, index) => ({ ...tool, order: index }));
+}
+
 function renderTools() {
   normalizeOrder();
   const container = document.getElementById('toolsContainer');
   if (!container) return;
-  container.innerHTML = toolsState.map((tool, index) => `
-    <div class="tool-card-wrap">
-      <div class="tool-card" role="button" tabindex="0" onclick="handleToolActivate('${tool.id}')" onkeydown="handleToolKeydown(event, '${tool.id}')">
+  const columns = getSortColumnCount();
+  container.innerHTML = toolsState.map((tool, index) => {
+    const firstColumn = columns === 1 || index % columns === 0;
+    const lastColumn = columns === 1 || index % columns === columns - 1 || index === toolsState.length - 1;
+    const firstRow = index < columns;
+    const lastRow = index + columns >= toolsState.length;
+    return `
+    <div class="tool-card-wrap" data-tool-id="${escapeHtml(tool.id)}">
+      <div class="tool-card" role="button" tabindex="0" onclick="handleToolActivate(event, '${tool.id}')" onkeydown="handleToolKeydown(event, '${tool.id}')">
         <div class="tool-icon">${escapeHtml(tool.icon || '📦')}</div>
-        <div>
+        <div class="tool-main">
           <div class="tool-name">${escapeHtml(tool.title)}</div>
           <div class="tool-desc">${escapeHtml(tool.description)}</div>
         </div>
+        <div class="tool-created-at">${escapeHtml(formatToolCreatedAt(tool.createdAt))}</div>
       </div>
       <div class="tool-actions">
         <button class="tool-action-btn" onclick="event.stopPropagation(); openEditTool('${tool.id}')" title="編輯">✏️</button>
-        <button class="tool-action-btn" onclick="event.stopPropagation(); moveToolUp('${tool.id}')" title="上移" ${index === 0 ? 'disabled' : ''}>▲</button>
-        <button class="tool-action-btn" onclick="event.stopPropagation(); moveToolDown('${tool.id}')" title="下移" ${index === toolsState.length - 1 ? 'disabled' : ''}>▼</button>
+        <button class="tool-action-btn" onclick="event.stopPropagation(); moveToolLeft('${tool.id}')" title="左移" ${firstColumn ? 'disabled' : ''}>◀</button>
+        <button class="tool-action-btn" onclick="event.stopPropagation(); moveToolRight('${tool.id}')" title="右移" ${lastColumn ? 'disabled' : ''}>▶</button>
+        <button class="tool-action-btn" onclick="event.stopPropagation(); moveToolUp('${tool.id}')" title="上移" ${firstRow ? 'disabled' : ''}>▲</button>
+        <button class="tool-action-btn" onclick="event.stopPropagation(); moveToolDown('${tool.id}')" title="下移" ${lastRow ? 'disabled' : ''}>▼</button>
       </div>
     </div>
-  `).join('');
+  `;
+  }).join('');
 }
 
 function initIconGrid() {
@@ -587,7 +617,7 @@ function highlightSelectedIcon() {
   });
 }
 
-window.handleToolActivate = (toolId) => {
+window.handleToolActivate = (event, toolId) => {
   const tool = toolsState.find(item => item.id === toolId);
   if (!tool) return;
   if (tool.actionType === 'link' && tool.href) {
@@ -601,9 +631,13 @@ window.handleToolActivate = (toolId) => {
 window.handleToolKeydown = (event, toolId) => {
   if (event.key === 'Enter' || event.key === ' ') {
     event.preventDefault();
-    window.handleToolActivate(toolId);
+    window.handleToolActivate(event, toolId);
   }
 };
+
+function getSortColumnCount() {
+  return window.matchMedia('(max-width: 960px)').matches ? 1 : DESKTOP_GRID_COLUMNS;
+}
 
 async function moveTool(toolId, delta) {
   const index = toolsState.findIndex(item => item.id === toolId);
@@ -611,16 +645,15 @@ async function moveTool(toolId, delta) {
   if (index < 0 || nextIndex < 0 || nextIndex >= toolsState.length) return;
 
   const prevState = toolsState.map(tool => ({ ...tool }));
-  const [moved] = toolsState.splice(index, 1);
-  toolsState.splice(nextIndex, 0, moved);
-  normalizeOrder();
+  [toolsState[index], toolsState[nextIndex]] = [toolsState[nextIndex], toolsState[index]];
+  reindexToolOrder();
   renderTools();
 
   try {
     await persistToolOrder();
   } catch (error) {
     toolsState = prevState;
-    normalizeOrder();
+    reindexToolOrder();
     renderTools();
     showToast('排序失敗：' + simplifyError(error));
   }
@@ -630,7 +663,7 @@ async function persistToolOrder() {
   const batch = writeBatch(db);
   const updatedAt = serverTimestamp();
   toolsState.forEach((tool, index) => {
-    batch.set(doc(db, TOOLS_COL, tool.id), {
+    const payload = {
       title: tool.title,
       description: tool.description,
       icon: tool.icon,
@@ -639,14 +672,16 @@ async function persistToolOrder() {
       modalFn: tool.modalFn || '',
       order: index,
       updatedAt
-    }, { merge: true });
+    };
+    if (!tool.createdAt) payload.createdAt = serverTimestamp();
+    batch.set(doc(db, TOOLS_COL, tool.id), payload, { merge: true });
   });
   await batch.commit();
   showToast('已更新卡片順序');
 }
 
 async function persistSingleTool(tool) {
-  await setDoc(doc(db, TOOLS_COL, tool.id), {
+  const payload = {
     title: tool.title,
     description: tool.description,
     icon: tool.icon,
@@ -655,7 +690,9 @@ async function persistSingleTool(tool) {
     modalFn: tool.modalFn || '',
     order: tool.order,
     updatedAt: serverTimestamp()
-  }, { merge: true });
+  };
+  if (!tool.createdAt) payload.createdAt = serverTimestamp();
+  await setDoc(doc(db, TOOLS_COL, tool.id), payload, { merge: true });
 }
 
 function showToast(message) {
@@ -669,6 +706,24 @@ function showToast(message) {
 
 function simplifyError(error) {
   return error?.message || '未知錯誤';
+}
+
+function formatToolCreatedAt(value) {
+  const date = toDateValue(value);
+  if (!date) return '建立：未記錄';
+  return `建立：${date.getFullYear()}/${pad2(date.getMonth() + 1)}/${pad2(date.getDate())}`;
+}
+
+function toDateValue(value) {
+  if (!value) return null;
+  if (typeof value.toDate === 'function') return value.toDate();
+  if (typeof value.seconds === 'number') return new Date(value.seconds * 1000);
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function pad2(value) {
+  return String(value).padStart(2, '0');
 }
 
 function escapeHtml(text) {
