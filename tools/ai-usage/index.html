@@ -1,8 +1,12 @@
 <!DOCTYPE html>
 <!--
   AI 額度儀表板 — 三大 AI CLI 月訂閱使用量
-  版號：v1.2.0
+  版號：v1.3.0
   版更記錄：
+  - v1.3.0 (2026-07-28) 手機常駐三改：①「已 X 分鐘未更新」改用計時器每 30 秒自己重算（原本只在收到新資料時才算，
+    電腦關機後數字會凍住、看起來像剛更新）②可「加到主畫面」全螢幕常駐（manifest.json + sw.js）＋螢幕恆亮開關
+    （Screen Wake Lock，設定記在 localStorage，切回前景自動重新取得）③Codex 卡片改依 collect.ps1 的 source 欄位
+    顯示：api＝即時查詢，session＝取自最近一次使用（會標示可能已過期）
   - v1.2.0 (2026-07-14) Gemini 卡片接真實額度（retrieveUserQuota 逐模型剩餘比例）：有用量的模型顯示進度條，全 0% 收斂成一行
   - v1.1.0 (2026-07-13) 配合 Codex 0.134 改版：某窗口無數據時顯示說明，不再顯示錯置數字
   - v1.0.0 (2026-07-12) 初版：Claude / Codex 官方額度即時顯示（Firestore onSnapshot），Gemini 官方連結卡片
@@ -12,6 +16,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>AI 額度儀表板</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="AI 額度">
+<meta name="theme-color" content="#f9f9f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0d0d0d" media="(prefers-color-scheme: dark)">
 <style>
   :root {
     --page:        #f9f9f7;
@@ -89,6 +100,14 @@
     color: var(--ink); font-size: 0.9rem; font-weight: 600;
   }
   .link-btn:active { background: var(--track); }
+  .wake {
+    display: none; width: 100%; margin-top: 4px; padding: 11px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    color: var(--ink-2); font-size: 0.85rem; font-weight: 600;
+    font-family: inherit; cursor: pointer;
+  }
+  .wake.on { color: var(--ink); border-color: var(--fill-normal); }
+  .wake:active { background: var(--track); }
   footer {
     text-align: center; color: var(--ink-muted);
     font-size: 0.75rem; line-height: 1.7; margin: 20px 0 8px;
@@ -100,9 +119,10 @@
 <body>
 <div class="wrap">
   <h1>AI 額度儀表板</h1>
-  <div class="sub">Claude / Codex 官方額度・電腦開機時每 5 分鐘更新</div>
+  <div class="sub">Claude / Codex / Gemini 官方額度・電腦開機時每 5 分鐘更新</div>
   <div id="app"><div class="loading">載入中…</div></div>
   <footer id="foot"></footer>
+  <button id="wake" class="wake" type="button">螢幕保持開啟：關</button>
 </div>
 
 <script type="module">
@@ -157,10 +177,15 @@ function render(data) {
     : `<div class="err">讀取失敗：${c.error || "無資料"}</div>`);
 
   const x = data.codex || {};
+  // source：api＝每輪即時向 Codex 查（不必先用過 Codex）；session＝回退去翻 session 檔，數字可能是舊的
+  const xNote = !x.asOf ? ""
+    : x.source === "api"
+      ? `<div class="meter-reset">即時查詢 ${fmtTime(x.asOf)}</div>`
+      : `<div class="meter-reset stale">數據時間 ${fmtTime(x.asOf)}（取自最近一次 Codex 使用，可能已過期）</div>`;
   html += card("Codex", x.planType ? x.planType.toUpperCase() : "", x.status === "ok"
     ? meter("5 小時窗口", x.fiveHour) + meter("週額度", x.sevenDay)
       + (!x.fiveHour && x.sevenDay ? `<div class="state-note">此版 Codex 僅回報週額度，無 5 小時窗口數據。</div>` : "")
-      + (x.asOf ? `<div class="meter-reset">數據時間 ${fmtTime(x.asOf)}（取自最近一次 Codex 使用）</div>` : "")
+      + xNote
     : `<div class="err">讀取失敗：${x.error || "無資料"}</div>`);
 
   const g = data.gemini || {};
@@ -183,14 +208,23 @@ function render(data) {
   html += card("Gemini", g.tier ? g.tier.toUpperCase().replace("-TIER", "") : "", gBody);
 
   $app.innerHTML = html;
-
-  const t = data.collectedAt ? new Date(data.collectedAt) : null;
-  if (t && !isNaN(t)) {
-    const mins = Math.round((Date.now() - t.getTime()) / 60000);
-    const staleTag = mins > 15 ? ` <span class="stale">（已 ${mins} 分鐘未更新，電腦可能沒開機）</span>` : "";
-    $foot.innerHTML = `更新時間 ${fmtTime(data.collectedAt)}${staleTag}`;
-  }
+  lastCollectedAt = data.collectedAt || null;
+  renderFoot();
 }
+
+// 頁尾要靠計時器自己重算：只在收到新資料時算的話，電腦一關機數字就凍住，
+// 畫面看起來像剛更新過，反而看不出已經停更（這是常駐看最容易誤判的地方）。
+let lastCollectedAt = null;
+function renderFoot() {
+  if (!lastCollectedAt) return;
+  const t = new Date(lastCollectedAt);
+  if (isNaN(t)) return;
+  const mins = Math.round((Date.now() - t.getTime()) / 60000);
+  const staleTag = mins > 15 ? ` <span class="stale">（已 ${mins} 分鐘未更新，電腦可能沒開機）</span>` : "";
+  $foot.innerHTML = `更新時間 ${fmtTime(lastCollectedAt)}${staleTag}`;
+}
+setInterval(renderFoot, 30000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) renderFoot(); });
 
 onSnapshot(doc(db, "ai_usage", "current"), snap => {
   if (!snap.exists()) {
@@ -205,6 +239,50 @@ onSnapshot(doc(db, "ai_usage", "current"), snap => {
 }, err => {
   $app.innerHTML = `<div class="err">Firestore 連線失敗：${err.message}</div>`;
 });
+
+// ---------- 常駐用：螢幕恆亮開關 ----------
+// Wake Lock 一離開前景就會被系統釋放，所以要記住使用者的選擇並在回前景時重新取得。
+const $wake = document.getElementById("wake");
+let wakeLock = null;
+let wantWake = localStorage.getItem("aiUsageWakeLock") === "1";
+
+function paintWake(msg) {
+  $wake.textContent = msg || (wantWake ? "螢幕保持開啟：開" : "螢幕保持開啟：關");
+  $wake.classList.toggle("on", wantWake);
+}
+
+async function acquireWake() {
+  if (wakeLock || document.hidden) return;
+  try {
+    wakeLock = await navigator.wakeLock.request("screen");
+    wakeLock.addEventListener("release", () => { wakeLock = null; });
+    paintWake();
+  } catch (e) {
+    paintWake(`無法保持螢幕開啟（${e.name}）`);
+  }
+}
+
+if ("wakeLock" in navigator) {
+  $wake.style.display = "block";
+  paintWake();
+  $wake.addEventListener("click", async () => {
+    wantWake = !wantWake;
+    localStorage.setItem("aiUsageWakeLock", wantWake ? "1" : "0");
+    if (wantWake) {
+      await acquireWake();
+    } else {
+      if (wakeLock) { try { await wakeLock.release(); } catch {} wakeLock = null; }
+      paintWake();
+    }
+  });
+  document.addEventListener("visibilitychange", () => { if (!document.hidden && wantWake) acquireWake(); });
+  if (wantWake) acquireWake();
+}
+
+// ---------- 加到主畫面用 ----------
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("sw.js").catch(() => {});
+}
 </script>
 </body>
 </html>

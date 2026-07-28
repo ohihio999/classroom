@@ -2,12 +2,25 @@
   "firestore": {
     "rules": "firestore.rules"
   },
+  "storage": {
+    "rules": "storage.rules"
+  },
   "functions": {
     "source": "functions"
   },
   "hosting": {
     "site": "my-teaching-tools-2b36c",
     "public": "tools",
-    "ignore": ["firebase.json", "**/.*", "**/node_modules/**", "TG小幫手/**"]
+    "ignore": ["firebase.json", "**/.*", "**/node_modules/**", "TG小幫手/**", "FB文章擷取帶圖片/**", "LINE對話自動化整理含圖片/**", "**/*.py"],
+    "headers": [
+      {
+        "source": "/ai-usage{,/**}",
+        "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
+      },
+      {
+        "source": "/ai-usage/sw.js",
+        "headers": [{ "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }]
+      }
+    ]
   }
 }
