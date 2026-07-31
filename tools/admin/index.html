@@ -1,6 +1,7 @@
 <!--
-  版本：v3.6
+  版本：v3.7
   版更記錄：
+  v3.7 (2026-07-31) - 卡片改 4 欄緊湊版（卡片高 136→88px、icon 44→32px、標題 18→15px、間距縮小），加 1400px 斷點（≤1400px 回 3 欄、≤960px 單欄）；getSortColumnCount() 同步三段斷點，避免排序鈕跳錯格
   v3.6 (2026-07-31) - 新增「歸檔 course-collect」與「字幕歸檔」兩張說明卡（modal 說明書，不執行動作）：課程散檔收齊改名搬進 D:\2026_已整理課程、Arctime 校對版字幕替換自動產 srt
   v3.5 (2026-07-31) - 影音工具卡片加 🚀 啟動鈕：走自訂協定 mediatools://（註冊在 HKCU\Software\Classes\mediatools → video-to-mp3\start.bat），服務沒開時按一下就叫起本機服務，服務會自己開分頁
   v3.4 (2026-07-31) - 「影片檔轉 MP3」卡片改為連結本機影音工具服務（127.0.0.1:8767，video-to-mp3/server.py），可在網頁上選檔、當場轉檔看進度、順帶做錄音檔合併；移除舊的下載 bat modal
@@ -45,15 +46,15 @@
     .logout { position: absolute; right: 16px; top: 22px; background: none; border: none; color: white; font-size: 13px; cursor: pointer; opacity: 0.8; }
     .home-link { position: absolute; left: 16px; top: 22px; color: white; font-size: 13px; opacity: 0.8; text-decoration: none; }
     .home-link:hover { opacity: 1; }
-    .tools { width: min(100%, 1780px); margin: 0 auto; padding: 28px 30px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px 40px; align-items: stretch; }
+    .tools { width: min(100%, 1780px); margin: 0 auto; padding: 22px 24px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px 20px; align-items: stretch; }
     .tool-card-wrap { position: relative; min-width: 0; }
-    .tool-card { min-height: 136px; height: 100%; background: white; border-radius: 14px; padding: 28px 34px 30px; box-shadow: 0 8px 18px rgba(0,0,0,0.08); cursor: pointer; display: grid; grid-template-columns: 58px 1fr; align-items: center; gap: 26px; transition: transform 0.1s, box-shadow 0.1s; text-decoration: none; color: inherit; position: relative; }
+    .tool-card { min-height: 88px; height: 100%; background: white; border-radius: 12px; padding: 16px 18px 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.07); cursor: pointer; display: grid; grid-template-columns: 42px 1fr; align-items: center; gap: 14px; transition: transform 0.1s, box-shadow 0.1s; text-decoration: none; color: inherit; position: relative; }
     .tool-card:active { transform: scale(0.98); box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
-    .tool-icon { font-size: 44px; line-height: 1; flex-shrink: 0; text-align: center; }
-    .tool-main { min-width: 0; padding-bottom: 18px; }
-    .tool-name { font-size: 18px; font-weight: 600; color: #222; margin-bottom: 4px; }
-    .tool-desc { font-size: 13px; color: #888; }
-    .tool-created-at { position: absolute; right: 18px; bottom: 12px; color: #aaa; font-size: 11px; line-height: 1; }
+    .tool-icon { font-size: 32px; line-height: 1; flex-shrink: 0; text-align: center; }
+    .tool-main { min-width: 0; padding-bottom: 10px; }
+    .tool-name { font-size: 15px; font-weight: 600; color: #222; margin-bottom: 3px; line-height: 1.25; }
+    .tool-desc { font-size: 12px; color: #888; line-height: 1.35; }
+    .tool-created-at { position: absolute; right: 12px; bottom: 7px; color: #bbb; font-size: 10px; line-height: 1; }
     .tool-actions { position: absolute; top: 10px; right: 10px; display: flex; gap: 6px; opacity: 0; pointer-events: none; transition: opacity 0.15s; }
     .tool-card-wrap:hover .tool-actions, .tool-card-wrap:focus-within .tool-actions { opacity: 1; pointer-events: auto; }
     .tool-action-btn { border: none; border-radius: 999px; width: 30px; height: 30px; background: rgba(255,255,255,0.95); box-shadow: 0 2px 8px rgba(0,0,0,0.12); font-size: 13px; cursor: pointer; color: #444; }
@@ -95,9 +96,12 @@
     @media (hover: none) {
       .tool-actions { opacity: 1; pointer-events: auto; }
     }
+    @media (max-width: 1400px) {
+      .tools { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
     @media (max-width: 960px) {
-      .tools { display: flex; flex-direction: column; gap: 14px; max-width: 600px; margin: 0 auto; padding: 24px 16px; }
-      .tool-card { min-height: 112px; padding: 24px 22px; grid-template-columns: 54px 1fr; gap: 18px; }
+      .tools { display: flex; flex-direction: column; gap: 12px; max-width: 600px; margin: 0 auto; padding: 20px 16px; }
+      .tool-card { min-height: 84px; padding: 16px 18px; grid-template-columns: 42px 1fr; gap: 14px; }
     }
   </style>
 </head>
@@ -495,7 +499,7 @@ const DEFAULT_TOOLS = [
 let toolsState = DEFAULT_TOOLS.map(tool => ({ ...tool }));
 let editingToolId = '';
 let selectedIcon = ICON_OPTIONS[0];
-const DESKTOP_GRID_COLUMNS = 3;
+const DESKTOP_GRID_COLUMNS = 4;
 
 onAuthStateChanged(auth, (user) => {
   if (!user) { location.href = '/login.html'; return; }
@@ -716,7 +720,10 @@ window.handleToolKeydown = (event, toolId) => {
 };
 
 function getSortColumnCount() {
-  return window.matchMedia('(max-width: 960px)').matches ? 1 : DESKTOP_GRID_COLUMNS;
+  // 必須與 CSS 的 .tools grid-template-columns 斷點一致，否則上下排序會跳錯格
+  if (window.matchMedia('(max-width: 960px)').matches) return 1;
+  if (window.matchMedia('(max-width: 1400px)').matches) return 3;
+  return DESKTOP_GRID_COLUMNS;
 }
 
 async function moveTool(toolId, delta) {
