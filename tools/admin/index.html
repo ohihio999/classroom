@@ -1,7 +1,9 @@
 <!--
-  版本：v3.7
+  版本：v3.9
   版更記錄：
-  v3.7 (2026-07-31) - 卡片改 4 欄緊湊版（卡片高 136→88px、icon 44→32px、標題 18→15px、間距縮小），加 1400px 斷點（≤1400px 回 3 欄、≤960px 單欄）；getSortColumnCount() 同步三段斷點，避免排序鈕跳錯格
+  v3.9 (2026-08-01) - YouTube 下載 fetch 加 3 秒逾時 fallback：HTTPS 頁面 fetch localhost 被 Chrome Private Network Access 擋時，自動開本機 8767 頁面操作（URL 帶 hash 預填網址）
+  v3.8 (2026-08-01) - 新增「YouTube 下載」卡片：貼網址、MP4/MP3 可單選也可複選（兩個都勾各存一份），直接呼叫本機影音服務（127.0.0.1:8767 新增 /api/start kind=ytdl）下載到 C:\OBS，modal 內顯示逐項進度；服務沒開就按卡片的 🚀
+  v3.7 (2026-07-31) -卡片改 4 欄緊湊版（卡片高 136→88px、icon 44→32px、標題 18→15px、間距縮小），加 1400px 斷點（≤1400px 回 3 欄、≤960px 單欄）；getSortColumnCount() 同步三段斷點，避免排序鈕跳錯格
   v3.6 (2026-07-31) - 新增「歸檔 course-collect」與「字幕歸檔」兩張說明卡（modal 說明書，不執行動作）：課程散檔收齊改名搬進 D:\2026_已整理課程、Arctime 校對版字幕替換自動產 srt
   v3.5 (2026-07-31) - 影音工具卡片加 🚀 啟動鈕：走自訂協定 mediatools://（註冊在 HKCU\Software\Classes\mediatools → video-to-mp3\start.bat），服務沒開時按一下就叫起本機服務，服務會自己開分頁
   v3.4 (2026-07-31) - 「影片檔轉 MP3」卡片改為連結本機影音工具服務（127.0.0.1:8767，video-to-mp3/server.py），可在網頁上選檔、當場轉檔看進度、順帶做錄音檔合併；移除舊的下載 bat modal
@@ -78,6 +80,18 @@
     .mode-row { display: flex; gap: 10px; }
     .mode-btn { flex: 1; border: 1.5px solid #ddd; border-radius: 10px; padding: 10px; cursor: pointer; background: white; font-size: 13px; font-weight: 600; color: #666; transition: all 0.15s; text-align: center; }
     .mode-btn.active { border-color: #1976D2; background: #E3F2FD; color: #1976D2; }
+    textarea.path-input { resize: vertical; line-height: 1.5; }
+    .yt-bar { height: 8px; border-radius: 999px; background: #eee; overflow: hidden; margin-top: 6px; }
+    .yt-bar > i { display: block; height: 100%; width: 0; background: #1976D2; transition: width 0.3s ease; }
+    .yt-bar.ok > i { background: #388E3C; }
+    .yt-bar.bad > i { background: #D32F2F; }
+    .yt-item { margin-bottom: 12px; }
+    .yt-head { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; }
+    .yt-head b { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .yt-head span { color: #888; white-space: nowrap; }
+    .yt-note { font-size: 12px; color: #888; margin-top: 10px; word-break: break-all; }
+    .yt-err { font-size: 12px; color: #D32F2F; margin-top: 4px; word-break: break-all; white-space: pre-wrap; }
+    .yt-out { font-size: 12px; color: #388E3C; margin-top: 3px; word-break: break-all; }
     .speaker-select { width: 100%; border: 1.5px solid #ddd; border-radius: 10px; padding: 10px 12px; font-size: 13px; outline: none; background: white; margin-top: 10px; }
     .speaker-select:focus { border-color: #1976D2; }
     .field-row { margin-bottom: 14px; }
@@ -462,6 +476,44 @@
   </div>
 </div>
 
+<!-- YouTube 下載 modal（打本機影音服務 127.0.0.1:8767，v3.8） -->
+<div class="modal-overlay" id="ytDownloadModal" onclick="closeOnOverlay(event)">
+  <div class="modal" style="max-height:90vh">
+    <button class="modal-close" onclick="closeYtDownload()">✕</button>
+    <div class="modal-title">📥 YouTube 下載</div>
+    <div class="modal-sub">貼網址就下載到本機資料夾，不用自己跑指令</div>
+
+    <div class="step">
+      <div class="step-label">① 貼上網址（一行一個，可以貼多個）</div>
+      <textarea class="path-input" id="ytdUrls" rows="3" placeholder="https://www.youtube.com/watch?v=..."></textarea>
+    </div>
+
+    <div class="step">
+      <div class="step-label">② 下載格式（可單選，也可兩個都選）</div>
+      <div class="mode-row">
+        <button class="mode-btn active" id="ytdBtnMp4" onclick="toggleYtFormat('mp4')">🎬 MP4<br><span style="font-size:11px;font-weight:400;color:inherit">影片・最佳畫質</span></button>
+        <button class="mode-btn" id="ytdBtnMp3" onclick="toggleYtFormat('mp3')">🎵 MP3<br><span style="font-size:11px;font-weight:400;color:inherit">只要聲音</span></button>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-label">③ 存到哪裡</div>
+      <input class="path-input" id="ytdOut" value="C:\OBS" />
+    </div>
+
+    <button class="copy-btn" id="ytdRunBtn" onclick="startYtDownload()">⬇ 開始下載</button>
+    <div class="yt-note" id="ytdHint">需要本機影音服務在跑（127.0.0.1:8767）；沒開的話按卡片上的 🚀 啟動再回來。</div>
+
+    <div id="ytdProgress" style="display:none">
+      <hr class="divider">
+      <div class="yt-head"><b id="ytdTitle">下載中</b><span id="ytdPct">0%</span></div>
+      <div class="yt-bar" id="ytdBar"><i></i></div>
+      <div id="ytdItems" style="margin-top:14px"></div>
+      <div class="yt-note" id="ytdDone"></div>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script type="module">
@@ -493,7 +545,8 @@ const DEFAULT_TOOLS = [
   { id: 'video-progress', title: '影片進度表', description: '追蹤影片製作進度，9 個步驟橫向顯示', icon: '🎞️', actionType: 'link', href: '/影片進度表/', order: 6, createdAt: '2026-05-31T00:00:00+08:00' },
   { id: 'ai-usage', title: 'AI 額度儀表板', description: '查看 Claude、Codex、Gemini 使用額度', icon: '📊', actionType: 'link', href: '/ai-usage/', order: 7, createdAt: '2026-07-14T00:00:00+08:00' },
   { id: 'skill-manager-local', title: 'Skill 管理器', description: '三 AI 共用的本機 Skill 管理頁', icon: '🛠️', actionType: 'link', href: 'http://127.0.0.1:8765/', order: 8, createdAt: '2026-07-14T00:00:00+08:00' },
-  { id: 'line-digest-local', title: 'LINE 對話整理', description: '本機 LINE 群組對話整理成 Obsidian 摘要', icon: '💬', actionType: 'link', href: 'http://127.0.0.1:8766/', order: 9, createdAt: '2026-07-19T00:00:00+08:00' }
+  { id: 'line-digest-local', title: 'LINE 對話整理', description: '本機 LINE 群組對話整理成 Obsidian 摘要', icon: '💬', actionType: 'link', href: 'http://127.0.0.1:8766/', order: 9, createdAt: '2026-07-19T00:00:00+08:00' },
+  { id: 'yt-download', title: 'YouTube 下載', description: '貼網址下載 MP4／MP3 到 C:\\OBS；服務沒開就按 🚀', icon: '📥', actionType: 'modal', modalFn: 'openYtDownload', launchHref: 'mediatools://open', order: 12, createdAt: '2026-08-01T00:00:00+08:00' }
 ];
 
 let toolsState = DEFAULT_TOOLS.map(tool => ({ ...tool }));
@@ -861,6 +914,7 @@ function closeOnOverlay(e) {
   if (e.target === document.getElementById('courseCollectModal')) closeCourseCollect();
   if (e.target === document.getElementById('subtitleArchiveModal')) closeSubtitleArchive();
   if (e.target === document.getElementById('ytDlpModal')) closeYtDlp();
+  if (e.target === document.getElementById('ytDownloadModal')) closeYtDownload();
 }
 
 function updateCmd() {
@@ -1061,6 +1115,137 @@ function downloadYtDlpBat() {
   a.href = URL.createObjectURL(blob);
   a.download = isPhoto ? 'gallery-dl.bat' : 'yt-dlp.bat';
   a.click();
+}
+
+// ---------- YouTube 下載（v3.8）----------
+// 靜態頁不能自己跑 yt-dlp，也寫不進本機磁碟，所以交給影音服務（video-to-mp3/server.py）。
+// Chrome 把 127.0.0.1 當安全來源，https 頁面打得到；服務端已開 CORS。
+const YTD_API = 'http://127.0.0.1:8767';
+const ytdFormats = new Set(['mp4']);
+let ytdJobId = null;
+let ytdTimer = null;
+
+function openYtDownload() {
+  document.getElementById('ytDownloadModal').classList.add('open');
+}
+
+function closeYtDownload() {
+  document.getElementById('ytDownloadModal').classList.remove('open');
+}
+
+function toggleYtFormat(fmt) {
+  if (ytdFormats.has(fmt)) ytdFormats.delete(fmt); else ytdFormats.add(fmt);
+  const btn = document.getElementById(fmt === 'mp4' ? 'ytdBtnMp4' : 'ytdBtnMp3');
+  btn.classList.toggle('active', ytdFormats.has(fmt));
+}
+
+function ytdEsc(text) {
+  return String(text).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+
+function ytdReleaseBtn() {
+  const btn = document.getElementById('ytdRunBtn');
+  btn.disabled = false;
+  btn.textContent = '⬇ 開始下載';
+}
+
+function ytdFallbackToLocal(urls) {
+  // HTTPS→localhost fetch 被 Chrome Private Network Access 擋時，
+  // 開 8767 本機頁面的 YouTube 分頁，用 hash 預填網址
+  const hash = encodeURIComponent(urls.join('\n'));
+  window.open(`${YTD_API}/#ytdl:${hash}`, '_blank');
+  ytdReleaseBtn();
+  document.getElementById('ytdHint').innerHTML =
+    '⚠️ 瀏覽器不允許 HTTPS 頁面連本機服務，已幫你開本機頁面操作。<br>'
+    + '<small>（網址已預填，選格式後按下載即可）</small>';
+}
+
+async function startYtDownload() {
+  const urls = document.getElementById('ytdUrls').value.split('\n').map(s => s.trim()).filter(Boolean);
+  if (!urls.length) { alert('請先貼上網址'); return; }
+  if (!ytdFormats.size) { alert('請至少選 MP4 或 MP3'); return; }
+
+  const btn = document.getElementById('ytdRunBtn');
+  btn.disabled = true;
+  btn.textContent = '連線本機服務…';
+
+  // 3 秒逾時：fetch 不通就 fallback 到本機頁面
+  const ac = new AbortController();
+  const timeout = setTimeout(() => ac.abort(), 3000);
+
+  let data;
+  try {
+    const res = await fetch(`${YTD_API}/api/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: ac.signal,
+      body: JSON.stringify({
+        kind: 'ytdl',
+        urls,
+        formats: [...ytdFormats],
+        outputDir: document.getElementById('ytdOut').value.trim() || 'C:\\OBS'
+      })
+    });
+    clearTimeout(timeout);
+    data = await res.json();
+  } catch (err) {
+    clearTimeout(timeout);
+    // AbortError = 逾時，TypeError = 網路不通，都走 fallback
+    if (err.name === 'AbortError' || err.name === 'TypeError') {
+      ytdFallbackToLocal(urls);
+      return;
+    }
+    ytdReleaseBtn();
+    document.getElementById('ytdHint').innerHTML =
+      '❌ 連不上本機服務（127.0.0.1:8767）。按卡片右上角的 🚀 啟動後再試一次。';
+    return;
+  }
+
+  if (data.error) { ytdReleaseBtn(); alert(data.error); return; }
+
+  ytdJobId = data.id;
+  btn.textContent = '下載中…';
+  document.getElementById('ytdHint').textContent = '下載中可以關掉這個視窗，本機服務會繼續跑。';
+  document.getElementById('ytdProgress').style.display = 'block';
+  document.getElementById('ytdDone').textContent = '';
+  ytdTimer = setInterval(pollYtDownload, 700);
+  pollYtDownload();
+}
+
+async function pollYtDownload() {
+  if (!ytdJobId) return;
+  let data;
+  try {
+    data = await (await fetch(`${YTD_API}/api/status?id=${ytdJobId}`)).json();
+  } catch (err) {
+    return;                                   // 服務暫時沒回應就等下一輪
+  }
+
+  const finished = data.items.filter(i => i.status === 'done').length;
+  document.getElementById('ytdTitle').textContent =
+    data.done ? data.message : `下載中（${finished}/${data.items.length}）`;
+  document.getElementById('ytdPct').textContent = `${data.overall}%`;
+  document.getElementById('ytdBar').firstElementChild.style.width = data.overall + '%';
+
+  document.getElementById('ytdItems').innerHTML = data.items.map(item => {
+    const cls = item.status === 'failed' ? 'bad' : item.status === 'done' ? 'ok' : '';
+    const label = { waiting: '等待中', running: item.percent + '%', done: '完成',
+                    failed: '失敗', cancelled: '已取消' }[item.status];
+    return `<div class="yt-item">
+      <div class="yt-head"><b title="${ytdEsc(item.name)}">${ytdEsc(item.name)}</b><span>${label}</span></div>
+      <div class="yt-bar ${cls}"><i style="width:${item.status === 'done' ? 100 : item.percent}%"></i></div>
+      ${item.error ? `<div class="yt-err">${ytdEsc(item.error)}</div>` : ''}
+      ${item.output ? `<div class="yt-out">✅ ${ytdEsc(item.output)}</div>` : ''}
+    </div>`;
+  }).join('');
+
+  if (data.done) {
+    clearInterval(ytdTimer);
+    ytdJobId = null;
+    ytdReleaseBtn();
+    document.getElementById('ytdDone').textContent =
+      data.outputs.length ? `檔案存在：${data.outputDir}` : '';
+  }
 }
 </script>
 </body>

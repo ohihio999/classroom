@@ -1,6 +1,9 @@
 """
-影音工具本機服務（影片轉 MP3 / 錄音檔合併）
+影音工具本機服務（YouTube 下載 / 影片轉 MP3 / 錄音檔合併）
 
+v1.1 2026-08-01 新增 YouTube 下載：貼網址、MP4 / MP3 可單選也可複選（勾兩個就下載兩份），
+                 用 yt-dlp 存到 C:\\OBS。同時開放 CORS，讓 Firebase 上的 /admin/ 卡片
+                 能直接打這個服務的 API（瀏覽器把 127.0.0.1 視為安全來源）。
 v1.0 2026-07-31 初版：把 C:\\OBS 的 影片轉mp3.bat、錄音黨合併.bat、merge.ps1、convert_to_mp3.py
                  整合成單一本機服務，網頁 UI 內嵌在本檔，port 8767。
                  網頁操作、本機 ffmpeg 處理、檔案不上傳、輸出回原資料夾。
@@ -29,6 +32,7 @@ from urllib.parse import parse_qs, urlparse
 PORT = 8767
 DEFAULT_VIDEO_DIR = r"C:\OBS\影片轉mp3"
 DEFAULT_AUDIO_DIR = r"C:\OBS\影片檔合併"
+DEFAULT_YTDL_DIR = r"C:\OBS"
 
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".flv", ".wmv", ".ts"}
 AUDIO_EXTENSIONS = {".m4a", ".mp3", ".wav", ".aac", ".flac", ".ogg", ".opus", ".wma"}
@@ -56,6 +60,19 @@ FFMPEG = find_tool("ffmpeg")
 FFPROBE = find_tool("ffprobe")
 
 
+def ytdl_base() -> list:
+    """yt-dlp 的呼叫方式：PATH 有就直接用，沒有就退回同一個 Python 的模組。"""
+    found = shutil.which("yt-dlp")
+    return [found] if found else [sys.executable, "-m", "yt_dlp"]
+
+
+# 兩種輸出格式的 yt-dlp 參數；勾兩個就是同一個網址跑兩次，各存一份。
+YTDL_FORMATS = {
+    "mp4": ["-f", "bv*[ext=mp4]+ba[ext=m4a]/bv*+ba/b", "--merge-output-format", "mp4"],
+    "mp3": ["-f", "ba/b", "-x", "--audio-format", "mp3", "--audio-quality", "0"],
+}
+
+
 # ---------------------------------------------------------------- 工作管理
 
 class Job:
@@ -72,20 +89,25 @@ class Job:
         self.message = ""
         self.outputs = []
         self.lock = threading.Lock()
-        self.items = [
-            {
-                "name": Path(p).name,
-                "path": p,
-                "size": Path(p).stat().st_size if Path(p).exists() else 0,
-                "status": "waiting",          # waiting | running | done | failed | cancelled
-                "percent": 0.0,
-                "duration": 0.0,
-                "current": 0.0,
-                "error": "",
-                "output": "",
-            }
-            for p in items
-        ]
+        self.items = [self._make_item(entry) for entry in items]
+
+    @staticmethod
+    def _make_item(entry) -> dict:
+        """轉檔／合併傳進來是檔案路徑字串；YT 下載傳的是 {'url','format'}。"""
+        base = {
+            "status": "waiting",              # waiting | running | done | failed | cancelled
+            "percent": 0.0,
+            "duration": 0.0,
+            "current": 0.0,
+            "error": "",
+            "output": "",
+        }
+        if isinstance(entry, dict):
+            fmt = entry.get("format", "mp4")
+            return {**base, "name": f"[{fmt.upper()}] {entry['url']}", "path": entry["url"],
+                    "url": entry["url"], "format": fmt, "size": 0}
+        return {**base, "name": Path(entry).name, "path": entry,
+                "size": Path(entry).stat().st_size if Path(entry).exists() else 0}
 
     def snapshot(self) -> dict:
         with self.lock:
@@ -251,11 +273,93 @@ def worker_merge(job: Job):
     job.finished_at = time.time()
 
 
+YTDL_PCT_RE = re.compile(r"\[download\]\s+([\d.]+)%")
+YTDL_DEST_RE = re.compile(r"\[(?:download|ExtractAudio|Merger)\]\s+(?:Destination:|Merging formats into)\s+\"?(.+?)\"?$")
+YTDL_HAVE_RE = re.compile(r"\[download\]\s+(.+?) has already been downloaded")
+
+
+def worker_ytdl(job: Job):
+    """逐個「網址 × 格式」跑 yt-dlp；勾了 MP4+MP3 就是同一網址跑兩次，各存一份。"""
+    out_dir = Path(job.output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    for item in job.items:
+        if job.cancelled:
+            item["status"] = "cancelled"
+            continue
+
+        item["status"] = "running"
+        cmd = ytdl_base() + [
+            "--newline", "--no-playlist", "--no-warnings", "--windows-filenames",
+            "--ffmpeg-location", str(Path(FFMPEG).parent),
+            "-o", str(out_dir / "%(title)s.%(ext)s"),
+            *YTDL_FORMATS.get(item["format"], YTDL_FORMATS["mp4"]),
+            item["url"],
+        ]
+
+        try:
+            process = subprocess.Popen(
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                encoding="utf-8", errors="replace", bufsize=1, creationflags=NO_WINDOW,
+            )
+        except OSError as exc:
+            item["status"] = "failed"
+            item["error"] = f"叫不起 yt-dlp：{exc}（請先 pip install -U yt-dlp）"
+            continue
+
+        tail, final = [], ""
+        for line in process.stdout:
+            line = line.rstrip()
+            if line:
+                tail.append(line)
+                del tail[:-30]                    # 只留尾巴，失敗時當錯誤訊息
+
+            pct = YTDL_PCT_RE.search(line)
+            if pct:
+                item["percent"] = round(float(pct.group(1)), 1)
+
+            dest = YTDL_DEST_RE.search(line) or YTDL_HAVE_RE.search(line)
+            if dest:
+                final = dest.group(1).strip()
+                item["name"] = f"[{item['format'].upper()}] {Path(final).name}"
+
+            if job.cancelled:
+                process.terminate()
+                try:
+                    process.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
+                break
+
+        process.wait()
+
+        if job.cancelled:
+            item["status"] = "cancelled"
+        elif process.returncode == 0:
+            item["status"] = "done"
+            item["percent"] = 100.0
+            # MP3 是先下載再抽音軌，最後那個 Destination 才是真正留下的檔案
+            if final and not Path(final).exists():
+                guess = out_dir / f"{Path(final).stem}.{item['format']}"
+                final = str(guess) if guess.exists() else final
+            item["output"] = final
+            if final:
+                job.outputs.append(final)
+        else:
+            item["status"] = "failed"
+            item["error"] = "\n".join(tail)[-500:] or f"yt-dlp exit {process.returncode}"
+
+    job.done = True
+    job.finished_at = time.time()
+    job.message = "已取消" if job.cancelled else "下載完成"
+
+
 def start_job(kind: str, paths: list, output_dir: str) -> Job:
     job = Job(kind, paths, output_dir)
     with JOBS_LOCK:
         JOBS[job.id] = job
-    worker = worker_convert if kind == "convert" else worker_merge
+    worker = {"convert": worker_convert, "merge": worker_merge, "ytdl": worker_ytdl}[kind]
 
     def runner():
         """工作緒若炸掉也要把 job 收乾淨，否則網頁會一直停在處理中。"""
@@ -373,19 +477,46 @@ PAGE = r"""<!doctype html>
   .note { color: var(--muted); font-size: 12px; margin-top: 10px; }
   .hide { display: none; }
   .out { font-size: 12px; color: var(--ok); word-break: break-all; margin-top: 3px; }
+  .label { font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+  textarea { width: 100%; padding: 9px 12px; border-radius: 8px; border: 1px solid var(--line);
+             background: #0d1117; color: var(--text); font-family: inherit; font-size: 13px;
+             resize: vertical; }
+  .pick { display: flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 8px;
+          border: 1px solid var(--line); background: #0d1117; font-size: 13px; cursor: pointer; }
+  .pick:has(input:checked) { border-color: var(--accent); color: var(--accent); }
 </style>
 </head>
 <body>
 <header>
   <h1>🎬 影音工具</h1>
-  <div class="sub">網頁操作、本機轉檔。檔案不上傳，輸出直接寫回原資料夾。</div>
+  <div class="sub">網頁操作、本機處理。檔案不上傳，轉檔輸出寫回原資料夾。</div>
   <div class="tabs">
     <div class="tab on" data-mode="video">影片轉 MP3</div>
     <div class="tab" data-mode="audio">錄音檔合併</div>
+    <div class="tab" data-mode="ytdl">YouTube 下載</div>
   </div>
 </header>
 <main>
-  <div class="card">
+  <div class="card hide" id="ytdlCard">
+    <div class="label">貼上網址（一行一個，可以一次貼多個）</div>
+    <textarea id="ytUrls" rows="4" spellcheck="false"
+              placeholder="https://www.youtube.com/watch?v=..."></textarea>
+    <div class="row" style="margin:12px 0">
+      <label class="pick"><input type="checkbox" id="fmtMp4" checked> 🎬 MP4 影片</label>
+      <label class="pick"><input type="checkbox" id="fmtMp3"> 🎵 MP3 僅聲音</label>
+      <span class="fsize">兩個都勾就各存一份</span>
+    </div>
+    <div class="label">存到這個資料夾</div>
+    <div class="row">
+      <input type="text" id="ytOut" spellcheck="false">
+    </div>
+    <div class="row" style="margin-top:14px">
+      <button class="go" id="ytRun" onclick="startYtdl()">開始下載</button>
+      <button class="stop hide" id="ytCancel" onclick="cancel()">取消</button>
+    </div>
+  </div>
+
+  <div class="card" id="browseCard">
     <div class="row">
       <input type="text" id="path" spellcheck="false">
       <button onclick="go(document.getElementById('path').value)">前往</button>
@@ -422,7 +553,7 @@ let checked = new Set();
 let jobId = null;
 let timer = null;
 
-const DEFAULTS = { video: %DEFAULT_VIDEO%, audio: %DEFAULT_AUDIO% };
+const DEFAULTS = { video: %DEFAULT_VIDEO%, audio: %DEFAULT_AUDIO%, ytdl: %DEFAULT_YTDL% };
 const $ = id => document.getElementById(id);
 const mb = n => n >= 1073741824 ? (n / 1073741824).toFixed(2) + ' GB' : (n / 1048576).toFixed(1) + ' MB';
 const hhmmss = s => [3600, 60, 1].map((u, i) => String(Math.floor(s / u) % (i ? 60 : 999)).padStart(2, '0')).join(':');
@@ -432,9 +563,43 @@ document.querySelectorAll('.tab').forEach(tab => tab.onclick = () => {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('on'));
   tab.classList.add('on');
   mode = tab.dataset.mode;
+  $('ytdlCard').classList.toggle('hide', mode !== 'ytdl');
+  $('browseCard').classList.toggle('hide', mode === 'ytdl');
+  if (mode === 'ytdl') { $('ytOut').value = $('ytOut').value || DEFAULTS.ytdl; return; }
   $('run').textContent = mode === 'video' ? '開始轉檔' : '開始合併';
   go(DEFAULTS[mode]);
 });
+
+// hash 預填：admin 頁 fallback 帶 #ytdl:<encoded URLs> 過來時自動切分頁並填網址
+if (location.hash.startsWith('#ytdl:')) {
+  try {
+    const prefill = decodeURIComponent(location.hash.slice(6));
+    document.querySelector('.tab[data-mode="ytdl"]').click();
+    $('ytUrls').value = prefill;
+  } catch (e) {}
+}
+
+async function startYtdl() {
+  const urls = $('ytUrls').value.split('\n').map(s => s.trim()).filter(Boolean);
+  const formats = [];
+  if ($('fmtMp4').checked) formats.push('mp4');
+  if ($('fmtMp3').checked) formats.push('mp3');
+  if (!urls.length) { alert('請先貼上網址'); return; }
+  if (!formats.length) { alert('請至少勾選 MP4 或 MP3'); return; }
+
+  const res = await fetch('/api/start', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ kind: 'ytdl', urls, formats, outputDir: $('ytOut').value || DEFAULTS.ytdl })
+  });
+  const data = await res.json();
+  if (data.error) { alert(data.error); return; }
+  jobId = data.id;
+  $('ytRun').disabled = true;
+  $('ytCancel').classList.remove('hide');
+  $('progress').classList.remove('hide');
+  timer = setInterval(poll, 500);
+  poll();
+}
 
 function go(path) { cur = path; load(); }
 
@@ -499,9 +664,9 @@ async function cancel() {
 async function poll() {
   if (!jobId) return;
   const data = await (await fetch(`/api/status?id=${jobId}`)).json();
-  $('jobTitle').textContent = data.kind === 'convert'
-    ? `轉檔中（${data.items.filter(i => i.status === 'done').length}/${data.items.length}）`
-    : '合併中';
+  const finished = data.items.filter(i => i.status === 'done').length;
+  $('jobTitle').textContent = data.kind === 'merge' ? '合併中'
+    : `${data.kind === 'ytdl' ? '下載中' : '轉檔中'}（${finished}/${data.items.length}）`;
   $('jobPct').textContent = `${data.overall}%　已用 ${hhmmss(data.elapsed)}`;
   $('jobBar').firstElementChild.style.width = data.overall + '%';
 
@@ -522,12 +687,14 @@ async function poll() {
     clearInterval(timer);
     jobId = null;
     $('cancel').classList.add('hide');
+    $('ytCancel').classList.add('hide');
+    $('ytRun').disabled = false;
     $('jobTitle').textContent = data.message;
     $('jobNote').innerHTML = data.outputs.length
       ? `輸出位置：${data.outputDir}<br>` + data.outputs.map(o => `✅ ${o}`).join('<br>')
       : '';
     render();
-    load();
+    if (data.kind !== 'ytdl') load();
   }
 }
 
@@ -542,13 +709,28 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass                                  # 不要洗畫面
 
+    def _cors(self):
+        """讓 https://my-teaching-tools-2b36c.web.app/admin/ 打得到這個本機服務。
+        Chrome 把 127.0.0.1 當安全來源，但私有網路請求要求下面第三個標頭。"""
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Private-Network", "true")
+
     def _send(self, code: int, body: bytes, ctype: str):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        self._cors()
         self.end_headers()
         self.wfile.write(body)
+
+    def do_OPTIONS(self):
+        self.send_response(204)
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Content-Length", "0")
+        self._cors()
+        self.end_headers()
 
     def _json(self, data: dict, code: int = 200):
         self._send(code, json.dumps(data, ensure_ascii=False).encode("utf-8"),
@@ -561,7 +743,8 @@ class Handler(BaseHTTPRequestHandler):
         if url.path in ("/", "/index.html"):
             page = (PAGE
                     .replace("%DEFAULT_VIDEO%", json.dumps(DEFAULT_VIDEO_DIR))
-                    .replace("%DEFAULT_AUDIO%", json.dumps(DEFAULT_AUDIO_DIR)))
+                    .replace("%DEFAULT_AUDIO%", json.dumps(DEFAULT_AUDIO_DIR))
+                    .replace("%DEFAULT_YTDL%", json.dumps(DEFAULT_YTDL_DIR)))
             self._send(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
         elif url.path == "/api/list":
@@ -582,8 +765,27 @@ class Handler(BaseHTTPRequestHandler):
 
         if url.path == "/api/start":
             length = int(self.headers.get("Content-Length", 0))
-            payload = json.loads(self.rfile.read(length) or b"{}")
+            try:
+                payload = json.loads(self.rfile.read(length) or b"{}")
+            except json.JSONDecodeError as exc:
+                self._json({"error": f"送來的資料不是合法 JSON：{exc}"}, 400)
+                return
             kind = payload.get("kind", "convert")
+
+            if kind == "ytdl":
+                urls = [u.strip() for u in payload.get("urls", []) if u.strip()]
+                formats = [f for f in payload.get("formats", []) if f in YTDL_FORMATS]
+                if not urls:
+                    self._json({"error": "請先貼上網址"}, 400)
+                    return
+                if not formats:
+                    self._json({"error": "請至少勾選 MP4 或 MP3"}, 400)
+                    return
+                entries = [{"url": u, "format": f} for u in urls for f in formats]
+                job = start_job("ytdl", entries, payload.get("outputDir") or DEFAULT_YTDL_DIR)
+                self._json({"id": job.id})
+                return
+
             paths = [p for p in payload.get("files", []) if Path(p).is_file()]
             output_dir = payload.get("outputDir") or (str(Path(paths[0]).parent) if paths else "")
 
@@ -627,12 +829,12 @@ def main() -> int:
         webbrowser.open(f"http://127.0.0.1:{PORT}/")
         return 0
 
-    for folder in (DEFAULT_VIDEO_DIR, DEFAULT_AUDIO_DIR):
+    for folder in (DEFAULT_VIDEO_DIR, DEFAULT_AUDIO_DIR, DEFAULT_YTDL_DIR):
         Path(folder).mkdir(parents=True, exist_ok=True)
 
     server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     print("=" * 52)
-    print("  🎬 影音工具（影片轉MP3 / 錄音合併）")
+    print("  🎬 影音工具（YT下載 / 影片轉MP3 / 錄音合併）")
     print(f"  網址：http://127.0.0.1:{PORT}/")
     print("  關閉這個視窗就會停止服務。")
     print("=" * 52)
