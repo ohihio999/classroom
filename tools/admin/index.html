@@ -1,6 +1,7 @@
 <!--
-  版本：v3.4
+  版本：v3.5
   版更記錄：
+  v3.5 (2026-07-31) - 影音工具卡片加 🚀 啟動鈕：走自訂協定 mediatools://（註冊在 HKCU\Software\Classes\mediatools → video-to-mp3\start.bat），服務沒開時按一下就叫起本機服務，服務會自己開分頁
   v3.4 (2026-07-31) - 「影片檔轉 MP3」卡片改為連結本機影音工具服務（127.0.0.1:8767，video-to-mp3/server.py），可在網頁上選檔、當場轉檔看進度、順帶做錄音檔合併；移除舊的下載 bat modal
   v3.3 (2026-07-19) - 新增「LINE 對話整理」卡片，連結本機 line_digest_web（127.0.0.1:8766；LINE 網頁自 v0.3 起改用 8766，避免與 Skill 管理器/Poring dashboard 搶 8765）
   v3.2 (2026-07-14) - 新增「AI 額度儀表板」(/ai-usage/) 與「Skill 管理器」(127.0.0.1:8765) 卡片；卡片上下排序改依格線欄數移動（修正多欄版面排序錯位）
@@ -377,7 +378,7 @@ const ICON_OPTIONS = ['🗂️','🎙️','📝','📚','📌','📎','📦','�
 const DEFAULT_TOOLS = [
   { id: 'tool-manager', title: '小程式分類管理', description: '收藏、分類、隨手可用的 AI 工具庫', icon: '🗂️', actionType: 'link', href: '/tool-manager/', order: 0, createdAt: '2026-04-29T00:00:00+08:00' },
   { id: 'transcribe', title: '音檔轉逐字稿', description: 'Groq Whisper，自動壓縮大檔，1 小時約 2 分鐘', icon: '🎙️', actionType: 'modal', modalFn: 'openTranscribe', order: 1, createdAt: '2026-05-01T00:00:00+08:00' },
-  { id: 'media-tools-local', title: '影片轉MP3 / 錄音合併', description: '網頁上選檔、本機當場轉檔，即時進度、輸出回原資料夾', icon: '🎬', actionType: 'link', href: 'http://127.0.0.1:8767/', order: 2, createdAt: '2026-07-31T00:00:00+08:00' },
+  { id: 'media-tools-local', title: '影片轉MP3 / 錄音合併', description: '網頁上選檔、本機當場轉檔；服務沒開就按 🚀', icon: '🎬', actionType: 'link', href: 'http://127.0.0.1:8767/', launchHref: 'mediatools://open', order: 2, createdAt: '2026-07-31T00:00:00+08:00' },
   { id: 'transcript-pack', title: 'transcript-training-pack', description: '單一逐字稿 → 培訓報告＋摘要＋心智圖', icon: '📝', actionType: 'modal', modalFn: 'openTranscriptPack', order: 3, createdAt: '2026-05-02T00:00:00+08:00' },
   { id: 'course-filing', title: 'course-filing', description: '課程歸檔 Obsidian，含知識點拆解＋日記更新', icon: '📚', actionType: 'modal', modalFn: 'openCourseFiling', order: 4, createdAt: '2026-05-02T00:00:00+08:00' },
   { id: 'yt-dlp', title: 'yt-dlp 影片下載', description: '貼網址下載 YouTube、FB 等影片或音訊', icon: '⬇️', actionType: 'modal', modalFn: 'openYtDlp', order: 5, createdAt: '2026-05-07T00:00:00+08:00' },
@@ -556,6 +557,7 @@ function renderTools() {
         <div class="tool-created-at">${escapeHtml(formatToolCreatedAt(tool.createdAt))}</div>
       </div>
       <div class="tool-actions">
+        ${tool.launchHref ? `<button class="tool-action-btn" onclick="event.stopPropagation(); launchLocalService('${tool.launchHref}')" title="啟動本機服務">🚀</button>` : ''}
         <button class="tool-action-btn" onclick="event.stopPropagation(); openEditTool('${tool.id}')" title="編輯">✏️</button>
         <button class="tool-action-btn" onclick="event.stopPropagation(); moveToolLeft('${tool.id}')" title="左移" ${firstColumn ? 'disabled' : ''}>◀</button>
         <button class="tool-action-btn" onclick="event.stopPropagation(); moveToolRight('${tool.id}')" title="右移" ${lastColumn ? 'disabled' : ''}>▶</button>
@@ -583,6 +585,13 @@ function highlightSelectedIcon() {
     btn.classList.toggle('selected', btn.dataset.icon === selectedIcon);
   });
 }
+
+// 本機服務（影音工具）用自訂協定叫起 start.bat；服務本身啟動後會自己開分頁。
+// 協定註冊在 HKCU\Software\Classes\mediatools，只在這台機器有效。
+window.launchLocalService = (href) => {
+  showToast('正在啟動本機服務，請允許瀏覽器開啟外部程式');
+  location.href = href;
+};
 
 window.handleToolActivate = (event, toolId) => {
   const tool = toolsState.find(item => item.id === toolId);

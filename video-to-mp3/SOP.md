@@ -33,13 +33,19 @@ python --version
 
 ### 步驟一：啟動本機服務
 
-雙擊 `start.bat`（或 `python server.py`）。視窗會留著，關掉視窗＝停止服務。
-啟動後會自動開瀏覽器到 <http://127.0.0.1:8767/>。
+三種方式都可以：
 
-### 步驟二：從 admin 頁進入
+- **從 admin 頁**：<https://my-teaching-tools-2b36c.web.app/admin/> →「影片轉MP3 / 錄音合併」卡片右下角的 🚀 →
+  瀏覽器問「要開啟 MediaTools Protocol 嗎」按允許 → 服務啟動並自動開分頁
+- 雙擊 `start.bat`
+- `python server.py`
 
-<https://my-teaching-tools-2b36c.web.app/admin/> →「影片轉MP3 / 錄音合併」卡片。
-（卡片只是連到本機服務，服務沒啟動就會連不上。）
+服務跑起來後那個黑窗要留著，關掉視窗＝停止服務。
+服務已經在跑時再按一次只會開分頁，不會重複啟動。
+
+### 步驟二：進入工具頁
+
+服務在跑的話，直接點 admin 卡片本體（或開 <http://127.0.0.1:8767/>）。
 
 ### 步驟三：選檔、開始
 
@@ -65,9 +71,8 @@ python --version
 
 ```text
 video-to-mp3\
-├── server.py           ← 服務 + 網頁 UI 全包在這支（port 8767）
-├── start.bat           ← 雙擊啟動
-├── convert_to_mp3.py   ← 舊的命令列版，給 C:\OBS\影片轉mp3.bat 用；網頁版穩定後可連同 bat 一起刪
+├── server.py    ← 服務 + 網頁 UI 全包在這支（port 8767）
+├── start.bat    ← 雙擊啟動，也是 mediatools:// 協定叫起的對象
 └── SOP.md
 ```
 
@@ -75,7 +80,27 @@ video-to-mp3\
 
 ---
 
-## 舊做法（已被網頁版取代）
+## mediatools:// 協定（🚀 按鈕怎麼運作的）
 
-`C:\OBS\影片轉mp3.bat`、`C:\OBS\錄音黨合併.bat`、`C:\OBS\merge.ps1`
-還留在原地當備援，網頁版穩定後可以刪。
+網頁本身沒辦法直接執行本機程式，所以註冊了一個自訂協定：
+
+```text
+HKCU\Software\Classes\mediatools\shell\open\command
+  → "C:\Users\admin\Desktop\classroom\video-to-mp3\start.bat" "%1"
+```
+
+admin 卡片的 🚀 按鈕就是連到 `mediatools://open`。只在這台機器有效，換電腦要重新註冊。
+
+不想要了就刪掉登錄檔那個 key：
+
+```powershell
+Remove-Item "HKCU:\Software\Classes\mediatools" -Recurse
+```
+
+---
+
+## 舊做法（2026-07-31 已刪除）
+
+`C:\OBS\影片轉mp3.bat`、`C:\OBS\錄音黨合併.bat`、`C:\OBS\merge.ps1`、
+`video-to-mp3\convert_to_mp3.py` 都已收掉，功能全部併進 `server.py`。
+要翻舊版可以查 git 歷史（commit `cc1bd16` 之前）。
