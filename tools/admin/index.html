@@ -1,6 +1,7 @@
 <!--
-  版本：v3.3
+  版本：v3.4
   版更記錄：
+  v3.4 (2026-07-31) - 「影片檔轉 MP3」卡片改為連結本機影音工具服務（127.0.0.1:8767，video-to-mp3/server.py），可在網頁上選檔、當場轉檔看進度、順帶做錄音檔合併；移除舊的下載 bat modal
   v3.3 (2026-07-19) - 新增「LINE 對話整理」卡片，連結本機 line_digest_web（127.0.0.1:8766；LINE 網頁自 v0.3 起改用 8766，避免與 Skill 管理器/Poring dashboard 搶 8765）
   v3.2 (2026-07-14) - 新增「AI 額度儀表板」(/ai-usage/) 與「Skill 管理器」(127.0.0.1:8765) 卡片；卡片上下排序改依格線欄數移動（修正多欄版面排序錯位）
   v3.1 (2026-05-31) - 新增「影片進度表」卡片，連結至 /影片進度表/
@@ -194,41 +195,7 @@
   </div>
 </div>
 
-<div class="modal-overlay" id="videoToMp3Modal" onclick="closeOnOverlay(event)">
-  <div class="modal">
-    <button class="modal-close" onclick="closeVideoToMp3()">✕</button>
-    <div class="modal-title">🎬 影片檔轉 MP3</div>
-    <div class="modal-sub">批次掃描整個資料夾，把每支影片轉成同資料夾中的 MP3</div>
-
-    <div class="step">
-      <div class="step-label">① 一次性安裝</div>
-      <div class="cmd-box" id="videoPipCmd">winget install Gyan.FFmpeg</div>
-      <button class="copy-btn" id="videoPipCopyBtn" onclick="copyCmd(videoPipCopyBtn, document.getElementById('videoPipCmd').textContent)">複製</button>
-    </div>
-
-    <hr class="divider">
-
-    <div class="step">
-      <div class="step-label">② 貼上資料夾路徑（批次轉裡面所有影片檔）</div>
-      <input class="path-input" id="videoPath" placeholder="C:\OBS" oninput="updateVideoCmd()" />
-    </div>
-
-    <div class="step">
-      <div class="step-label">③ 下載並雙擊執行</div>
-      <div class="cmd-box" id="videoCmdPreview">python convert_to_mp3.py "C:\OBS"</div>
-      <button class="copy-btn" id="videoRunCopyBtn" onclick="downloadVideoBat()">⬇ 下載 video-to-mp3.bat</button>
-    </div>
-
-    <hr class="divider">
-
-    <div class="step">
-      <div class="step-label">④ 轉檔結果</div>
-      <div class="cmd-box" style="font-family:sans-serif">工具會批次處理資料夾內所有影片檔。<br>每支影片轉完後，<strong>MP3 會放在同一個資料夾</strong>，檔名沿用原影片檔名。</div>
-    </div>
-
-    <div style="font-size:12px;color:#aaa;margin-top:8px;">工具位置：C:\Users\admin\Desktop\classroom\video-to-mp3\</div>
-  </div>
-</div>
+<!-- 影片轉MP3 / 錄音合併已改為本機服務卡片（127.0.0.1:8767），舊的下載 bat modal 於 v3.4 移除 -->
 
 <!-- transcript-training-pack modal -->
 <div class="modal-overlay" id="transcriptPackModal" onclick="closeOnOverlay(event)">
@@ -410,7 +377,7 @@ const ICON_OPTIONS = ['🗂️','🎙️','📝','📚','📌','📎','📦','�
 const DEFAULT_TOOLS = [
   { id: 'tool-manager', title: '小程式分類管理', description: '收藏、分類、隨手可用的 AI 工具庫', icon: '🗂️', actionType: 'link', href: '/tool-manager/', order: 0, createdAt: '2026-04-29T00:00:00+08:00' },
   { id: 'transcribe', title: '音檔轉逐字稿', description: 'Groq Whisper，自動壓縮大檔，1 小時約 2 分鐘', icon: '🎙️', actionType: 'modal', modalFn: 'openTranscribe', order: 1, createdAt: '2026-05-01T00:00:00+08:00' },
-  { id: 'video-to-mp3', title: '影片檔轉 MP3', description: '批次掃描資料夾，把影片轉成同資料夾 MP3', icon: '🎬', actionType: 'modal', modalFn: 'openVideoToMp3', order: 2, createdAt: '2026-05-05T00:00:00+08:00' },
+  { id: 'media-tools-local', title: '影片轉MP3 / 錄音合併', description: '網頁上選檔、本機當場轉檔，即時進度、輸出回原資料夾', icon: '🎬', actionType: 'link', href: 'http://127.0.0.1:8767/', order: 2, createdAt: '2026-07-31T00:00:00+08:00' },
   { id: 'transcript-pack', title: 'transcript-training-pack', description: '單一逐字稿 → 培訓報告＋摘要＋心智圖', icon: '📝', actionType: 'modal', modalFn: 'openTranscriptPack', order: 3, createdAt: '2026-05-02T00:00:00+08:00' },
   { id: 'course-filing', title: 'course-filing', description: '課程歸檔 Obsidian，含知識點拆解＋日記更新', icon: '📚', actionType: 'modal', modalFn: 'openCourseFiling', order: 4, createdAt: '2026-05-02T00:00:00+08:00' },
   { id: 'yt-dlp', title: 'yt-dlp 影片下載', description: '貼網址下載 YouTube、FB 等影片或音訊', icon: '⬇️', actionType: 'modal', modalFn: 'openYtDlp', order: 5, createdAt: '2026-05-07T00:00:00+08:00' },
@@ -737,7 +704,6 @@ function escapeHtml(text) {
 </script>
 <script>
 const TOOL_DIR = 'C:\\Users\\admin\\Desktop\\classroom\\transcribe-audio';
-const VIDEO_TOOL_DIR = 'C:\\Users\\admin\\Desktop\\classroom\\video-to-mp3';
 const PYTHON_EXE = 'C:\\Users\\admin\\AppData\\Local\\Programs\\Python\\Python311\\python.exe';
 
 window._currentMode = 'standard';
@@ -770,7 +736,6 @@ function closeTranscribe() {
 }
 function closeOnOverlay(e) {
   if (e.target === document.getElementById('transcribeModal')) closeTranscribe();
-  if (e.target === document.getElementById('videoToMp3Modal')) closeVideoToMp3();
   if (e.target === document.getElementById('transcriptPackModal')) closeTranscriptPack();
   if (e.target === document.getElementById('courseFilingModal')) closeCourseFiling();
   if (e.target === document.getElementById('ytDlpModal')) closeYtDlp();
@@ -816,32 +781,6 @@ function downloadBat() {
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = 'transcribe.bat';
-  a.click();
-}
-
-function openVideoToMp3() {
-  document.getElementById('videoToMp3Modal').classList.add('open');
-  updateVideoCmd();
-}
-
-function closeVideoToMp3() {
-  document.getElementById('videoToMp3Modal').classList.remove('open');
-}
-
-function updateVideoCmd() {
-  const raw = document.getElementById('videoPath')?.value.trim();
-  const path = raw || 'C:\\OBS';
-  document.getElementById('videoCmdPreview').textContent = `python convert_to_mp3.py "${path}"`;
-}
-
-function downloadVideoBat() {
-  const raw = document.getElementById('videoPath').value.trim();
-  const path = raw || 'C:\\OBS';
-  const content = '﻿' + `@echo off\r\ncd /d "${VIDEO_TOOL_DIR}"\r\n"${PYTHON_EXE}" convert_to_mp3.py "${path}"\r\npause`;
-  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'video-to-mp3.bat';
   a.click();
 }
 
