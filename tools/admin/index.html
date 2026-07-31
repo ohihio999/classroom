@@ -1,6 +1,7 @@
 <!--
-  版本：v3.5
+  版本：v3.6
   版更記錄：
+  v3.6 (2026-07-31) - 新增「歸檔 course-collect」與「字幕歸檔」兩張說明卡（modal 說明書，不執行動作）：課程散檔收齊改名搬進 D:\2026_已整理課程、Arctime 校對版字幕替換自動產 srt
   v3.5 (2026-07-31) - 影音工具卡片加 🚀 啟動鈕：走自訂協定 mediatools://（註冊在 HKCU\Software\Classes\mediatools → video-to-mp3\start.bat），服務沒開時按一下就叫起本機服務，服務會自己開分頁
   v3.4 (2026-07-31) - 「影片檔轉 MP3」卡片改為連結本機影音工具服務（127.0.0.1:8767，video-to-mp3/server.py），可在網頁上選檔、當場轉檔看進度、順帶做錄音檔合併；移除舊的下載 bat modal
   v3.3 (2026-07-19) - 新增「LINE 對話整理」卡片，連結本機 line_digest_web（127.0.0.1:8766；LINE 網頁自 v0.3 起改用 8766，避免與 Skill 管理器/Poring dashboard 搶 8765）
@@ -305,6 +306,107 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="courseCollectModal" onclick="closeOnOverlay(event)">
+  <div class="modal" style="max-height:90vh">
+    <button class="modal-close" onclick="closeCourseCollect()">✕</button>
+    <div class="modal-title">🗃️ 歸檔（course-collect）</div>
+    <div class="modal-sub">課程散檔收齊、統一改名、搬進 D:\2026_已整理課程</div>
+
+    <div class="step">
+      <div class="step-label">怎麼用</div>
+      <div class="cmd-box">把檔案路徑貼給 Claude Code，最後打「歸檔」</div>
+      <div style="font-size:12px;color:#aaa;margin-top:6px">其中至少一個檔的檔名要帶正確課程名稱（當種子），其他檔案會自動找出來。跨磁碟、桌面上的散檔都能收。</div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">命名規格</div>
+      <div class="cmd-box">媒體檔：YYYYMMDD_主題.mp4 / .mp3 / .srt<br>文字檔：YYYYMMDD_主題_角色.副檔名</div>
+      <div style="font-size:12px;color:#aaa;margin-top:6px">
+        <strong>mp3 / mp4 / srt 共用同一檔名、不帶尾綴</strong>——播放器才會自動載入字幕。<br>
+        文字檔尾綴：_逐字稿、_摘要、_培訓報告、_心智圖、_心智圖網頁版。<br>
+        檔名一律不留空格。
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">它會自動做的事</div>
+      <div class="cmd-box" style="font-family:sans-serif">
+        ① 從最長檔名清洗出主題（剝頭尾日期、去空格）<br>
+        ② 以種子時間戳 ±12 小時擴批，找出同一場的其他檔<br>
+        ③ <strong>ffprobe 比長度</strong>配對媒體檔（時間戳分不開兩場錄影，長度可以）<br>
+        ④ 讀檔案開頭判角色（「摘要總覽」→ 摘要、「概述」→ 培訓報告）<br>
+        ⑤ 列候選清單給你確認<br>
+        ⑥ 去重後<strong>移動</strong>（不是複製）到 D 槽，寫 _整理紀錄.txt
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">安全機制</div>
+      <div class="cmd-box" style="font-family:sans-serif">
+        候選清單沒經你確認，<strong>不會動任何檔案</strong>。<br>
+        每個資料夾都有 _整理紀錄.txt（原路徑 → 新檔名 + MD5），搬錯可還原。<br>
+        一律不刪來源殘留，只列出來讓你自己決定。
+      </div>
+    </div>
+
+    <div style="font-size:12px;color:#aaa;margin-top:16px">只做收齊，不轉檔也不產內容。轉檔找 youtube-mp3、轉逐字稿找 groq-transcribe、進 Obsidian 找 course-filing。</div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="subtitleArchiveModal" onclick="closeOnOverlay(event)">
+  <div class="modal" style="max-height:90vh">
+    <button class="modal-close" onclick="closeSubtitleArchive()">✕</button>
+    <div class="modal-title">🔤 字幕歸檔</div>
+    <div class="modal-sub">Arctime 人工校對版字幕，換掉當初自動產的 srt</div>
+
+    <div class="step">
+      <div class="step-label">怎麼用</div>
+      <div class="cmd-box">在 Arctime 校完字幕、匯出後，跟 Claude Code 說「字幕歸檔」</div>
+      <div style="font-size:12px;color:#aaa;margin-top:6px">不用給路徑、不用說是哪一場課，它自己會比對出來。</div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">來源固定</div>
+      <div class="cmd-box">C:\Users\admin\Documents\Arctime Documents\Subtitle Export</div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">怎麼認出是哪一場課</div>
+      <div class="cmd-box" style="font-family:sans-serif">
+        Arctime 匯出檔名一律是 <code>Untitled-subtitle-時間戳.srt</code>，<strong>完全沒有資訊</strong>，靠檔名認不出來。<br><br>
+        所以改用兩項交叉比對：<br>
+        ① <strong>首句文字</strong>（srt 第一條字幕內容）<br>
+        ② <strong>末段時間軸</strong>（最後一條字幕的時間，應接近影片長度）<br><br>
+        兩項都對上才算同一場。校對後條數通常少個一兩條、結束時間早幾秒，屬正常。
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">它會做的事</div>
+      <div class="cmd-box" style="font-family:sans-serif">
+        ① 比對結果先列給你確認<br>
+        ② 刪掉該課程資料夾原有的 srt<br>
+        ③ 校對版<strong>移動</strong>進去（來源清空），改名成課程檔名<br>
+        ④ 追加寫入 _整理紀錄.txt
+      </div>
+    </div>
+
+    <div style="font-size:12px;color:#aaa;margin-top:16px">比對不上任何課程的字幕會留在來源、列出來問你，不會亂猜。</div>
+  </div>
+</div>
+
 <!-- yt-dlp modal -->
 <div class="modal-overlay" id="ytDlpModal" onclick="closeOnOverlay(event)">
   <div class="modal">
@@ -381,6 +483,8 @@ const DEFAULT_TOOLS = [
   { id: 'media-tools-local', title: '影片轉MP3 / 錄音合併', description: '網頁上選檔、本機當場轉檔；服務沒開就按 🚀', icon: '🎬', actionType: 'link', href: 'http://127.0.0.1:8767/', launchHref: 'mediatools://open', order: 2, createdAt: '2026-07-31T00:00:00+08:00' },
   { id: 'transcript-pack', title: 'transcript-training-pack', description: '單一逐字稿 → 培訓報告＋摘要＋心智圖', icon: '📝', actionType: 'modal', modalFn: 'openTranscriptPack', order: 3, createdAt: '2026-05-02T00:00:00+08:00' },
   { id: 'course-filing', title: 'course-filing', description: '課程歸檔 Obsidian，含知識點拆解＋日記更新', icon: '📚', actionType: 'modal', modalFn: 'openCourseFiling', order: 4, createdAt: '2026-05-02T00:00:00+08:00' },
+  { id: 'course-collect', title: '歸檔（course-collect）', description: '課程散檔收齊改名，搬進 D:\\2026_已整理課程', icon: '🗃️', actionType: 'modal', modalFn: 'openCourseCollect', order: 10, createdAt: '2026-07-31T00:00:00+08:00' },
+  { id: 'subtitle-archive', title: '字幕歸檔', description: 'Arctime 校對版字幕換掉自動產的 srt', icon: '🔤', actionType: 'modal', modalFn: 'openSubtitleArchive', order: 11, createdAt: '2026-07-31T00:00:00+08:00' },
   { id: 'yt-dlp', title: 'yt-dlp 影片下載', description: '貼網址下載 YouTube、FB 等影片或音訊', icon: '⬇️', actionType: 'modal', modalFn: 'openYtDlp', order: 5, createdAt: '2026-05-07T00:00:00+08:00' },
   { id: 'video-progress', title: '影片進度表', description: '追蹤影片製作進度，9 個步驟橫向顯示', icon: '🎞️', actionType: 'link', href: '/影片進度表/', order: 6, createdAt: '2026-05-31T00:00:00+08:00' },
   { id: 'ai-usage', title: 'AI 額度儀表板', description: '查看 Claude、Codex、Gemini 使用額度', icon: '📊', actionType: 'link', href: '/ai-usage/', order: 7, createdAt: '2026-07-14T00:00:00+08:00' },
@@ -747,6 +851,8 @@ function closeOnOverlay(e) {
   if (e.target === document.getElementById('transcribeModal')) closeTranscribe();
   if (e.target === document.getElementById('transcriptPackModal')) closeTranscriptPack();
   if (e.target === document.getElementById('courseFilingModal')) closeCourseFiling();
+  if (e.target === document.getElementById('courseCollectModal')) closeCourseCollect();
+  if (e.target === document.getElementById('subtitleArchiveModal')) closeSubtitleArchive();
   if (e.target === document.getElementById('ytDlpModal')) closeYtDlp();
 }
 
@@ -832,6 +938,22 @@ function openCourseFiling() {
 }
 function closeCourseFiling() {
   document.getElementById('courseFilingModal').classList.remove('open');
+}
+
+// course-collect（歸檔）modal
+function openCourseCollect() {
+  document.getElementById('courseCollectModal').classList.add('open');
+}
+function closeCourseCollect() {
+  document.getElementById('courseCollectModal').classList.remove('open');
+}
+
+// 字幕歸檔 modal
+function openSubtitleArchive() {
+  document.getElementById('subtitleArchiveModal').classList.add('open');
+}
+function closeSubtitleArchive() {
+  document.getElementById('subtitleArchiveModal').classList.remove('open');
 }
 
 // yt-dlp modal
