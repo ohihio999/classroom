@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>每月檢查</title>
+  <!-- v1.0.0 | 2026-08-04
+    v1.0.0 — 初版：公務車例行檢查表上線。一個月一張卡片，內含 RFD-7269黑、RFJ-9383白 與銀行保險箱；
+             8 個勾選項（異常必填備註）、里程數（顯示與上月差值）、洗車上/下半月各一次、
+             保險箱一個月 2 次（可加次）；隨填隨存、歷史查詢；Email 通知由 Cloud Functions 排程處理。
+  -->
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; padding-bottom: 60px; color: #222; }
+    :root { --page-max-width: 720px; }
+
+    .header { background: #1976D2; color: white; padding: 14px 16px; position: sticky; top: 0; z-index: 20; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+    .header-inner { max-width: var(--page-max-width); margin: 0 auto; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+    .header h1 { font-size: 17px; font-weight: 600; }
+    .header-actions { display: flex; gap: 4px; }
+    .hbtn { background: none; border: none; color: white; font-size: 13px; cursor: pointer; padding: 6px 10px; border-radius: 6px; opacity: 0.92; }
+    .hbtn:hover { background: rgba(255,255,255,0.2); opacity: 1; }
+
+    .wrap { max-width: var(--page-max-width); margin: 0 auto; padding: 12px 14px; }
+
+    /* 月份列 */
+    .month-bar { display: flex; align-items: center; justify-content: center; gap: 14px; background: white; border-radius: 12px; padding: 10px 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); margin-bottom: 10px; }
+    .month-nav { background: #f0f4f8; border: none; width: 34px; height: 34px; border-radius: 8px; font-size: 17px; cursor: pointer; color: #1976D2; }
+    .month-nav:disabled { opacity: 0.3; cursor: not-allowed; }
+    .month-title { font-size: 17px; font-weight: 700; min-width: 116px; text-align: center; }
+    .month-title small { display: block; font-size: 11px; color: #999; font-weight: 400; margin-top: 1px; }
+
+    /* 完成度 */
+    .progress-box { background: white; border-radius: 12px; padding: 12px 14px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); margin-bottom: 10px; }
+    .progress-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 13px; margin-bottom: 8px; }
+    .progress-head b { font-size: 15px; }
+    .bar { height: 8px; background: #eceff1; border-radius: 6px; overflow: hidden; }
+    .bar > i { display: block; height: 100%; background: #1976D2; border-radius: 6px; transition: width 0.25s; }
+    .bar.done > i { background: #2E7D32; }
+    .progress-warn { font-size: 12px; color: #E65100; margin-top: 7px; }
+
+    /* 分頁 */
+    .tabs { display: flex; gap: 6px; margin-bottom: 10px; overflow-x: auto; padding-bottom: 2px; }
+    .tab { flex: 1; min-width: 110px; padding: 10px 8px; border-radius: 10px; border: 1px solid #e0e0e0; background: white; font-size: 13px; font-weight: 600; color: #666; cursor: pointer; white-space: nowrap; transition: all 0.15s; }
+    .tab.active { background: #1976D2; color: white; border-color: #1976D2; }
+    .tab .tab-sub { display: block; font-size: 11px; font-weight: 400; opacity: 0.8; margin-top: 2px; }
+
+    /* 區塊 */
+    .panel { background: white; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); margin-bottom: 10px; overflow: hidden; }
+    .panel-title { font-size: 12px; font-weight: 700; color: #6b7280; letter-spacing: 0.04em; padding: 11px 14px 7px; border-bottom: 1px solid #eee; background: #fafbfc; }
+    .row { padding: 11px 14px; border-bottom: 1px solid #f2f2f2; }
+    .row:last-child { border-bottom: none; }
+    .row-label { font-size: 14px; margin-bottom: 8px; line-height: 1.45; }
+    .row-inline { display: flex; align-items: center; gap: 10px; }
+    .row-inline .row-label { margin-bottom: 0; flex: 1; }
+
+    input[type="date"], input[type="number"], textarea, select {
+      padding: 10px 11px; border: 1px solid #ddd; border-radius: 8px; font-size: 15px;
+      font-family: inherit; outline: none; background: white; width: 100%; color: #222;
+    }
+    input:focus, textarea:focus { border-color: #1976D2; }
+    input[type="number"] { max-width: 160px; }
+    input[type="date"] { max-width: 190px; }
+    textarea { resize: vertical; min-height: 54px; }
+    .field-note { font-size: 12px; color: #888; margin-top: 5px; }
+    .field-inline { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+    /* 正常/異常 */
+    .seg { display: flex; gap: 8px; }
+    .seg button {
+      flex: 1; padding: 10px 6px; border-radius: 9px; border: 1.5px solid #e0e0e0;
+      background: white; font-size: 14px; font-weight: 600; color: #888; cursor: pointer; transition: all 0.12s;
+    }
+    .seg button.on-normal { background: #E8F5E9; border-color: #2E7D32; color: #2E7D32; }
+    .seg button.on-abnormal { background: #FFEBEE; border-color: #C62828; color: #C62828; }
+    .note-box { margin-top: 9px; }
+    .note-box textarea.need { border-color: #C62828; background: #FFF8F8; }
+    .note-required { font-size: 12px; color: #C62828; margin-top: 4px; }
+
+    /* 打勾＋日期（洗車、保險箱） */
+    .visit { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid #f2f2f2; flex-wrap: wrap; }
+    .visit:last-child { border-bottom: none; }
+    .visit-check { width: 26px; height: 26px; border-radius: 7px; border: 1.5px solid #ccc; background: white; font-size: 15px; line-height: 1; cursor: pointer; flex-shrink: 0; color: white; padding: 0; }
+    .visit-check.checked { background: #2E7D32; border-color: #2E7D32; }
+    .visit-name { font-size: 14px; width: 78px; flex-shrink: 0; }
+    .visit-add { display: block; width: 100%; text-align: center; padding: 11px; background: none; border: none; color: #1976D2; font-size: 13px; cursor: pointer; }
+    .visit-add:hover { background: #f5f9ff; }
+    .visit-del { background: none; border: none; color: #ccc; font-size: 17px; cursor: pointer; padding: 2px 4px; }
+    .visit-del:hover { color: #e53935; }
+
+    /* 歷史 */
+    .filter-bar { display: flex; align-items: center; gap: 10px; background: white; border-radius: 12px; padding: 10px 14px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); margin-bottom: 10px; flex-wrap: wrap; }
+    .filter-bar label { font-size: 13px; color: #555; display: flex; align-items: center; gap: 6px; }
+    .filter-bar select { width: auto; padding: 7px 10px; font-size: 13px; }
+    .hist-row { display: flex; align-items: center; gap: 12px; background: white; border-radius: 10px; padding: 14px; margin-bottom: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); cursor: pointer; }
+    .hist-row:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.1); }
+    .hist-month { font-size: 15px; font-weight: 700; width: 84px; flex-shrink: 0; }
+    .hist-state { flex: 1; font-size: 13px; }
+    .hist-state.ok { color: #2E7D32; }
+    .hist-state.warn { color: #E65100; }
+    .hist-state.pending { color: #888; }
+    .hist-arrow { color: #ccc; font-size: 18px; }
+    .empty { text-align: center; padding: 54px 20px; color: #bbb; }
+    .empty-icon { font-size: 46px; margin-bottom: 10px; }
+    .loading { text-align: center; padding: 46px; color: #bbb; font-size: 15px; }
+
+    .toast {
+      position: fixed; left: 50%; transform: translateX(-50%); bottom: 24px;
+      background: rgba(33,33,33,0.92); color: white; padding: 10px 20px; border-radius: 22px;
+      font-size: 13px; z-index: 50; opacity: 0; pointer-events: none; transition: opacity 0.2s;
+    }
+    .toast.show { opacity: 1; }
+    .meta { text-align: center; font-size: 12px; color: #aaa; padding: 6px 0 2px; }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-inner">
+    <h1>🚗 每月檢查</h1>
+    <div class="header-actions">
+      <button class="hbtn" id="btnHistory" onclick="showHistory()">📅 歷史</button>
+      <button class="hbtn" id="btnBack" onclick="showCard()" style="display:none">← 本月卡片</button>
+      <button class="hbtn" onclick="doSignOut()">登出</button>
+    </div>
+  </div>
+</div>
+
+<div class="wrap" id="wrap">
+  <div class="loading" id="loading">載入中…</div>
+
+  <!-- 卡片畫面 -->
+  <div id="viewCard" style="display:none">
+    <div class="month-bar">
+      <button class="month-nav" id="prevMonth" onclick="stepMonth(-1)">‹</button>
+      <div class="month-title" id="monthTitle">—</div>
+      <button class="month-nav" id="nextMonth" onclick="stepMonth(1)">›</button>
+    </div>
+
+    <div class="progress-box">
+      <div class="progress-head">
+        <span id="progressLabel">完成度</span>
+        <b id="progressNum">0 / 0</b>
+      </div>
+      <div class="bar" id="progressBar"><i style="width:0"></i></div>
+      <div class="progress-warn" id="progressWarn" style="display:none"></div>
+    </div>
+
+    <div class="tabs" id="tabs"></div>
+    <div id="panelArea"></div>
+    <div class="meta" id="metaLine"></div>
+  </div>
+
+  <!-- 歷史畫面 -->
+  <div id="viewHistory" style="display:none">
+    <div class="filter-bar">
+      <label>年份
+        <select id="filterYear" onchange="renderHistory()"></select>
+      </label>
+      <label>車輛
+        <select id="filterVehicle" onchange="renderHistory()"></select>
+      </label>
+      <label><input type="checkbox" id="filterAbnormal" onchange="renderHistory()" style="width:auto"> 只看異常</label>
+    </div>
+    <div id="histList"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js';
+import { getAuth, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js';
+import {
+  getFirestore, collection, getDocs, doc, getDoc, setDoc, serverTimestamp
+} from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js';
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBf0sHTsndFCksNlh46G_2mw9rk5zmPdc0",
+  authDomain: "my-teaching-tools-2b36c.firebaseapp.com",
+  projectId: "my-teaching-tools-2b36c",
+  storageBucket: "my-teaching-tools-2b36c.firebasestorage.app",
+  messagingSenderId: "82693897353",
+  appId: "1:82693897353:web:f667501aad05c536c09a58"
+};
+
+const app  = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db   = getFirestore(app);
+
+const COLLECTION = 'monthly_check';
+const START_MONTH = '2026-08';   // 上線月份，再往前沒有資料
+
+// 車號寫死；換車時改這裡（歷史卡片不受影響，各月存的是當時填的資料）
+const VEHICLES = [
+  { id: 'RFD-7269', label: 'RFD-7269黑', icon: '🚗' },
+  { id: 'RFJ-9383', label: 'RFJ-9383白', icon: '🚙' }
+];
+
+const CHECK_ITEMS = [
+  { group: '車輛性能檢查', key: 'fuel',         label: '油量是否正常' },
+  { group: '車輛性能檢查', key: 'dashcam',      label: '行車紀錄器接頭是否正常' },
+  { group: '車輛性能檢查', key: 'coolant',      label: '水箱水位是否正常' },
+  { group: '車輛外部',     key: 'wiper',        label: '雨刷功能是否正常' },
+  { group: '車輛外部',     key: 'door',         label: '車門關閉情形是否正常' },
+  { group: '車輛外部',     key: 'tire',         label: '車胎胎壓、胎紋是否正常（胎壓燈號）' },
+  { group: '車輛外部',     key: 'exterior',     label: '車輛外表是否正常（無新刮痕、撞痕）' },
+  { group: '其他',         key: 'mileageSheet', label: '里程管理表確認' }
+];
+
+const WASH_SLOTS = [
+  { key: 'first',  label: '上半月' },
+  { key: 'second', label: '下半月' }
+];
+
+let currentUser = null;
+let currentMonth = thisMonth();
+let currentData = {};
+let prevOdometer = {};          // { vehicleId: 上月里程數 }
+let activeTab = VEHICLES[0].id; // 或 'safebox'
+let historyCache = [];
+
+/* ---------- 小工具 ---------- */
+function thisMonth() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+function todayStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function shiftMonth(month, delta) {
+  const [y, m] = month.split('-').map(Number);
+  const d = new Date(y, m - 1 + delta, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+function monthLabel(month) {
+  const [y, m] = month.split('-');
+  return `${y} 年 ${Number(m)} 月`;
+}
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+}
+function getNested(obj, path) {
+  return path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), obj);
+}
+function setNested(obj, path, value) {
+  const keys = path.split('.');
+  let cur = obj;
+  keys.slice(0, -1).forEach(k => { if (typeof cur[k] !== 'object' || cur[k] === null) cur[k] = {}; cur = cur[k]; });
+  cur[keys[keys.length - 1]] = value;
+  return obj;
+}
+function buildNested(path, value) {
+  return setNested({}, path, value);
+}
+let toastTimer = null;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 1400);
+}
+
+/* ---------- 完成度 ---------- */
+// 完成＝兩台車各（檢查日期＋里程數＋8 個勾選項）＋ 各 2 次洗車 ＋ 保險箱 2 次；自由文字欄不計
+function computeStatus(data) {
+  const missing = [];
+  const abnormal = [];
+  let done = 0, total = 0;
+
+  VEHICLES.forEach(v => {
+    const vd = (data.vehicles || {})[v.id] || {};
+    total += 2 + CHECK_ITEMS.length;
+
+    if (vd.checkDate) done++; else missing.push(`${v.label}：未填檢查日期`);
+    if (vd.odometer !== undefined && vd.odometer !== null && vd.odometer !== '') done++;
+    else missing.push(`${v.label}：未填里程數`);
+
+    let itemDone = 0;
+    CHECK_ITEMS.forEach(it => {
+      const cell = ((vd.items || {})[it.key]) || {};
+      if (cell.status === 'normal' || cell.status === 'abnormal') itemDone++;
+      if (cell.status === 'abnormal') abnormal.push({ vehicle: v.label, item: it.label, note: cell.note || '' });
+    });
+    done += itemDone;
+    if (itemDone < CHECK_ITEMS.length) missing.push(`${v.label}：檢查項未填齊（${itemDone}/${CHECK_ITEMS.length}）`);
+
+    total += WASH_SLOTS.length;
+    WASH_SLOTS.forEach(s => {
+      if (((vd.wash || {})[s.key])) done++;
+      else missing.push(`${v.label}：${s.label}洗車未記錄`);
+    });
+  });
+
+  total += 2;
+  const visits = (data.safeBox || {}).visits || [];
+  [0, 1].forEach(i => {
+    if (visits[i] && visits[i].date) done++;
+    else missing.push(`銀行保險箱：第 ${i + 1} 次未前往`);
+  });
+
+  return { done, total, missing, abnormal, complete: done >= total };
+}
+
+/* ---------- 讀寫 ---------- */
+async function loadMonth(month) {
+  currentMonth = month;
+  const snap = await getDoc(doc(db, COLLECTION, month));
+  currentData = snap.exists() ? snap.data() : {};
+
+  const prevSnap = await getDoc(doc(db, COLLECTION, shiftMonth(month, -1)));
+  prevOdometer = {};
+  if (prevSnap.exists()) {
+    const pv = prevSnap.data().vehicles || {};
+    VEHICLES.forEach(v => {
+      const o = (pv[v.id] || {}).odometer;
+      if (o !== undefined && o !== null && o !== '') prevOdometer[v.id] = Number(o);
+    });
+  }
+  renderCard();
+}
+
+async function saveField(path, value) {
+  setNested(currentData, path, value);
+  const payload = buildNested(path, value);
+  payload.month = currentMonth;
+  payload.updatedAt = serverTimestamp();
+  payload.updatedBy = currentUser.email;
+  try {
+    await setDoc(doc(db, COLLECTION, currentMonth), payload, { merge: true });
+    currentData.updatedBy = currentUser.email;
+    currentData.updatedAtLocal = new Date();
+    toast('已儲存');
+    renderProgress();
+    renderTabs();
+    renderMeta();
+  } catch (e) {
+    toast('儲存失敗：' + e.message);
+  }
+}
+
+/* ---------- 畫面：卡片 ---------- */
+function renderCard() {
+  document.getElementById('monthTitle').innerHTML =
+    `${esc(monthLabel(currentMonth))}${currentMonth === thisMonth() ? '<small>本月</small>' : '<small>&nbsp;</small>'}`;
+  document.getElementById('prevMonth').disabled = shiftMonth(currentMonth, -1) < START_MONTH;
+  document.getElementById('nextMonth').disabled = currentMonth >= thisMonth();
+  renderProgress();
+  renderTabs();
+  renderPanel();
+  renderMeta();
+}
+
+function renderProgress() {
+  const st = computeStatus(currentData);
+  const pct = st.total ? Math.round(st.done / st.total * 100) : 0;
+  document.getElementById('progressNum').textContent = `${st.done} / ${st.total}`;
+  document.getElementById('progressLabel').textContent = st.complete ? '✅ 本月已完成' : '完成度';
+  const bar = document.getElementById('progressBar');
+  bar.classList.toggle('done', st.complete);
+  bar.querySelector('i').style.width = pct + '%';
+
+  const warn = document.getElementById('progressWarn');
+  if (st.abnormal.length) {
+    warn.style.display = '';
+    warn.textContent = `⚠️ 本月有 ${st.abnormal.length} 項異常：` +
+      st.abnormal.map(a => `${a.vehicle} ${a.item}`).join('、');
+  } else {
+    warn.style.display = 'none';
+  }
+}
+
+function tabProgress(id) {
+  const st = computeStatus(currentData);
+  if (id === 'safebox') {
+    const visits = (currentData.safeBox || {}).visits || [];
+    const n = visits.filter(v => v && v.date).length;
+    return `${n} / 2 次`;
+  }
+  const vd = (currentData.vehicles || {})[id] || {};
+  let done = 0;
+  if (vd.checkDate) done++;
+  if (vd.odometer !== undefined && vd.odometer !== null && vd.odometer !== '') done++;
+  CHECK_ITEMS.forEach(it => {
+    const s = ((vd.items || {})[it.key] || {}).status;
+    if (s === 'normal' || s === 'abnormal') done++;
+  });
+  WASH_SLOTS.forEach(s => { if ((vd.wash || {})[s.key]) done++; });
+  void st;
+  return `${done} / ${2 + CHECK_ITEMS.length + WASH_SLOTS.length}`;
+}
+
+function renderTabs() {
+  const tabs = VEHICLES.map(v => ({ id: v.id, label: `${v.icon} ${v.label}` }));
+  tabs.push({ id: 'safebox', label: '🏦 銀行保險箱' });
+  document.getElementById('tabs').innerHTML = tabs.map(t => `
+    <button class="tab ${t.id === activeTab ? 'active' : ''}" onclick="switchTab('${esc(t.id)}')">
+      ${esc(t.label)}<span class="tab-sub">${esc(tabProgress(t.id))}</span>
+    </button>`).join('');
+}
+
+function renderPanel() {
+  const area = document.getElementById('panelArea');
+  area.innerHTML = activeTab === 'safebox' ? safeBoxHtml() : vehicleHtml(activeTab);
+}
+
+function vehicleHtml(vid) {
+  const v  = VEHICLES.find(x => x.id === vid);
+  const vd = (currentData.vehicles || {})[vid] || {};
+  const items = vd.items || {};
+
+  const diffHtml = (() => {
+    const prev = prevOdometer[vid];
+    if (prev === undefined) return '上月無資料';
+    const cur = vd.odometer;
+    if (cur === undefined || cur === null || cur === '') return `上月 ${prev.toLocaleString()}`;
+    const diff = Number(cur) - prev;
+    const sign = diff >= 0 ? '+' : '';
+    return `上月 ${prev.toLocaleString()}（${sign}${diff.toLocaleString()}）`;
+  })();
+
+  let html = `
+  <div class="panel">
+    <div class="panel-title">車輛性能檢查　${esc(v.label)}</div>
+    <div class="row">
+      <div class="row-label">檢查日期</div>
+      <input type="date" value="${esc(vd.checkDate || '')}"
+             onchange="onField('vehicles.${esc(vid)}.checkDate', this.value)">
+    </div>
+    <div class="row">
+      <div class="row-label">目前里程數</div>
+      <div class="field-inline">
+        <input type="number" inputmode="numeric" placeholder="例如 45120" value="${esc(vd.odometer ?? '')}"
+               onchange="onNumberField('vehicles.${esc(vid)}.odometer', this.value)"> km
+      </div>
+      <div class="field-note">${esc(diffHtml)}</div>
+    </div>`;
+
+  let lastGroup = '車輛性能檢查';
+  CHECK_ITEMS.forEach(it => {
+    if (it.group !== lastGroup) {
+      html += `</div><div class="panel"><div class="panel-title">${esc(it.group)}</div>`;
+      lastGroup = it.group;
+    }
+    const cell = items[it.key] || {};
+    const needNote = cell.status === 'abnormal' && !(cell.note || '').trim();
+    html += `
+    <div class="row">
+      <div class="row-label">${esc(it.label)}</div>
+      <div class="seg">
+        <button class="${cell.status === 'normal' ? 'on-normal' : ''}"
+                onclick="setItem('${esc(vid)}','${esc(it.key)}','normal')">✅ 正常</button>
+        <button class="${cell.status === 'abnormal' ? 'on-abnormal' : ''}"
+                onclick="setItem('${esc(vid)}','${esc(it.key)}','abnormal')">⚠️ 異常</button>
+      </div>
+      ${cell.status === 'abnormal' ? `
+      <div class="note-box">
+        <textarea class="${needNote ? 'need' : ''}" placeholder="請說明異常狀況（必填）"
+                  onchange="onNoteField('vehicles.${esc(vid)}.items.${esc(it.key)}.note', this.value)">${esc(cell.note || '')}</textarea>
+        ${needNote ? '<div class="note-required">異常項目必須填寫說明</div>' : ''}
+      </div>` : ''}
+    </div>`;
+  });
+
+  html += `
+    <div class="row">
+      <div class="row-label">里程管理表反映事項（選填）</div>
+      <textarea placeholder="沒有就留空"
+                onchange="onField('vehicles.${esc(vid)}.remark', this.value)">${esc(vd.remark || '')}</textarea>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">車輛清潔（洗車）　兩週一次</div>`;
+
+  WASH_SLOTS.forEach(s => {
+    const val = (vd.wash || {})[s.key] || '';
+    html += `
+    <div class="visit">
+      <button class="visit-check ${val ? 'checked' : ''}" onclick="toggleWash('${esc(vid)}','${esc(s.key)}')">${val ? '✓' : ''}</button>
+      <span class="visit-name">${esc(s.label)}</span>
+      <input type="date" value="${esc(val)}" onchange="onField('vehicles.${esc(vid)}.wash.${esc(s.key)}', this.value)">
+    </div>`;
+  });
+
+  html += `</div>`;
+  return html;
+}
+
+function safeBoxHtml() {
+  const visits = ((currentData.safeBox || {}).visits || []).slice();
+  while (visits.length < 2) visits.push({ date: '' });
+
+  let html = `
+  <div class="panel">
+    <div class="panel-title">銀行保險箱　本月需 2 次</div>`;
+  visits.forEach((vt, i) => {
+    const val = (vt && vt.date) || '';
+    html += `
+    <div class="visit">
+      <button class="visit-check ${val ? 'checked' : ''}" onclick="toggleVisit(${i})">${val ? '✓' : ''}</button>
+      <span class="visit-name">第 ${i + 1} 次</span>
+      <input type="date" value="${esc(val)}" onchange="setVisitDate(${i}, this.value)">
+      ${i >= 2 ? `<button class="visit-del" onclick="removeVisit(${i})" title="刪除這次">✕</button>` : ''}
+    </div>`;
+  });
+  html += `
+    <button class="visit-add" onclick="addVisit()">＋ 新增一次</button>
+  </div>`;
+  return html;
+}
+
+function renderMeta() {
+  const el = document.getElementById('metaLine');
+  const by = currentData.updatedBy;
+  if (!by) { el.textContent = ''; return; }
+  const ts = currentData.updatedAtLocal
+    || (currentData.updatedAt && currentData.updatedAt.toDate ? currentData.updatedAt.toDate() : null);
+  const timeStr = ts ? ts.toLocaleString('zh-TW', { hour12: false }) : '';
+  el.textContent = `最後修改：${by}${timeStr ? '　' + timeStr : ''}`;
+}
+
+/* ---------- 畫面：歷史 ---------- */
+async function loadHistory() {
+  const snap = await getDocs(collection(db, COLLECTION));
+  historyCache = snap.docs
+    .map(d => ({ month: d.id, data: d.data() }))
+    .sort((a, b) => b.month.localeCompare(a.month));
+
+  const years = [...new Set(historyCache.map(h => h.month.slice(0, 4)))];
+  if (!years.includes(thisMonth().slice(0, 4))) years.unshift(thisMonth().slice(0, 4));
+  const ySel = document.getElementById('filterYear');
+  ySel.innerHTML = `<option value="all">全部</option>` +
+    years.sort().reverse().map(y => `<option value="${y}">${y}</option>`).join('');
+
+  const vSel = document.getElementById('filterVehicle');
+  vSel.innerHTML = `<option value="all">全部</option>` +
+    VEHICLES.map(v => `<option value="${esc(v.id)}">${esc(v.label)}</option>`).join('') +
+    `<option value="safebox">銀行保險箱</option>`;
+
+  renderHistory();
+}
+
+function renderHistory() {
+  const year     = document.getElementById('filterYear').value;
+  const vehicle  = document.getElementById('filterVehicle').value;
+  const onlyBad  = document.getElementById('filterAbnormal').checked;
+  const list     = document.getElementById('histList');
+
+  let rows = historyCache.filter(h => year === 'all' || h.month.startsWith(year));
+
+  rows = rows.map(h => {
+    const st = computeStatus(h.data);
+    let abnormal = st.abnormal;
+    let missing  = st.missing;
+    if (vehicle !== 'all') {
+      const label = vehicle === 'safebox' ? '銀行保險箱' : (VEHICLES.find(v => v.id === vehicle) || {}).label;
+      abnormal = abnormal.filter(a => a.vehicle === label);
+      missing  = missing.filter(m => m.startsWith(label));
+    }
+    return { ...h, st, abnormal, missing };
+  });
+
+  if (onlyBad) rows = rows.filter(r => r.abnormal.length > 0);
+
+  if (!rows.length) {
+    list.innerHTML = `<div class="empty"><div class="empty-icon">📭</div>沒有符合條件的紀錄</div>`;
+    return;
+  }
+
+  list.innerHTML = rows.map(r => {
+    let cls = 'ok', text = '✅ 完成';
+    if (r.missing.length) {
+      cls = 'pending';
+      text = `⏳ 未完成（${r.st.done}/${r.st.total}）`;
+      if (r.abnormal.length) text += `　⚠️ 異常 ${r.abnormal.length} 項`;
+    } else if (r.abnormal.length) {
+      cls = 'warn';
+      text = `⚠️ 有異常 ${r.abnormal.length} 項`;
+    }
+    return `
+    <div class="hist-row" onclick="openMonth('${esc(r.month)}')">
+      <div class="hist-month">${esc(r.month)}</div>
+      <div class="hist-state ${cls}">${text}</div>
+      <div class="hist-arrow">›</div>
+    </div>`;
+  }).join('');
+}
+
+/* ---------- 事件 ---------- */
+window.switchTab = function(id) { activeTab = id; renderTabs(); renderPanel(); };
+
+window.onField = function(path, value) { saveField(path, value); };
+
+// 異常說明：存完要重繪，紅框提示才會即時消失
+window.onNoteField = async function(path, value) {
+  await saveField(path, value);
+  renderPanel();
+};
+
+window.onNumberField = function(path, value) {
+  const v = value === '' ? '' : Number(value);
+  if (v !== '' && Number.isNaN(v)) { toast('請輸入數字'); return; }
+  saveField(path, v).then(() => renderPanel());
+};
+
+window.setItem = async function(vid, key, status) {
+  const cur = ((((currentData.vehicles || {})[vid] || {}).items || {})[key] || {}).status;
+  const next = cur === status ? '' : status;   // 再按一次可取消
+  await saveField(`vehicles.${vid}.items.${key}.status`, next);
+  if (next !== 'abnormal') await saveField(`vehicles.${vid}.items.${key}.note`, '');
+  renderPanel();
+};
+
+window.toggleWash = async function(vid, slot) {
+  const cur = (((currentData.vehicles || {})[vid] || {}).wash || {})[slot] || '';
+  await saveField(`vehicles.${vid}.wash.${slot}`, cur ? '' : todayStr());
+  renderPanel();
+};
+
+window.toggleVisit = async function(i) {
+  const visits = ((currentData.safeBox || {}).visits || []).slice();
+  while (visits.length <= i) visits.push({ date: '' });
+  visits[i] = { date: visits[i] && visits[i].date ? '' : todayStr() };
+  await saveField('safeBox.visits', visits);
+  renderPanel();
+};
+
+window.setVisitDate = async function(i, value) {
+  const visits = ((currentData.safeBox || {}).visits || []).slice();
+  while (visits.length <= i) visits.push({ date: '' });
+  visits[i] = { date: value };
+  await saveField('safeBox.visits', visits);
+  renderPanel();
+};
+
+window.addVisit = async function() {
+  const visits = ((currentData.safeBox || {}).visits || []).slice();
+  while (visits.length < 2) visits.push({ date: '' });
+  visits.push({ date: '' });
+  await saveField('safeBox.visits', visits);
+  renderPanel();
+};
+
+window.removeVisit = async function(i) {
+  const visits = ((currentData.safeBox || {}).visits || []).slice();
+  if (i < 2) return;                    // 前兩次固定保留
+  visits.splice(i, 1);
+  await saveField('safeBox.visits', visits);
+  renderPanel();
+};
+
+window.stepMonth = async function(delta) {
+  const target = shiftMonth(currentMonth, delta);
+  if (target < START_MONTH || target > thisMonth()) return;
+  document.getElementById('viewCard').style.display = 'none';
+  document.getElementById('loading').style.display = '';
+  await loadMonth(target);
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('viewCard').style.display = '';
+};
+
+window.showHistory = async function() {
+  document.getElementById('viewCard').style.display = 'none';
+  document.getElementById('viewHistory').style.display = 'none';
+  document.getElementById('loading').style.display = '';
+  document.getElementById('btnHistory').style.display = 'none';
+  document.getElementById('btnBack').style.display = '';
+  await loadHistory();
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('viewHistory').style.display = '';
+};
+
+window.showCard = function() {
+  document.getElementById('viewHistory').style.display = 'none';
+  document.getElementById('viewCard').style.display = '';
+  document.getElementById('btnHistory').style.display = '';
+  document.getElementById('btnBack').style.display = 'none';
+};
+
+window.openMonth = async function(month) {
+  document.getElementById('viewHistory').style.display = 'none';
+  document.getElementById('loading').style.display = '';
+  await loadMonth(month);
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('viewCard').style.display = '';
+  document.getElementById('btnHistory').style.display = '';
+  document.getElementById('btnBack').style.display = 'none';
+};
+
+window.doSignOut = async function() {
+  await signOut(auth);
+  location.href = 'login.html';
+};
+
+/* ---------- 啟動 ---------- */
+onAuthStateChanged(auth, async (user) => {
+  if (!user) { location.href = 'login.html'; return; }
+  currentUser = user;
+  try {
+    await loadMonth(thisMonth());
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('viewCard').style.display = '';
+  } catch (e) {
+    document.getElementById('loading').textContent =
+      e.code === 'permission-denied' ? '這個帳號沒有使用權限' : ('載入失敗：' + e.message);
+  }
+});
+</script>
+</body>
+</html>

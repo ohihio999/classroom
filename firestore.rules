@@ -59,10 +59,17 @@ service cloud.firestore {
     match /tool_manager_history/{document} {
       allow read, write: if true;
     }
+    match /video_episodes/{document} {
+      allow read, write: if true;
+    }
     match /ai_usage/{document} {
       allow read, write: if true;
     }
     match /admin_tools/{document} {
+      allow read, write: if isAdmin();
+    }
+    // 每月檢查（公務車 + 銀行保險箱）：docId = YYYY-MM，只有管理者可讀寫
+    match /monthly_check/{monthId} {
       allow read, write: if isAdmin();
     }
     match /work_progress/{taskId} {
