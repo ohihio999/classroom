@@ -1,6 +1,7 @@
 <!--
-  版本：v1.6
+  版本：v1.7
   版更記錄：
+  v1.7 (2026-08-04) - 卡片排列改為與 /admin/ 一致：桌面一排四個 grid（1400px 以下三欄、960px 以下單欄），卡片尺寸與字級同步縮小
   v1.6 (2026-08-04) - 新增每月檢查工具卡片（公務車例行檢查＋銀行保險箱）
   v1.5 (2026-05-07) - 新增工作進度表工具卡片
   v1.4 (2026-04-29) - 新增外部網站卡片：SIC企業合規測驗、Windows 11 更新狀態統計、桌曆投票系統
@@ -20,12 +21,20 @@
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; min-height: 100vh; }
     .header { background: #1976D2; color: white; padding: 20px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
     .header h1 { font-size: 22px; font-weight: 600; }
-    .tools { padding: 24px 16px; display: flex; flex-direction: column; gap: 14px; max-width: 480px; margin: 0 auto; }
-    .tool-card { background: white; border-radius: 14px; padding: 24px 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); cursor: pointer; display: flex; align-items: center; gap: 16px; transition: transform 0.1s, box-shadow 0.1s; text-decoration: none; color: inherit; }
+    .tools { width: min(100%, 1780px); margin: 0 auto; padding: 22px 24px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px 20px; align-items: stretch; }
+    .tool-card { min-height: 88px; height: 100%; background: white; border-radius: 12px; padding: 16px 18px 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.07); cursor: pointer; display: grid; grid-template-columns: 42px 1fr; align-items: center; gap: 14px; transition: transform 0.1s, box-shadow 0.1s; text-decoration: none; color: inherit; }
     .tool-card:active { transform: scale(0.98); box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
-    .tool-icon { font-size: 40px; flex-shrink: 0; }
-    .tool-name { font-size: 18px; font-weight: 600; color: #222; margin-bottom: 4px; }
-    .tool-desc { font-size: 13px; color: #888; }
+    .tool-icon { font-size: 32px; line-height: 1; flex-shrink: 0; text-align: center; }
+    .tool-main { min-width: 0; }
+    .tool-name { font-size: 15px; font-weight: 600; color: #222; margin-bottom: 3px; line-height: 1.25; }
+    .tool-desc { font-size: 12px; color: #888; line-height: 1.35; }
+    @media (max-width: 1400px) {
+      .tools { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
+    @media (max-width: 960px) {
+      .tools { display: flex; flex-direction: column; gap: 12px; max-width: 600px; margin: 0 auto; padding: 20px 16px; }
+      .tool-card { min-height: 84px; padding: 16px 18px; grid-template-columns: 42px 1fr; gap: 14px; }
+    }
   </style>
 </head>
 <body>
@@ -35,56 +44,56 @@
 <div class="tools">
   <a class="tool-card" href="/monthly-check/">
     <div class="tool-icon">🚗</div>
-    <div>
+    <div class="tool-main">
       <div class="tool-name">每月檢查</div>
       <div class="tool-desc">公務車例行檢查與銀行保險箱，手機填寫、查歷史，未完成會寄信提醒</div>
     </div>
   </a>
   <a class="tool-card" href="/work-progress/">
     <div class="tool-icon">📊</div>
-    <div>
+    <div class="tool-main">
       <div class="tool-name">工作進度表</div>
       <div class="tool-desc">追蹤工作任務、截止日期與負責人，支援 GPT 分類與 Email 提醒</div>
     </div>
   </a>
   <a class="tool-card" href="/mail-receipt/">
     <div class="tool-icon">📬</div>
-    <div>
+    <div class="tool-main">
       <div class="tool-name">掛號信簽收</div>
       <div class="tool-desc">登記收到的掛號信，收件人手寫簽收</div>
     </div>
   </a>
   <a class="tool-card" href="/outgoing-mail/">
     <div class="tool-icon">📤</div>
-    <div>
+    <div class="tool-main">
       <div class="tool-name">寄件追蹤</div>
       <div class="tool-desc">登記寄出的信件與貨物，追蹤送達狀態</div>
     </div>
   </a>
   <a class="tool-card" href="https://menu-order-api.web.app/" target="_blank" rel="noopener noreferrer">
     <div class="tool-icon">🍱</div>
-    <div>
+    <div class="tool-main">
       <div class="tool-name">訂餐系統</div>
       <div class="tool-desc">開啟便當、飲料、點心與訂購入口</div>
     </div>
   </a>
   <a class="tool-card" href="https://menu-order-api.web.app/enterprise.html" target="_blank" rel="noopener noreferrer">
     <div class="tool-icon">📋</div>
-    <div>
+    <div class="tool-main">
       <div class="tool-name">SIC企業合規測驗</div>
       <div class="tool-desc">開啟企業合規測驗頁面</div>
     </div>
   </a>
   <a class="tool-card" href="https://menu-order-api.web.app/win.html" target="_blank" rel="noopener noreferrer">
     <div class="tool-icon">🖥️</div>
-    <div>
+    <div class="tool-main">
       <div class="tool-name">Windows 11 更新狀態統計</div>
       <div class="tool-desc">查看 Windows 11 更新統計頁面</div>
     </div>
   </a>
   <a class="tool-card" href="https://menu-order-api.web.app/desk/vote_firebase.html" target="_blank" rel="noopener noreferrer">
     <div class="tool-icon">🗳️</div>
-    <div>
+    <div class="tool-main">
       <div class="tool-name">桌曆投票系統</div>
       <div class="tool-desc">開啟桌曆投票頁面</div>
     </div>
