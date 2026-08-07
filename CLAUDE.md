@@ -24,6 +24,7 @@
 - `tools/outgoing-mail/` — 寄件追蹤
 - `tools/tool-manager/` — 小程式分類管理（Firebase + GPT API）
 - `tools/ai-usage/` — AI 額度儀表板（Claude/Codex 官方額度，手機看；數據由 `ai-usage-collector/collect.ps1` 每 5 分鐘經工作排程器寫入 Firestore `ai_usage/current`）
+- `auto-screenshot/` — 自動右鍵截圖（AutoHotkey v2，自動翻頁截圖存 PNG）。不在 `tools/` 下所以不會被部署；admin 頁卡片按 🚀 走 `autoshot://` 協定（註冊在 HKCU\Software\Classes\autoshot → `start.bat`）叫起本機腳本。bat 一律純 ASCII、腳本檔名用英文，否則 cmd 碼頁 950/65001 會把中文路徑變亂碼
 
 ## 工作注意事項
 - 人員資料一律去識別化（只用編號或代號）

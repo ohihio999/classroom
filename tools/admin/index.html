@@ -1,6 +1,7 @@
 <!--
-  版本：v3.9
+  版本：v4.0
   版更記錄：
+  v4.0 (2026-08-08) - 新增「自動右鍵截圖」卡片（📸，說明 modal + 🚀 啟動）：走自訂協定 autoshot://（註冊在 HKCU\Software\Classes\autoshot → classroom\auto-screenshot\start.bat → AutoHotkey v2 跑 auto-screenshot.ahk）。bat 全 ASCII、腳本檔名改英文，避開 cmd 碼頁 950/65001 把中文路徑弄成亂碼
   v3.9 (2026-08-01) - YouTube 下載 fetch 加 3 秒逾時 fallback：HTTPS 頁面 fetch localhost 被 Chrome Private Network Access 擋時，自動開本機 8767 頁面操作（URL 帶 hash 預填網址）
   v3.8 (2026-08-01) - 新增「YouTube 下載」卡片：貼網址、MP4/MP3 可單選也可複選（兩個都勾各存一份），直接呼叫本機影音服務（127.0.0.1:8767 新增 /api/start kind=ytdl）下載到 C:\OBS，modal 內顯示逐項進度；服務沒開就按卡片的 🚀
   v3.7 (2026-07-31) -卡片改 4 欄緊湊版（卡片高 136→88px、icon 44→32px、標題 18→15px、間距縮小），加 1400px 斷點（≤1400px 回 3 欄、≤960px 單欄）；getSortColumnCount() 同步三段斷點，避免排序鈕跳錯格
@@ -514,6 +515,62 @@
   </div>
 </div>
 
+<!-- 自動右鍵截圖 modal（說明書；實際啟動走卡片右上角 🚀 → autoshot:// 協定，v4.0） -->
+<div class="modal-overlay" id="autoShotModal" onclick="closeOnOverlay(event)">
+  <div class="modal" style="max-height:90vh">
+    <button class="modal-close" onclick="closeAutoShot()">✕</button>
+    <div class="modal-title">📸 自動右鍵截圖</div>
+    <div class="modal-sub">自動按右方向鍵翻頁、定時截圖存 PNG，適合把電子書／簡報整本抓下來</div>
+
+    <div class="step">
+      <div class="step-label">怎麼啟動</div>
+      <div class="cmd-box" style="font-family:sans-serif">按這張卡片右上角的 <strong>🚀</strong>，瀏覽器問「要開啟 AutoShot 嗎」按允許。</div>
+      <div style="font-size:12px;color:#aaa;margin-top:6px">
+        只有這台電腦有效（協定註冊在 HKCU\Software\Classes\autoshot）。手機或別台電腦點 🚀 不會有反應。<br>
+        也可以直接雙擊桌面的「自動右鍵截圖」捷徑。
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">操作</div>
+      <div class="cmd-box" style="font-family:sans-serif">
+        啟動後先跳設定選單 → 按<strong>確定</strong><br>
+        <strong>F9</strong> 開始／暫停　<strong>F10</strong> 結束　托盤圖示可隨時叫回設定
+      </div>
+      <div style="font-size:12px;color:#aaa;margin-top:6px">流程是「按 → 、等 N 秒、截圖、確認寫檔成功、才按下一次」，所以不會翻頁翻在截圖前面。</div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">設定選單四項</div>
+      <div class="cmd-box" style="font-family:sans-serif">
+        ① <strong>擷取畫面</strong>：列出每台螢幕與長寬，直式會標「（直式）」<br>
+        ② <strong>等待秒數</strong>：按 → 之後等幾秒才截圖，可自行輸入小數<br>
+        ③ <strong>張數上限</strong>：截滿自動停止，0 = 不限<br>
+        ④ <strong>截滿之後</strong>：不做任何事／關機／休眠（倒數 60 秒可取消）<br>
+        ⑤ <strong>存放位置</strong>：可打路徑或按「瀏覽…」，不存在會自動建立
+      </div>
+      <div style="font-size:12px;color:#aaa;margin-top:6px">預設存 <code>桌面\自動截圖\</code>，檔名 shot_YYYYMMDD_HHMMSS.png，同秒會自動加流水號不覆蓋。</div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">注意</div>
+      <div class="cmd-box" style="font-family:sans-serif">
+        多螢幕時<strong>選單台螢幕、別選「全部螢幕合併」</strong>——虛擬桌面一定是矩形，直式橫式混排必然帶黑邊。<br>
+        螢幕轉直式或改解析度不必回選單重選，v5.0 每張截圖前都會重讀尺寸。<br>
+        連續 3 次截圖失敗會自動停止，不會繼續空翻頁。
+      </div>
+    </div>
+
+    <div style="font-size:12px;color:#aaa;margin-top:16px">腳本在 classroom\auto-screenshot\auto-screenshot.ahk，需要 AutoHotkey v2。</div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script type="module">
@@ -546,7 +603,8 @@ const DEFAULT_TOOLS = [
   { id: 'ai-usage', title: 'AI 額度儀表板', description: '查看 Claude、Codex、Gemini 使用額度', icon: '📊', actionType: 'link', href: '/ai-usage/', order: 7, createdAt: '2026-07-14T00:00:00+08:00' },
   { id: 'skill-manager-local', title: 'Skill 管理器', description: '三 AI 共用的本機 Skill 管理頁', icon: '🛠️', actionType: 'link', href: 'http://127.0.0.1:8765/', order: 8, createdAt: '2026-07-14T00:00:00+08:00' },
   { id: 'line-digest-local', title: 'LINE 對話整理', description: '本機 LINE 群組對話整理成 Obsidian 摘要', icon: '💬', actionType: 'link', href: 'http://127.0.0.1:8766/', order: 9, createdAt: '2026-07-19T00:00:00+08:00' },
-  { id: 'yt-download', title: 'YouTube 下載', description: '貼網址下載 MP4／MP3 到 C:\\OBS；服務沒開就按 🚀', icon: '📥', actionType: 'modal', modalFn: 'openYtDownload', launchHref: 'mediatools://open', order: 12, createdAt: '2026-08-01T00:00:00+08:00' }
+  { id: 'yt-download', title: 'YouTube 下載', description: '貼網址下載 MP4／MP3 到 C:\\OBS；服務沒開就按 🚀', icon: '📥', actionType: 'modal', modalFn: 'openYtDownload', launchHref: 'mediatools://open', order: 12, createdAt: '2026-08-01T00:00:00+08:00' },
+  { id: 'auto-screenshot', title: '自動右鍵截圖', description: '自動翻頁截圖存 PNG；點卡片看說明，按 🚀 啟動', icon: '📸', actionType: 'modal', modalFn: 'openAutoShot', launchHref: 'autoshot://start', order: 13, createdAt: '2026-08-08T00:00:00+08:00' }
 ];
 
 let toolsState = DEFAULT_TOOLS.map(tool => ({ ...tool }));
@@ -1007,6 +1065,14 @@ function openCourseCollect() {
 }
 function closeCourseCollect() {
   document.getElementById('courseCollectModal').classList.remove('open');
+}
+
+// 自動右鍵截圖 modal（說明書；啟動走卡片右上角 🚀 → autoshot://）
+function openAutoShot() {
+  document.getElementById('autoShotModal').classList.add('open');
+}
+function closeAutoShot() {
+  document.getElementById('autoShotModal').classList.remove('open');
 }
 
 // 字幕歸檔 modal
