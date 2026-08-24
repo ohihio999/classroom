@@ -30,3 +30,10 @@ firebase-debug.log
 # 備份檔與執行期產物
 *.bak-*
 ai-usage-collector/collect.log
+
+# 本機測試輸出：含真實 LINE 對話、姓名與 MID，絕不進公開 repo（2026-08-25 加）
+line-backup/test_output/
+line-backup/test_output2/
+
+# 暫存腳本
+tmp_*.ps1
