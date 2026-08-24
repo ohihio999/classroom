@@ -1,6 +1,10 @@
 <!--
-  版本：v4.0
+  版本：v5.3
   版更記錄：
+  v5.3 (2026-08-24) - 「圖片合併 PDF」的名稱欄改成選填：留空就由本機服務認第一張圖的封面書名（Groq 視覺模型，認不出來往後看最多 5 張），再拿去博客來搜尋校正成正式書名，直接用它建資料夾與 PDF，中途不再詢問。網頁把登入後拿到的 Groq key（window._groqKey）跟著 /api/start 一起送給 8767；認不出書名就整個中止，圖檔不會被動過。命名成「主書名 - 作者」，冒號後的副標不帶進檔名（幾百張圖的深路徑會撞 Windows 長度上限）。網頁 key 失效時本機服務會退回環境變數 GROQ_API_KEY。搭配 server.py v1.6
+  v5.2 (2026-08-21) - 新增「OpenSlideX 簡報（本機）」卡片（🖼️ → modal 說明書）：本機 MDX 簡報編輯器，repo clone 在 D:\2026_簡報工具、簡報庫 open-slidex-workspace\，Workspace 網頁在 127.0.0.1:4172/workspace。modal 內含啟動指令一鍵複製、開啟編輯器連結、MCP 用法。沒做自訂協定啟動（Node 服務要常駐，跟 8767 那種一按就起的 bat 不同），服務要自己下指令起
+  v5.1 (2026-08-20) - 新增「投票管理」卡片（🗳️ → /admin/vote/）：通用投票系統後台，可開多場活動、上傳照片、改名單、看即時結果；前台在 /vote/
+  v5.0 (2026-08-08) - 新增兩張卡片：①「AI 工作台」（🚀，排第一格 order:-1）走新協定 aiwork://（HKCU\Software\Classes\aiwork → classroom\ai-workbench\start.bat → 用 ASCII 萬用字元 000_AI*.lnk 比對桌面捷徑，避開中文檔名碼頁問題）；②「圖檔轉 PDF」（📄，說明 modal 寫滿 image-to-pdf SKILL 的 5 個步驟＋可直接執行）。image-to-pdf 原本只有 SKILL.md（給 AI 讀的 SOP），這版把它實作進 127.0.0.1:8767（server.py v1.2 新增 /api/imgpdf/pick 開本機 tkinter 選檔框、/api/imgpdf/scan、/api/start kind=imgpdf）
   v4.0 (2026-08-08) - 新增「自動右鍵截圖」卡片（📸，說明 modal + 🚀 啟動）：走自訂協定 autoshot://（註冊在 HKCU\Software\Classes\autoshot → classroom\auto-screenshot\start.bat → AutoHotkey v2 跑 auto-screenshot.ahk）。bat 全 ASCII、腳本檔名改英文，避開 cmd 碼頁 950/65001 把中文路徑弄成亂碼
   v3.9 (2026-08-01) - YouTube 下載 fetch 加 3 秒逾時 fallback：HTTPS 頁面 fetch localhost 被 Chrome Private Network Access 擋時，自動開本機 8767 頁面操作（URL 帶 hash 預填網址）
   v3.8 (2026-08-01) - 新增「YouTube 下載」卡片：貼網址、MP4/MP3 可單選也可複選（兩個都勾各存一份），直接呼叫本機影音服務（127.0.0.1:8767 新增 /api/start kind=ytdl）下載到 C:\OBS，modal 內顯示逐項進度；服務沒開就按卡片的 🚀
@@ -222,8 +226,8 @@
 <div class="modal-overlay" id="transcriptPackModal" onclick="closeOnOverlay(event)">
   <div class="modal" style="max-height:90vh">
     <button class="modal-close" onclick="closeTranscriptPack()">✕</button>
-    <div class="modal-title">📝 transcript-training-pack</div>
-    <div class="modal-sub">單一逐字稿 → 培訓報告＋摘要＋心智圖</div>
+    <div class="modal-title">📝 逐字稿培訓包</div>
+    <div class="modal-sub">將單一逐字稿整理成培訓報告、摘要與心智圖</div>
 
     <div class="step">
       <div class="step-label">① 輸入來源</div>
@@ -278,8 +282,8 @@
 <div class="modal-overlay" id="courseFilingModal" onclick="closeOnOverlay(event)">
   <div class="modal" style="max-height:90vh">
     <button class="modal-close" onclick="closeCourseFiling()">✕</button>
-    <div class="modal-title">📚 course-filing</div>
-    <div class="modal-sub">課程歸檔 Obsidian，含知識點拆解＋日記更新</div>
+    <div class="modal-title">📚 課程整理入 Obsidian</div>
+    <div class="modal-sub">整合筆記、逐字稿與心智圖，拆解知識點並更新日記</div>
 
     <div class="step">
       <div class="step-label">① 收集資訊</div>
@@ -328,7 +332,7 @@
 <div class="modal-overlay" id="courseCollectModal" onclick="closeOnOverlay(event)">
   <div class="modal" style="max-height:90vh">
     <button class="modal-close" onclick="closeCourseCollect()">✕</button>
-    <div class="modal-title">🗃️ 歸檔（course-collect）</div>
+    <div class="modal-title">🗃️ 課程散檔歸檔</div>
     <div class="modal-sub">課程散檔收齊、統一改名、搬進 D:\2026_已整理課程</div>
 
     <div class="step">
@@ -381,7 +385,7 @@
 <div class="modal-overlay" id="subtitleArchiveModal" onclick="closeOnOverlay(event)">
   <div class="modal" style="max-height:90vh">
     <button class="modal-close" onclick="closeSubtitleArchive()">✕</button>
-    <div class="modal-title">🔤 字幕歸檔</div>
+    <div class="modal-title">🔤 課程字幕歸檔</div>
     <div class="modal-sub">Arctime 人工校對版字幕，換掉當初自動產的 srt</div>
 
     <div class="step">
@@ -430,8 +434,8 @@
 <div class="modal-overlay" id="ytDlpModal" onclick="closeOnOverlay(event)">
   <div class="modal">
     <button class="modal-close" onclick="closeYtDlp()">✕</button>
-    <div class="modal-title">⬇️ 下載工具</div>
-    <div class="modal-sub">影片/音訊用 yt-dlp・FB 照片用 gallery-dl</div>
+    <div class="modal-title">⬇️ 網址下載批次檔</div>
+    <div class="modal-sub">產生 YouTube 影片／MP3 或 FB 照片下載 BAT</div>
 
     <div class="step">
       <div class="step-label">① 一次性安裝</div>
@@ -481,7 +485,7 @@
 <div class="modal-overlay" id="ytDownloadModal" onclick="closeOnOverlay(event)">
   <div class="modal" style="max-height:90vh">
     <button class="modal-close" onclick="closeYtDownload()">✕</button>
-    <div class="modal-title">📥 YouTube 下載</div>
+    <div class="modal-title">📥 YouTube 下載（本機）</div>
     <div class="modal-sub">貼網址就下載到本機資料夾，不用自己跑指令</div>
 
     <div class="step">
@@ -519,7 +523,7 @@
 <div class="modal-overlay" id="autoShotModal" onclick="closeOnOverlay(event)">
   <div class="modal" style="max-height:90vh">
     <button class="modal-close" onclick="closeAutoShot()">✕</button>
-    <div class="modal-title">📸 自動右鍵截圖</div>
+    <div class="modal-title">📸 自動翻頁截圖（本機）</div>
     <div class="modal-sub">自動按右方向鍵翻頁、定時截圖存 PNG，適合把電子書／簡報整本抓下來</div>
 
     <div class="step">
@@ -571,6 +575,125 @@
   </div>
 </div>
 
+<!-- OpenSlideX modal（v5.2）：說明書 + 開啟本機 Workspace 的入口
+     沒有做自訂協定，服務要自己用指令起（Node 服務常駐，不像 8767 那種一按就起的 bat）。 -->
+<div class="modal-overlay" id="slideXModal" onclick="closeOnOverlay(event)">
+  <div class="modal" style="max-height:90vh">
+    <button class="modal-close" onclick="closeSlideX()">✕</button>
+    <div class="modal-title">🖼️ OpenSlideX 簡報（本機）</div>
+    <div class="modal-sub">一份簡報＝本機一個資料夾＋一個 presentation.mdx，可以叫 AI 直接改，改完匯出 PPTX／HTML</div>
+
+    <div class="step">
+      <div class="step-label">① 先啟動服務</div>
+      <div class="cmd-box" id="slideXCmd">cd /d D:\2026_簡報工具 &amp;&amp; npm run dev</div>
+      <button class="copy-btn" onclick="copySlideXCmd(this)">複製指令</button>
+      <div style="font-size:12px;color:#aaa;margin-top:6px">貼到「命令提示字元」執行。第一次會多花十幾秒打包，出現 <code>http://127.0.0.1:4172/workspace</code> 就好了。<strong>這個黑視窗不能關</strong>，關了網頁就斷線。</div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">② 開啟編輯器</div>
+      <a class="copy-btn" style="text-align:center;text-decoration:none" href="http://127.0.0.1:4172/workspace" target="_blank" rel="noopener">開啟 Workspace（127.0.0.1:4172）</a>
+      <div style="font-size:12px;color:#aaa;margin-top:6px">只有這台電腦有效，手機或別台點了不會有反應。左邊是簡報清單，可開空白檔或套內建範本（Summer Time Report／Moodboard），改完即時預覽。</div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">③ 叫 AI 改簡報（MCP，已裝好）</div>
+      <div class="cmd-box" style="font-family:sans-serif">
+        Claude Code、Codex、Claude Desktop 三邊都已註冊 <code>open_slidex_workspace</code>，直接下指令就好，例如：<br>
+        「用 open-slidex 把 D:\...\某某摘要.md 做成 12 頁簡報」<br>
+        「把第 5 頁標題改小一點，圖換成 assets 裡那張」
+      </div>
+      <div style="font-size:12px;color:#aaa;margin-top:6px">
+        AI 拿到六個工具：選簡報、讀原始碼／素材、匯入 PPTX／HTML 舊檔、找圖轉圖、審查、編輯。<br>
+        提交前系統會自動做結構驗證＋渲染檢查，不合格會退件重修，所以不會把版面改爛。<br>
+        <strong>MCP 是新裝的，Claude Code／Codex 要重開一次才吃得到。</strong>
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">④ 檔案在哪、怎麼匯出</div>
+      <div class="cmd-box">D:\2026_簡報工具\open-slidex-workspace\&lt;簡報名&gt;\presentation.mdx</div>
+      <div style="font-size:12px;color:#aaa;margin-top:6px">
+        每份簡報自帶 <code>assets\</code>（圖）、<code>knowledge\</code>（你丟給 AI 參考的筆記／PDF／CSV）。<br>
+        匯出：<code>npm run open-slidex -- export &lt;檔案&gt; --format pptx --out 檔名.pptx</code>（format 可選 pptx／html／mdx）。<br>
+        更新版本：在 D:\2026_簡報工具 執行 <code>git pull</code> 再 <code>npm install</code>。
+      </div>
+    </div>
+
+    <div style="font-size:12px;color:#aaa;margin-top:16px">來源 github.com/zz41354899/open-slidex（MIT）。完全本機、不需帳號，簡報不會上雲。</div>
+  </div>
+</div>
+
+<!-- 圖檔轉 PDF modal（image-to-pdf SKILL 的網頁版，v5.0）
+     選圖必須由本機服務開系統選檔框：瀏覽器的 file input 只給檔名不給完整路徑。 -->
+<div class="modal-overlay" id="imgPdfModal" onclick="closeOnOverlay(event)">
+  <div class="modal" style="max-height:90vh">
+    <button class="modal-close" onclick="closeImgPdf()">✕</button>
+    <div class="modal-title">📄 圖片合併 PDF（本機）</div>
+    <div class="modal-sub">整個資料夾的圖 → 一份 PDF，圖檔同時重新編號歸檔</div>
+
+    <div class="step">
+      <div class="step-label">這個 Skill 會做什麼（5 個步驟）</div>
+      <div class="cmd-box" style="font-family:sans-serif;line-height:1.75">
+        <strong>① 掃描</strong>：以你選的那張圖<u>所在的資料夾</u>為範圍，掃出所有圖檔<br>
+        <span style="color:#888;font-size:12px">支援 jpg／jpeg／png／webp／bmp／tif／tiff；不進子資料夾，非圖檔不理會。<br>
+        用<strong>自然排序</strong>——1, 2, 10 排成 1、2、10，不會變成 1、10、2。</span><br><br>
+        <strong>② 決定名稱</strong>：下面那格<u>留空就自動命名</u>——認第一張圖的封面書名<br>
+        <span style="color:#888;font-size:12px">用 Groq 視覺模型讀封面，第一張是空白頁或版權頁就往後看，最多看 5 張。<br>
+        Groq 免費額度一分鐘只認得完兩張圖，撞到限流會自動等幾十秒再試，別急著關視窗。<br>
+        認到書名後再去<strong>博客來搜尋</strong>校正成正式書名（副標與標點才會對）。<br>
+        資料夾與 PDF 命名成 <code>主書名 - 作者</code>，冒號後的副標不帶進檔名（路徑會太長）。<br>
+        認不出來就整個停下來要你手填，<strong>不會亂猜一個名字去改幾百個檔案</strong>。<br>
+        自己填的話就照你填的，不辨識。</span><br><br>
+        <strong>③ 建資料夾</strong>：在同一層建 <code>原資料夾\你打的名稱\</code><br>
+        <span style="color:#888;font-size:12px">等 PDF 真的做出來才建，中途失敗不會留一個空殼資料夾。</span><br><br>
+        <strong>④ 合成 PDF</strong>：照①的順序合成 <code>你打的名稱.pdf</code> 放進去<br>
+        <span style="color:#888;font-size:12px">用 img2pdf 無失真嵌入，維持原解析度與長寬比，不重壓縮。<br>
+        每 50 張先做一份暫存 PDF 最後才合併，所以幾百張大圖也不會吃爆記憶體。</span><br><br>
+        <strong>⑤ 重新命名歸檔</strong>：原圖<u>搬進</u>新資料夾並依序改名<br>
+        <span style="color:#888;font-size:12px">
+        <code>名稱_0001.png</code>、<code>名稱_0002.png</code>…（4 位補零，副檔名保留）<br>
+        是<strong>搬移不是複製</strong>，跑完原本那層就只剩新資料夾。</span>
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">① 選一張圖（決定要處理哪個資料夾）</div>
+      <button class="copy-btn" style="background:#607D8B" id="ipPickBtn" onclick="pickImgPdfFile()">📂 開啟選檔視窗</button>
+      <div style="font-size:12px;color:#aaa;margin-top:6px">
+        選檔視窗會跳在<strong>跑服務的那台電腦</strong>上（不是手機）。選哪張都可以，只是用來指定資料夾。
+      </div>
+      <div id="ipScan" style="font-size:13px;color:#388E3C;margin-top:10px"></div>
+    </div>
+
+    <div class="step">
+      <div class="step-label">② 資料夾與 PDF 的名稱（留空＝自動辨識書名）</div>
+      <input class="path-input" id="ipName" placeholder="留空就自動認封面書名；要自己取名就打在這裡" />
+      <div style="font-size:12px;color:#aaa">
+        自己填的話不能有 &lt; &gt; : " / \ | ? * 這些字元。<span id="ipKeyState"></span>
+      </div>
+    </div>
+
+    <button class="copy-btn" id="ipRunBtn" onclick="startImgPdf()">▶ 開始轉換</button>
+    <div class="yt-note" id="ipHint">需要本機影音服務在跑（127.0.0.1:8767）；沒開的話按卡片上的 🚀 啟動再回來。</div>
+
+    <div id="ipProgress" style="display:none">
+      <hr class="divider">
+      <div class="yt-head"><b id="ipTitle">處理中</b><span id="ipPct">0%</span></div>
+      <div class="yt-bar" id="ipBar"><i></i></div>
+      <div class="yt-note" id="ipDone"></div>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script type="module">
@@ -589,22 +712,29 @@ const getGroqKeyFn = httpsCallable(functions, 'getGroqKey');
 const getAssemblyAIKeyFn = httpsCallable(functions, 'getAssemblyAIKey');
 const ALLOWED_EMAIL = 'ohihio@gmail.com';
 const TOOLS_COL = 'admin_tools';
+const CARD_CONTENT_VERSION = 3;
 const ICON_OPTIONS = ['🗂️','🎙️','📝','📚','📌','📎','📦','⚙️','🛠️','💡','📊','🧾','📁','🔧','🔍','🚀','⭐','✅'];
 const DEFAULT_TOOLS = [
-  { id: 'tool-manager', title: '小程式分類管理', description: '收藏、分類、隨手可用的 AI 工具庫', icon: '🗂️', actionType: 'link', href: '/tool-manager/', order: 0, createdAt: '2026-04-29T00:00:00+08:00' },
-  { id: 'transcribe', title: '音檔轉逐字稿', description: 'Groq Whisper，自動壓縮大檔，1 小時約 2 分鐘', icon: '🎙️', actionType: 'modal', modalFn: 'openTranscribe', order: 1, createdAt: '2026-05-01T00:00:00+08:00' },
-  { id: 'media-tools-local', title: '影片轉MP3 / 錄音合併', description: '網頁上選檔、本機當場轉檔；服務沒開就按 🚀', icon: '🎬', actionType: 'link', href: 'http://127.0.0.1:8767/', launchHref: 'mediatools://open', order: 2, createdAt: '2026-07-31T00:00:00+08:00' },
-  { id: 'transcript-pack', title: 'transcript-training-pack', description: '單一逐字稿 → 培訓報告＋摘要＋心智圖', icon: '📝', actionType: 'modal', modalFn: 'openTranscriptPack', order: 3, createdAt: '2026-05-02T00:00:00+08:00' },
-  { id: 'course-filing', title: 'course-filing', description: '課程歸檔 Obsidian，含知識點拆解＋日記更新', icon: '📚', actionType: 'modal', modalFn: 'openCourseFiling', order: 4, createdAt: '2026-05-02T00:00:00+08:00' },
-  { id: 'course-collect', title: '歸檔（course-collect）', description: '課程散檔收齊改名，搬進 D:\\2026_已整理課程', icon: '🗃️', actionType: 'modal', modalFn: 'openCourseCollect', order: 10, createdAt: '2026-07-31T00:00:00+08:00' },
-  { id: 'subtitle-archive', title: '字幕歸檔', description: 'Arctime 校對版字幕換掉自動產的 srt', icon: '🔤', actionType: 'modal', modalFn: 'openSubtitleArchive', order: 11, createdAt: '2026-07-31T00:00:00+08:00' },
-  { id: 'yt-dlp', title: 'yt-dlp 影片下載', description: '貼網址下載 YouTube、FB 等影片或音訊', icon: '⬇️', actionType: 'modal', modalFn: 'openYtDlp', order: 5, createdAt: '2026-05-07T00:00:00+08:00' },
-  { id: 'video-progress', title: '影片進度表', description: '追蹤影片製作進度，9 個步驟橫向顯示', icon: '🎞️', actionType: 'link', href: '/影片進度表/', order: 6, createdAt: '2026-05-31T00:00:00+08:00' },
-  { id: 'ai-usage', title: 'AI 額度儀表板', description: '查看 Claude、Codex、Gemini 使用額度', icon: '📊', actionType: 'link', href: '/ai-usage/', order: 7, createdAt: '2026-07-14T00:00:00+08:00' },
-  { id: 'skill-manager-local', title: 'Skill 管理器', description: '三 AI 共用的本機 Skill 管理頁', icon: '🛠️', actionType: 'link', href: 'http://127.0.0.1:8765/', order: 8, createdAt: '2026-07-14T00:00:00+08:00' },
-  { id: 'line-digest-local', title: 'LINE 對話整理', description: '本機 LINE 群組對話整理成 Obsidian 摘要', icon: '💬', actionType: 'link', href: 'http://127.0.0.1:8766/', order: 9, createdAt: '2026-07-19T00:00:00+08:00' },
-  { id: 'yt-download', title: 'YouTube 下載', description: '貼網址下載 MP4／MP3 到 C:\\OBS；服務沒開就按 🚀', icon: '📥', actionType: 'modal', modalFn: 'openYtDownload', launchHref: 'mediatools://open', order: 12, createdAt: '2026-08-01T00:00:00+08:00' },
-  { id: 'auto-screenshot', title: '自動右鍵截圖', description: '自動翻頁截圖存 PNG；點卡片看說明，按 🚀 啟動', icon: '📸', actionType: 'modal', modalFn: 'openAutoShot', launchHref: 'autoshot://start', order: 13, createdAt: '2026-08-08T00:00:00+08:00' }
+  // order -1：Firestore 裡既有卡片的 order 是 0 起跳，給 -1 才排得到第一格（normalizeOrder 會重編成 0）
+  { id: 'ai-workbench', title: 'AI 工作台（本機）', description: '啟動 7 個 Hermes 分頁：3 AGY／2 Claude／2 Codex', icon: '🚀', actionType: 'link', href: 'aiwork://start', launchHref: 'aiwork://start', order: -1, createdAt: '2026-08-08T00:00:00+08:00' },
+  { id: 'tool-manager', title: 'AI 工具分類管理', description: '收藏、分類、搜尋與批次分析常用 AI 工具', icon: '🗂️', actionType: 'link', href: '/tool-manager/', order: 0, createdAt: '2026-04-29T00:00:00+08:00' },
+  { id: 'transcribe', title: '音檔轉逐字稿', description: 'Groq 快速轉錄；可選說話者辨識並自動壓縮大檔', icon: '🎙️', actionType: 'modal', modalFn: 'openTranscribe', order: 1, createdAt: '2026-05-01T00:00:00+08:00' },
+  { id: 'media-tools-local', title: '影音轉檔與錄音合併（本機）', description: '影片轉 MP3、錄音排序合併；需先啟動 8767 服務', icon: '🎬', actionType: 'link', href: 'http://127.0.0.1:8767/', launchHref: 'mediatools://open', order: 2, createdAt: '2026-07-31T00:00:00+08:00' },
+  { id: 'course-content-pipeline', title: '影音課程流水線', description: '建立可續跑任務，整合媒體處理與 AI 課程包；需先啟動 8767', icon: '🧭', actionType: 'link', href: 'http://127.0.0.1:8767/#course', launchHref: 'mediatools://open', order: 2.5, createdAt: '2026-08-17T00:00:00+08:00' },
+  { id: 'transcript-pack', title: '逐字稿培訓包', description: '將單一逐字稿整理成培訓報告、摘要與心智圖', icon: '📝', actionType: 'modal', modalFn: 'openTranscriptPack', order: 3, createdAt: '2026-05-02T00:00:00+08:00' },
+  { id: 'course-filing', title: '課程整理入 Obsidian', description: '整合筆記、逐字稿與心智圖，拆解知識點並更新日記', icon: '📚', actionType: 'modal', modalFn: 'openCourseFiling', order: 4, createdAt: '2026-05-02T00:00:00+08:00' },
+  { id: 'course-collect', title: '課程散檔歸檔', description: '收齊課程檔案、統一命名後歸檔到 D:\\2026_已整理課程', icon: '🗃️', actionType: 'modal', modalFn: 'openCourseCollect', order: 10, createdAt: '2026-07-31T00:00:00+08:00' },
+  { id: 'subtitle-archive', title: '課程字幕歸檔', description: '用 Arctime 校對版 SRT 取代自動字幕並保留整理結構', icon: '🔤', actionType: 'modal', modalFn: 'openSubtitleArchive', order: 11, createdAt: '2026-07-31T00:00:00+08:00' },
+  { id: 'yt-dlp', title: '網址下載批次檔', description: '產生 YouTube 影片／MP3 或 FB 照片下載 BAT', icon: '⬇️', actionType: 'modal', modalFn: 'openYtDlp', order: 5, createdAt: '2026-05-07T00:00:00+08:00' },
+  { id: 'video-progress', title: '影片製作進度表', description: '依 9 個階段追蹤每支影片的狀態、進度與連結', icon: '🎞️', actionType: 'link', href: '/影片進度表/', order: 6, createdAt: '2026-05-31T00:00:00+08:00' },
+  { id: 'ai-usage', title: 'AI 額度儀表板', description: '查看 Claude、Codex、Antigravity 即時額度與歷史趨勢', icon: '📊', actionType: 'link', href: '/ai-usage/', order: 7, createdAt: '2026-07-14T00:00:00+08:00' },
+  { id: 'skill-manager-local', title: 'AI Skill 管理器（本機）', description: '管理共用 Skills；需先啟動 127.0.0.1:8768', icon: '🛠️', actionType: 'link', href: 'http://127.0.0.1:8768/', order: 8, createdAt: '2026-07-14T00:00:00+08:00' },
+  { id: 'line-digest-local', title: 'LINE 對話整理（本機）', description: '將 LINE 群組對話整理成 Obsidian 摘要；需先啟動 8766', icon: '💬', actionType: 'link', href: 'http://127.0.0.1:8766/', order: 9, createdAt: '2026-07-19T00:00:00+08:00' },
+  { id: 'yt-download', title: 'YouTube 下載（本機）', description: '貼多個網址直接下載 MP4／MP3 到 C:\\OBS；需啟動 8767', icon: '📥', actionType: 'modal', modalFn: 'openYtDownload', launchHref: 'mediatools://open', order: 12, createdAt: '2026-08-01T00:00:00+08:00' },
+  { id: 'auto-screenshot', title: '自動翻頁截圖（本機）', description: 'F9 開始／暫停，自動翻頁存 PNG；按 🚀 啟動工具', icon: '📸', actionType: 'modal', modalFn: 'openAutoShot', launchHref: 'autoshot://start', order: 13, createdAt: '2026-08-08T00:00:00+08:00' },
+  { id: 'image-to-pdf', title: '圖片合併 PDF（本機）', description: '整夾圖片合成 PDF 並依序編號歸檔；需啟動 8767', icon: '📄', actionType: 'modal', modalFn: 'openImgPdf', launchHref: 'mediatools://open', order: 14, createdAt: '2026-08-08T00:00:00+08:00' },
+  { id: 'vote-admin', title: '投票管理', description: '開投票活動、換照片、改名單，看即時結果與明細', icon: '🗳️', actionType: 'link', href: '/admin/vote/', order: 15, createdAt: '2026-08-20T00:00:00+08:00' },
+  { id: 'open-slidex', title: 'OpenSlideX 簡報（本機）', description: '本機 MDX 簡報編輯器＋MCP，可叫 AI 直接改投影片；需啟動 4172', icon: '🖼️', actionType: 'modal', modalFn: 'openSlideX', order: 16, createdAt: '2026-08-21T00:00:00+08:00' }
 ];
 
 let toolsState = DEFAULT_TOOLS.map(tool => ({ ...tool }));
@@ -717,9 +847,28 @@ async function loadToolOverrides() {
 
     const remoteMap = new Map();
     snap.forEach(docSnap => remoteMap.set(docSnap.id, docSnap.data()));
-    toolsState = DEFAULT_TOOLS.map(tool => ({ ...tool, ...(remoteMap.get(tool.id) || {}) }));
+    const staleContent = [];
+    toolsState = DEFAULT_TOOLS.map(tool => {
+      const remote = remoteMap.get(tool.id);
+      if (!remote) return { ...tool };
+      const merged = { ...tool, ...remote };
+      if (remote.contentVersion !== CARD_CONTENT_VERSION) {
+        Object.assign(merged, {
+          title: tool.title,
+          description: tool.description,
+          actionType: tool.actionType,
+          href: tool.href || '',
+          modalFn: tool.modalFn || '',
+          launchHref: tool.launchHref || '',
+          contentVersion: CARD_CONTENT_VERSION
+        });
+        staleContent.push(merged);
+      }
+      return merged;
+    });
     normalizeOrder();
     renderTools();
+    if (staleContent.length) await migrateCardContent(staleContent);
   } catch (error) {
     showToast('已載入預設卡片，雲端設定暫時不可用');
     console.error(error);
@@ -737,6 +886,8 @@ async function seedDefaultTools() {
       actionType: tool.actionType,
       href: tool.href || '',
       modalFn: tool.modalFn || '',
+      launchHref: tool.launchHref || '',
+      contentVersion: CARD_CONTENT_VERSION,
       order: tool.order,
       createdAt: tool.createdAt || seededAt,
       updatedAt: seededAt
@@ -744,6 +895,22 @@ async function seedDefaultTools() {
   });
   await batch.commit();
   renderTools();
+}
+
+async function migrateCardContent(tools) {
+  const batch = writeBatch(db);
+  const updatedAt = serverTimestamp();
+  tools.forEach(tool => batch.set(doc(db, TOOLS_COL, tool.id), {
+    title: tool.title,
+    description: tool.description,
+    actionType: tool.actionType,
+    href: tool.href || '',
+    modalFn: tool.modalFn || '',
+    launchHref: tool.launchHref || '',
+    contentVersion: CARD_CONTENT_VERSION,
+    updatedAt
+  }, { merge: true }));
+  await batch.commit();
 }
 
 function normalizeOrder() {
@@ -868,6 +1035,8 @@ async function persistToolOrder() {
       actionType: tool.actionType,
       href: tool.href || '',
       modalFn: tool.modalFn || '',
+      launchHref: tool.launchHref || '',
+      contentVersion: CARD_CONTENT_VERSION,
       order: index,
       updatedAt
     };
@@ -886,6 +1055,8 @@ async function persistSingleTool(tool) {
     actionType: tool.actionType,
     href: tool.href || '',
     modalFn: tool.modalFn || '',
+    launchHref: tool.launchHref || '',
+    contentVersion: CARD_CONTENT_VERSION,
     order: tool.order,
     updatedAt: serverTimestamp()
   };
@@ -1075,6 +1246,20 @@ function closeAutoShot() {
   document.getElementById('autoShotModal').classList.remove('open');
 }
 
+// OpenSlideX modal（說明書＋開啟本機 4172 Workspace）
+function openSlideX() {
+  document.getElementById('slideXModal').classList.add('open');
+}
+function closeSlideX() {
+  document.getElementById('slideXModal').classList.remove('open');
+}
+function copySlideXCmd(btn) {
+  navigator.clipboard.writeText(document.getElementById('slideXCmd').textContent);
+  btn.textContent = '已複製 ✓';
+  btn.classList.add('copied');
+  setTimeout(() => { btn.textContent = '複製指令'; btn.classList.remove('copied'); }, 2000);
+}
+
 // 字幕歸檔 modal
 function openSubtitleArchive() {
   document.getElementById('subtitleArchiveModal').classList.add('open');
@@ -1088,7 +1273,7 @@ window._ytMode = 'video';
 
 function openYtDlp() {
   document.getElementById('ytDlpModal').classList.add('open');
-  setYtMode('photo');
+  setYtMode('video');
   updateYtDlpCmd();
 }
 
@@ -1311,6 +1496,149 @@ async function pollYtDownload() {
     ytdReleaseBtn();
     document.getElementById('ytdDone').textContent =
       data.outputs.length ? `檔案存在：${data.outputDir}` : '';
+  }
+}
+
+// ---------------------------------------------------------------- 圖檔轉 PDF
+// image-to-pdf SKILL 的網頁版，實作在 classroom\video-to-mp3\server.py（同一個 8767）。
+let ipDir = '';
+let ipJobId = null;
+let ipTimer = null;
+
+window.openImgPdf = () => {
+  document.getElementById('imgPdfModal').classList.add('open');
+  // 名稱留空要靠 Groq 認書名，而 key 是登入後才向 Firebase 拿的，先講清楚現在有沒有
+  document.getElementById('ipKeyState').innerHTML = window._groqKey
+    ? '<span style="color:#388E3C">　✓ Groq Key 已載入，留空即可自動命名</span>'
+    : '<span style="color:#C62828">　⚠ 還沒拿到 Groq Key，留空會失敗；重新整理頁面或自己填名稱</span>';
+};
+
+window.closeImgPdf = () => {
+  document.getElementById('imgPdfModal').classList.remove('open');
+};
+
+function ipReleaseBtn() {
+  const btn = document.getElementById('ipRunBtn');
+  btn.disabled = false;
+  btn.textContent = '▶ 開始轉換';
+}
+
+function ipOffline() {
+  document.getElementById('ipHint').innerHTML =
+    '❌ 連不上本機服務（127.0.0.1:8767）。按卡片右上角的 🚀 啟動後再試一次。';
+}
+
+// 選檔視窗開在本機，使用者可能想很久，所以這裡不設逾時
+async function pickImgPdfFile() {
+  const btn = document.getElementById('ipPickBtn');
+  btn.disabled = true;
+  btn.textContent = '選檔視窗已開啟，請看桌面…';
+
+  let data;
+  try {
+    data = await (await fetch(`${YTD_API}/api/imgpdf/pick`, { method: 'POST' })).json();
+  } catch (err) {
+    ipOffline();
+    btn.disabled = false;
+    btn.textContent = '📂 開啟選檔視窗';
+    return;
+  }
+
+  btn.disabled = false;
+  btn.textContent = '📂 開啟選檔視窗';
+
+  // showToast 定義在上面那個 type=module 區塊裡，這裡（普通 script）拿不到，所以直接寫在畫面上
+  if (data.cancelled) {
+    document.getElementById('ipScan').innerHTML = '<span style="color:#888">沒有選檔案</span>';
+    return;
+  }
+  if (data.error) { alert(data.error); return; }
+
+  ipDir = data.dir;
+  const preview = data.names.map(n => ytdEsc(n)).join('、');
+  document.getElementById('ipScan').innerHTML = data.count
+    ? `✅ <b>${data.count}</b> 張圖<br><span style="color:#888;font-size:12px">${ytdEsc(data.dir)}<br>前幾張：${preview}…</span>`
+    : `⚠️ 這個資料夾裡沒有圖檔`;
+
+  const nameInput = document.getElementById('ipName');
+  if (!nameInput.value.trim() && data.suggest) nameInput.value = data.suggest;
+}
+
+async function startImgPdf() {
+  const name = document.getElementById('ipName').value.trim();
+  if (!ipDir) { alert('請先按「開啟選檔視窗」選一張圖'); return; }
+  if (!name && !window._groqKey) {
+    alert('名稱留空要自動辨識書名，但還沒拿到 Groq Key。\n請重新整理這個頁面，或自己填一個名稱。');
+    return;
+  }
+
+  const btn = document.getElementById('ipRunBtn');
+  btn.disabled = true;
+  btn.textContent = '連線本機服務…';
+
+  let data;
+  try {
+    const res = await fetch(`${YTD_API}/api/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      // 名稱空的時候本機服務要自己打 Groq，key 只有登入後的網頁拿得到，所以由這裡帶過去
+      body: JSON.stringify({ kind: 'imgpdf', dir: ipDir, name, groqKey: window._groqKey || '' })
+    });
+    data = await res.json();
+  } catch (err) {
+    ipReleaseBtn();
+    ipOffline();
+    return;
+  }
+
+  if (data.error) { ipReleaseBtn(); alert(data.error); return; }
+
+  ipJobId = data.id;
+  btn.textContent = name ? '處理中…' : '辨識書名中…';
+  document.getElementById('ipHint').textContent = name
+    ? '合成中可以關掉這個視窗，本機服務會繼續跑。幾百張大圖要跑幾分鐘。'
+    : '先認封面書名（約 10 秒）再開始合成。可以關掉這個視窗，本機服務會繼續跑。';
+  document.getElementById('ipProgress').style.display = 'block';
+  document.getElementById('ipDone').textContent = '';
+  ipTimer = setInterval(pollImgPdf, 700);
+  pollImgPdf();
+}
+
+async function pollImgPdf() {
+  if (!ipJobId) return;
+  let data;
+  try {
+    data = await (await fetch(`${YTD_API}/api/status?id=${ipJobId}`)).json();
+  } catch (err) {
+    return;                                   // 服務暫時沒回應就等下一輪
+  }
+
+  // 進度條：合成 PDF 記到 50%，圖檔搬完才 100%
+  const moved = data.items.filter(i => i.status === 'done').length;
+  // 辨識階段所有項目都還是 waiting，這時直接顯示服務回報的階段訊息（看到第幾張、在比對誰）
+  const identifying = !data.done && data.items.every(i => i.status === 'waiting');
+  document.getElementById('ipTitle').textContent = data.done
+    ? data.message
+    : identifying
+      ? (data.message || '準備中')
+      : (moved ? `歸檔中（${moved}/${data.items.length}）` : `合成 PDF 中（${data.items.length} 張）`);
+  document.getElementById('ipPct').textContent = `${data.overall}%`;
+  document.getElementById('ipBar').firstElementChild.style.width = data.overall + '%';
+
+  if (data.done) {
+    clearInterval(ipTimer);
+    ipJobId = null;
+    ipReleaseBtn();
+    const failed = data.items.find(i => i.error);
+    const info = data.identify;
+    const idLine = info
+      ? `<div style="color:#888;font-size:12px;margin-top:4px">辨識自 ${ytdEsc(info.page)}：`
+        + `${ytdEsc(info.recognized)}${info.author ? '／' + ytdEsc(info.author) : ''}`
+        + `　→　${ytdEsc(info.fullTitle || '')}（${ytdEsc(info.sourceLabel)}）</div>`
+      : '';
+    document.getElementById('ipDone').innerHTML = data.outputs.length
+      ? `✅ ${ytdEsc(data.outputs[0])}${idLine}`
+      : (failed ? `❌ ${ytdEsc(failed.error)}` : (data.message ? `❌ ${ytdEsc(data.message)}` : ''));
   }
 }
 </script>
