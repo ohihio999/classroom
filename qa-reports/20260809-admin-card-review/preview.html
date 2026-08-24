@@ -1,0 +1,1150 @@
+<!--
+  版本：v5.0
+  版更記錄：
+  v5.0 (2026-08-08) - 新增兩張卡片：①「AI 工作台」（🚀，排第一格 order:-1）走新協定 aiwork://（HKCU\Software\Classes\aiwork → classroom\ai-workbench\start.bat → 用 ASCII 萬用字元 000_AI*.lnk 比對桌面捷徑，避開中文檔名碼頁問題）；②「圖檔轉 PDF」（📄，說明 modal 寫滿 image-to-pdf SKILL 的 5 個步驟＋可直接執行）。image-to-pdf 原本只有 SKILL.md（給 AI 讀的 SOP），這版把它實作進 127.0.0.1:8767（server.py v1.2 新增 /api/imgpdf/pick 開本機 tkinter 選檔框、/api/imgpdf/scan、/api/start kind=imgpdf）
+  v4.0 (2026-08-08) - 新增「自動右鍵截圖」卡片（📸，說明 modal + 🚀 啟動）：走自訂協定 autoshot://（註冊在 HKCU\Software\Classes\autoshot → classroom\auto-screenshot\start.bat → AutoHotkey v2 跑 auto-screenshot.ahk）。bat 全 ASCII、腳本檔名改英文，避開 cmd 碼頁 950/65001 把中文路徑弄成亂碼
+  v3.9 (2026-08-01) - YouTube 下載 fetch 加 3 秒逾時 fallback：HTTPS 頁面 fetch localhost 被 Chrome Private Network Access 擋時，自動開本機 8767 頁面操作（URL 帶 hash 預填網址）
+  v3.8 (2026-08-01) - 新增「YouTube 下載」卡片：貼網址、MP4/MP3 可單選也可複選（兩個都勾各存一份），直接呼叫本機影音服務（127.0.0.1:8767 新增 /api/start kind=ytdl）下載到 C:\OBS，modal 內顯示逐項進度；服務沒開就按卡片的 🚀
+  v3.7 (2026-07-31) -卡片改 4 欄緊湊版（卡片高 136→88px、icon 44→32px、標題 18→15px、間距縮小），加 1400px 斷點（≤1400px 回 3 欄、≤960px 單欄）；getSortColumnCount() 同步三段斷點，避免排序鈕跳錯格
+  v3.6 (2026-07-31) - 新增「歸檔 course-collect」與「字幕歸檔」兩張說明卡（modal 說明書，不執行動作）：課程散檔收齊改名搬進 D:\2026_已整理課程、Arctime 校對版字幕替換自動產 srt
+  v3.5 (2026-07-31) - 影音工具卡片加 🚀 啟動鈕：走自訂協定 mediatools://（註冊在 HKCU\Software\Classes\mediatools → video-to-mp3\start.bat），服務沒開時按一下就叫起本機服務，服務會自己開分頁
+  v3.4 (2026-07-31) - 「影片檔轉 MP3」卡片改為連結本機影音工具服務（127.0.0.1:8767，video-to-mp3/server.py），可在網頁上選檔、當場轉檔看進度、順帶做錄音檔合併；移除舊的下載 bat modal
+  v3.3 (2026-07-19) - 新增「LINE 對話整理」卡片，連結本機 line_digest_web（127.0.0.1:8766；LINE 網頁自 v0.3 起改用 8766，避免與 Skill 管理器/Poring dashboard 搶 8765）
+  v3.2 (2026-07-14) - 新增「AI 額度儀表板」(/ai-usage/) 與「Skill 管理器」(127.0.0.1:8765) 卡片；卡片上下排序改依格線欄數移動（修正多欄版面排序錯位）
+  v3.1 (2026-05-31) - 新增「影片進度表」卡片，連結至 /影片進度表/
+  v3.0 (2026-05-07) - 照片模式自動解析 FB 網址中的 set=a.XXX，轉換為相簿網址，輸入框下方顯示轉換結果
+  v2.9 (2026-05-07) - 照片模式改用 gallery-dl（yt-dlp 不支援 FB 靜態照片）；自動切換安裝指令與 bat 檔名
+  v2.8 (2026-05-07) - yt-dlp.bat 改用 TextEncoder + octet-stream 杜絕瀏覽器補 BOM；加 chcp 65001 支援中文路徑
+  v2.7 (2026-05-07) - 修正 yt-dlp.bat：移除 BOM（修正嚜濃echo問題）、% 改成 %%（修正路徑模板被吃掉）
+  v2.6 (2026-05-07) - yt-dlp modal 預設開啟即為照片模式，路徑自動填入
+  v2.5 (2026-05-07) - yt-dlp 照片模式預設填入 C:\FB抓照片\cookies.txt 與 C:\FB抓照片，不用每次手動貼
+  v2.4 (2026-05-07) - yt-dlp modal 新增「照片」模式與 cookies.txt 欄位，支援 FB 照片下載（需登入 cookies）
+  v2.3 (2026-05-07) - 新增「yt-dlp 影片下載」卡片與 modal，支援 YouTube/FB 影片與音訊下載
+  v2.2 (2026-05-05) - 新增「影片檔轉 MP3」卡片與 modal，對應 video-to-mp3 專案
+  v2.1 (2026-05-02) - 每張卡片新增編輯與上下排序按鈕，改用靜態 fallback + Firestore 覆寫避免整頁失效
+  v2.0 (2026-05-02) - 改為 Firestore 動態渲染，新增編輯/新增工具功能
+  v1.9 (2026-05-02) - transcript-training-pack / course-filing 改為固定卡片
+  v1.8 (2026-05-01) - 新增轉錄模式選擇（標準/說話者辨識）與說話者人數下拉，AssemblyAI Key 由後端保管
+  v1.7 (2026-05-01) - header 新增首頁圖示連結
+  v1.6 (2026-05-01) - Groq API Key 改由 Firebase Functions 後端保管，modal 開啟自動載入，移除手動輸入欄
+  v1.5 (2026-05-01) - 新增 API Key 輸入欄，直接寫入 bat，修正 GROQ_API_KEY 讀不到問題
+  v1.5 (2026-05-02) - 新增④目的地資料夾欄位，轉完自動搬移音檔＋逐字稿
+  v1.4 (2026-05-01) - bat 改用 Python 3.11 完整路徑，修正 No module named 'groq'
+  v1.3 (2026-05-01) - 改為資料夾輸入，批次轉換資料夾內所有音檔
+  v1.2 (2026-05-01) - 逐字稿輸出改至音檔同資料夾，步驟③改為下載 .bat 執行
+  v1.1 (2026-05-01) - 新增「音檔轉逐字稿」卡片，點擊顯示操作說明與一鍵複製指令
+  v1.0 (2026-04-29) - 初始版本，管理員入口頁，Firebase Auth 保護，含小程式分類管理入口
+-->
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>陳佳興專用</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; min-height: 100vh; }
+    .header { background: #1976D2; color: white; padding: 20px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.2); position: relative; }
+    .header h1 { font-size: 22px; font-weight: 600; }
+    .header p { font-size: 13px; opacity: 0.8; margin-top: 4px; }
+    .logout { position: absolute; right: 16px; top: 22px; background: none; border: none; color: white; font-size: 13px; cursor: pointer; opacity: 0.8; }
+    .home-link { position: absolute; left: 16px; top: 22px; color: white; font-size: 13px; opacity: 0.8; text-decoration: none; }
+    .home-link:hover { opacity: 1; }
+    .tools { width: min(100%, 1780px); margin: 0 auto; padding: 22px 24px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px 20px; align-items: stretch; }
+    .tool-card-wrap { position: relative; min-width: 0; }
+    .tool-card { min-height: 88px; height: 100%; background: white; border-radius: 12px; padding: 16px 18px 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.07); cursor: pointer; display: grid; grid-template-columns: 42px 1fr; align-items: center; gap: 14px; transition: transform 0.1s, box-shadow 0.1s; text-decoration: none; color: inherit; position: relative; }
+    .tool-card:active { transform: scale(0.98); box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+    .tool-icon { font-size: 32px; line-height: 1; flex-shrink: 0; text-align: center; }
+    .tool-main { min-width: 0; padding-bottom: 10px; }
+    .tool-name { font-size: 15px; font-weight: 600; color: #222; margin-bottom: 3px; line-height: 1.25; }
+    .tool-desc { font-size: 12px; color: #888; line-height: 1.35; }
+    .tool-created-at { position: absolute; right: 12px; bottom: 7px; color: #bbb; font-size: 10px; line-height: 1; }
+    .tool-actions { position: absolute; top: 10px; right: 10px; display: flex; gap: 6px; opacity: 0; pointer-events: none; transition: opacity 0.15s; }
+    .tool-card-wrap:hover .tool-actions, .tool-card-wrap:focus-within .tool-actions { opacity: 1; pointer-events: auto; }
+    .tool-action-btn { border: none; border-radius: 999px; width: 30px; height: 30px; background: rgba(255,255,255,0.95); box-shadow: 0 2px 8px rgba(0,0,0,0.12); font-size: 13px; cursor: pointer; color: #444; }
+    .tool-action-btn:active { transform: scale(0.96); }
+    .tool-action-btn:disabled { opacity: 0.45; cursor: default; }
+    .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 100; align-items: flex-end; justify-content: center; }
+    .modal-overlay.open { display: flex; }
+    .modal { background: white; border-radius: 20px 20px 0 0; padding: 24px 20px 36px; width: 100%; max-width: 480px; max-height: 85vh; overflow-y: auto; }
+    .modal-title { font-size: 18px; font-weight: 700; margin-bottom: 4px; }
+    .modal-sub { font-size: 13px; color: #888; margin-bottom: 20px; }
+    .modal-close { float: right; background: #eee; border: none; border-radius: 50%; width: 30px; height: 30px; font-size: 16px; cursor: pointer; line-height: 30px; text-align: center; margin-top: -4px; }
+    .step { margin-bottom: 18px; }
+    .step-label { font-size: 12px; font-weight: 600; color: #1976D2; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .cmd-box { background: #f5f5f5; border-radius: 10px; padding: 12px 14px; font-family: monospace; font-size: 13px; color: #333; word-break: break-all; position: relative; }
+    .copy-btn { display: block; width: 100%; margin-top: 8px; background: #1976D2; color: white; border: none; border-radius: 10px; padding: 10px; font-size: 14px; font-weight: 600; cursor: pointer; }
+    .copy-btn:active { background: #1565C0; }
+    .copy-btn.copied { background: #388E3C; }
+    .path-input { width: 100%; border: 1.5px solid #ddd; border-radius: 10px; padding: 10px 12px; font-size: 13px; font-family: monospace; margin-bottom: 8px; outline: none; }
+    .path-input:focus { border-color: #1976D2; }
+    .divider { border: none; border-top: 1px solid #eee; margin: 20px 0; }
+    .mode-row { display: flex; gap: 10px; }
+    .mode-btn { flex: 1; border: 1.5px solid #ddd; border-radius: 10px; padding: 10px; cursor: pointer; background: white; font-size: 13px; font-weight: 600; color: #666; transition: all 0.15s; text-align: center; }
+    .mode-btn.active { border-color: #1976D2; background: #E3F2FD; color: #1976D2; }
+    textarea.path-input { resize: vertical; line-height: 1.5; }
+    .yt-bar { height: 8px; border-radius: 999px; background: #eee; overflow: hidden; margin-top: 6px; }
+    .yt-bar > i { display: block; height: 100%; width: 0; background: #1976D2; transition: width 0.3s ease; }
+    .yt-bar.ok > i { background: #388E3C; }
+    .yt-bar.bad > i { background: #D32F2F; }
+    .yt-item { margin-bottom: 12px; }
+    .yt-head { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; }
+    .yt-head b { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .yt-head span { color: #888; white-space: nowrap; }
+    .yt-note { font-size: 12px; color: #888; margin-top: 10px; word-break: break-all; }
+    .yt-err { font-size: 12px; color: #D32F2F; margin-top: 4px; word-break: break-all; white-space: pre-wrap; }
+    .yt-out { font-size: 12px; color: #388E3C; margin-top: 3px; word-break: break-all; }
+    .speaker-select { width: 100%; border: 1.5px solid #ddd; border-radius: 10px; padding: 10px 12px; font-size: 13px; outline: none; background: white; margin-top: 10px; }
+    .speaker-select:focus { border-color: #1976D2; }
+    .field-row { margin-bottom: 14px; }
+    .field-label { font-size: 12px; font-weight: 600; color: #1976D2; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .field-input { width: 100%; border: 1.5px solid #ddd; border-radius: 10px; padding: 10px 12px; font-size: 14px; outline: none; }
+    .field-input:focus { border-color: #1976D2; }
+    .icon-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
+    .icon-btn { border: 1.5px solid #ddd; border-radius: 10px; background: white; font-size: 22px; height: 42px; cursor: pointer; }
+    .icon-btn.selected { border-color: #1976D2; background: #E3F2FD; }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+    .primary-btn, .secondary-btn { border: none; border-radius: 10px; padding: 11px 16px; font-size: 14px; font-weight: 600; cursor: pointer; }
+    .primary-btn { background: #1976D2; color: white; }
+    .secondary-btn { background: #eee; color: #333; }
+    .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: rgba(34,34,34,0.94); color: white; padding: 10px 14px; border-radius: 10px; font-size: 13px; z-index: 200; opacity: 0; pointer-events: none; transition: opacity 0.15s; }
+    .toast.show { opacity: 1; }
+    @media (hover: none) {
+      .tool-actions { opacity: 1; pointer-events: auto; }
+    }
+    @media (max-width: 1400px) {
+      .tools { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
+    @media (max-width: 960px) {
+      .tools { display: flex; flex-direction: column; gap: 12px; max-width: 600px; margin: 0 auto; padding: 20px 16px; }
+      .tool-card { min-height: 84px; padding: 16px 18px; grid-template-columns: 42px 1fr; gap: 14px; }
+    }
+  </style>
+</head>
+<body>
+<div class="header">
+  <a class="home-link" href="/admin/">🏠 首頁</a>
+  <h1>陳佳興專用</h1>
+  <button class="logout" onclick="logout()">登出</button>
+</div>
+<div class="tools" id="toolsContainer"></div>
+
+<div class="modal-overlay" id="editToolModal" onclick="closeEditToolOnOverlay(event)">
+  <div class="modal">
+    <button class="modal-close" onclick="closeEditToolModal()">✕</button>
+    <div class="modal-title">編輯卡片</div>
+    <div class="modal-sub">可修改主旨、說明與圖示，排序請用卡片右上角上下按鈕。</div>
+
+    <div class="field-row">
+      <div class="field-label">主旨</div>
+      <input class="field-input" id="editTitle" placeholder="請輸入卡片主旨" />
+    </div>
+
+    <div class="field-row">
+      <div class="field-label">說明</div>
+      <input class="field-input" id="editDesc" placeholder="請輸入卡片說明" />
+    </div>
+
+    <div class="field-row">
+      <div class="field-label">圖示</div>
+      <div class="icon-grid" id="iconGrid"></div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="secondary-btn" onclick="closeEditToolModal()">取消</button>
+      <button class="primary-btn" onclick="saveToolEdit()">儲存</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="transcribeModal" onclick="closeOnOverlay(event)">
+  <div class="modal">
+    <button class="modal-close" onclick="closeTranscribe()">✕</button>
+    <div class="modal-title">🎙️ 音檔轉逐字稿</div>
+    <div class="modal-sub">Groq Whisper Large v3・中文優化・自動壓縮大檔</div>
+
+    <div class="step">
+      <div class="step-label">① 一次性安裝</div>
+      <div class="cmd-box" id="pipCmd">pip install groq</div>
+      <button class="copy-btn" id="pipCopyBtn" onclick="copyCmd(pipCopyBtn, document.getElementById('pipCmd').textContent)">複製</button>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">② 轉錄模式</div>
+      <div class="mode-row">
+        <button class="mode-btn active" id="btnStandard" onclick="setMode('standard')">⚡ 標準<br><span style="font-size:11px;font-weight:400;color:inherit">Groq Whisper・快速</span></button>
+        <button class="mode-btn" id="btnDiarize" onclick="setMode('diarize')">👥 說話者辨識<br><span style="font-size:11px;font-weight:400;color:inherit">AssemblyAI・分辨誰在說話</span></button>
+      </div>
+      <div id="speakerWrap" style="display:none">
+        <select class="speaker-select" id="speakerCount" onchange="updateCmd()">
+          <option value="0">說話者人數：自動偵測</option>
+          <option value="2">2 人</option>
+          <option value="3">3 人</option>
+          <option value="4">4 人</option>
+          <option value="5">5 人</option>
+        </select>
+      </div>
+      <div class="cmd-box" id="keyStatus" style="color:#888;font-family:sans-serif;margin-top:10px;">載入中...</div>
+    </div>
+
+    <div class="step">
+      <div class="step-label">③ 貼上資料夾路徑（批次轉裡面所有音檔）</div>
+      <input class="path-input" id="audioPath" placeholder="C:\OBS" oninput="updateCmd()" />
+    </div>
+
+    <div class="step">
+      <div class="step-label">④ 目的地資料夾（轉完後搬移音檔＋逐字稿）</div>
+      <input class="path-input" id="destPath" placeholder="C:\OBS\轉檔完成" oninput="updateCmd()" />
+    </div>
+
+    <div class="step">
+      <div class="step-label">⑤ 下載並雙擊執行</div>
+      <div class="cmd-box" id="cmdPreview">python transcribe.py "C:\OBS" --dest "C:\OBS\轉檔完成"</div>
+      <button class="copy-btn" id="runCopyBtn" onclick="downloadBat()">⬇ 下載 transcribe.bat</button>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">⑥ 轉錄完成後，逐字稿在目的地資料夾，貼給 Claude</div>
+      <div class="cmd-box" id="claudePreview">用 transcript-training-pack 處理 C:\OBS\轉檔完成\檔名_逐字稿.md</div>
+      <button class="copy-btn" id="claudeCopyBtn" onclick="copyClaude()">複製</button>
+    </div>
+
+    <div style="font-size:12px;color:#aaa;margin-top:8px;">工具位置：C:\Users\admin\Desktop\classroom\transcribe-audio\</div>
+  </div>
+</div>
+
+<!-- 影片轉MP3 / 錄音合併已改為本機服務卡片（127.0.0.1:8767），舊的下載 bat modal 於 v3.4 移除 -->
+
+<!-- transcript-training-pack modal -->
+<div class="modal-overlay" id="transcriptPackModal" onclick="closeOnOverlay(event)">
+  <div class="modal" style="max-height:90vh">
+    <button class="modal-close" onclick="closeTranscriptPack()">✕</button>
+    <div class="modal-title">📝 逐字稿培訓包</div>
+    <div class="modal-sub">將單一逐字稿整理成培訓報告、摘要與心智圖</div>
+
+    <div class="step">
+      <div class="step-label">① 輸入來源</div>
+      <div class="cmd-box" style="font-family:sans-serif">貼上逐字稿全文、單一檔案，或含逐字稿的資料夾路徑。<br>優先找檔名含：逐字稿、transcript、Transcript</div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">② 命名候選</div>
+      <div class="cmd-box" style="font-family:sans-serif">先根據內容提出 2-4 個候選課程名或檔名，<strong>讓使用者選</strong>，再正式命名。</div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">③ 清理逐字稿</div>
+      <div class="cmd-box" style="font-family:sans-serif">讀 frontmatter、標題、來源、日期。<br>正文取 ## Transcript 後的內容。<br>清口語贅詞、重複句，不改原意。<br>保留：段落順序、時間軸、概念框架、操作流程、比較結構。</div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">④ 產出 4 份成品</div>
+      <div class="cmd-box" style="font-family:sans-serif">
+        <strong>培訓報告.md</strong>（6 章）：學習目標、關鍵概念、參與者理解度、練習與活動、資源與材料、後續培訓<br><br>
+        <strong>摘要.md</strong>（4 章）：摘要總覽、待辦項目、重點記錄、建議行動<br><br>
+        <strong>心智圖.md</strong> — 保留足夠密度，不是只剩骨架<br><br>
+        <strong>心智圖網頁版.html</strong> — Markmap HTML
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">⑤ 輸出位置</div>
+      <div class="cmd-box">C:\Users\admin\Desktop\本機MD檔\30_研究\課程逐字稿整理\YYYYMMDD_課程名\</div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">⑥ 品質檢查</div>
+      <div class="cmd-box" style="font-family:sans-serif">確認四個檔案都有產生、章節完整、比較框架和操作細節有保留。<br>不能亂補外部資訊。</div>
+    </div>
+
+    <div style="font-size:12px;color:#aaa;margin-top:16px">用途：把文章/影片逐字稿轉成摘要成品，適合學習筆記整理。</div>
+  </div>
+</div>
+
+<!-- course-filing modal -->
+<div class="modal-overlay" id="courseFilingModal" onclick="closeOnOverlay(event)">
+  <div class="modal" style="max-height:90vh">
+    <button class="modal-close" onclick="closeCourseFiling()">✕</button>
+    <div class="modal-title">📚 課程整理入 Obsidian</div>
+    <div class="modal-sub">整合筆記、逐字稿與心智圖，拆解知識點並更新日記</div>
+
+    <div class="step">
+      <div class="step-label">① 收集資訊</div>
+      <div class="cmd-box" style="font-family:sans-serif">確認：課程名稱、領域分類、筆記/逐字稿/心智圖三份資料。</div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">② 決定路徑與命名</div>
+      <div class="cmd-box">整理到：<br>30_研究/[領域]/YYYYMMDD課程名稱/</div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">③ 整理主筆記</div>
+      <div class="cmd-box" style="font-family:sans-serif">做成結構化筆記，補 frontmatter、警告 callout、心智圖 wikilink。</div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">④ 處理逐字稿</div>
+      <div class="cmd-box" style="font-family:sans-serif">一份完整逐字稿存到 30_研究。<br>另外從逐字稿抽概念，建立 <strong>40_知識庫</strong> 的原子知識筆記。</div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">⑤ 搬移心智圖</div>
+      <div class="cmd-box" style="font-family:sans-serif">把心智圖放進同一課程資料夾。</div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">⑥ 更新日記</div>
+      <div class="cmd-box" style="font-family:sans-serif">在當日日記記錄這次歸檔與新增知識點。</div>
+    </div>
+
+    <div style="font-size:12px;color:#aaa;margin-top:16px">用途：連摘要、逐字稿、心智圖、知識點、日記一起歸檔到 Obsidian 長期知識庫。</div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="courseCollectModal" onclick="closeOnOverlay(event)">
+  <div class="modal" style="max-height:90vh">
+    <button class="modal-close" onclick="closeCourseCollect()">✕</button>
+    <div class="modal-title">🗃️ 課程散檔歸檔</div>
+    <div class="modal-sub">課程散檔收齊、統一改名、搬進 D:\2026_已整理課程</div>
+
+    <div class="step">
+      <div class="step-label">怎麼用</div>
+      <div class="cmd-box">把檔案路徑貼給 Claude Code，最後打「歸檔」</div>
+      <div style="font-size:12px;color:#aaa;margin-top:6px">其中至少一個檔的檔名要帶正確課程名稱（當種子），其他檔案會自動找出來。跨磁碟、桌面上的散檔都能收。</div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">命名規格</div>
+      <div class="cmd-box">媒體檔：YYYYMMDD_主題.mp4 / .mp3 / .srt<br>文字檔：YYYYMMDD_主題_角色.副檔名</div>
+      <div style="font-size:12px;color:#aaa;margin-top:6px">
+        <strong>mp3 / mp4 / srt 共用同一檔名、不帶尾綴</strong>——播放器才會自動載入字幕。<br>
+        文字檔尾綴：_逐字稿、_摘要、_培訓報告、_心智圖、_心智圖網頁版。<br>
+        檔名一律不留空格。
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">它會自動做的事</div>
+      <div class="cmd-box" style="font-family:sans-serif">
+        ① 從最長檔名清洗出主題（剝頭尾日期、去空格）<br>
+        ② 以種子時間戳 ±12 小時擴批，找出同一場的其他檔<br>
+        ③ <strong>ffprobe 比長度</strong>配對媒體檔（時間戳分不開兩場錄影，長度可以）<br>
+        ④ 讀檔案開頭判角色（「摘要總覽」→ 摘要、「概述」→ 培訓報告）<br>
+        ⑤ 列候選清單給你確認<br>
+        ⑥ 去重後<strong>移動</strong>（不是複製）到 D 槽，寫 _整理紀錄.txt
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">安全機制</div>
+      <div class="cmd-box" style="font-family:sans-serif">
+        候選清單沒經你確認，<strong>不會動任何檔案</strong>。<br>
+        每個資料夾都有 _整理紀錄.txt（原路徑 → 新檔名 + MD5），搬錯可還原。<br>
+        一律不刪來源殘留，只列出來讓你自己決定。
+      </div>
+    </div>
+
+    <div style="font-size:12px;color:#aaa;margin-top:16px">只做收齊，不轉檔也不產內容。轉檔找 youtube-mp3、轉逐字稿找 groq-transcribe、進 Obsidian 找 course-filing。</div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="subtitleArchiveModal" onclick="closeOnOverlay(event)">
+  <div class="modal" style="max-height:90vh">
+    <button class="modal-close" onclick="closeSubtitleArchive()">✕</button>
+    <div class="modal-title">🔤 課程字幕歸檔</div>
+    <div class="modal-sub">Arctime 人工校對版字幕，換掉當初自動產的 srt</div>
+
+    <div class="step">
+      <div class="step-label">怎麼用</div>
+      <div class="cmd-box">在 Arctime 校完字幕、匯出後，跟 Claude Code 說「字幕歸檔」</div>
+      <div style="font-size:12px;color:#aaa;margin-top:6px">不用給路徑、不用說是哪一場課，它自己會比對出來。</div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">來源固定</div>
+      <div class="cmd-box">C:\Users\admin\Documents\Arctime Documents\Subtitle Export</div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">怎麼認出是哪一場課</div>
+      <div class="cmd-box" style="font-family:sans-serif">
+        Arctime 匯出檔名一律是 <code>Untitled-subtitle-時間戳.srt</code>，<strong>完全沒有資訊</strong>，靠檔名認不出來。<br><br>
+        所以改用兩項交叉比對：<br>
+        ① <strong>首句文字</strong>（srt 第一條字幕內容）<br>
+        ② <strong>末段時間軸</strong>（最後一條字幕的時間，應接近影片長度）<br><br>
+        兩項都對上才算同一場。校對後條數通常少個一兩條、結束時間早幾秒，屬正常。
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">它會做的事</div>
+      <div class="cmd-box" style="font-family:sans-serif">
+        ① 比對結果先列給你確認<br>
+        ② 刪掉該課程資料夾原有的 srt<br>
+        ③ 校對版<strong>移動</strong>進去（來源清空），改名成課程檔名<br>
+        ④ 追加寫入 _整理紀錄.txt
+      </div>
+    </div>
+
+    <div style="font-size:12px;color:#aaa;margin-top:16px">比對不上任何課程的字幕會留在來源、列出來問你，不會亂猜。</div>
+  </div>
+</div>
+
+<!-- yt-dlp modal -->
+<div class="modal-overlay" id="ytDlpModal" onclick="closeOnOverlay(event)">
+  <div class="modal">
+    <button class="modal-close" onclick="closeYtDlp()">✕</button>
+    <div class="modal-title">⬇️ 網址下載批次檔</div>
+    <div class="modal-sub">產生 YouTube 影片／MP3 或 FB 照片下載 BAT</div>
+
+    <div class="step">
+      <div class="step-label">① 一次性安裝</div>
+      <div class="cmd-box" id="ytInstallCmd">winget install mikf.gallery-dl</div>
+      <button class="copy-btn" id="ytInstallCopyBtn" onclick="copyCmd(ytInstallCopyBtn, document.getElementById('ytInstallCmd').textContent)">複製</button>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">② 下載格式</div>
+      <div class="mode-row">
+        <button class="mode-btn active" id="btnYtVideo" onclick="setYtMode('video')">🎬 影片<br><span style="font-size:11px;font-weight:400;color:inherit">MP4・最佳畫質</span></button>
+        <button class="mode-btn" id="btnYtAudio" onclick="setYtMode('audio')">🎵 僅音訊<br><span style="font-size:11px;font-weight:400;color:inherit">MP3・僅萃取聲音</span></button>
+        <button class="mode-btn" id="btnYtPhoto" onclick="setYtMode('photo')">📷 照片<br><span style="font-size:11px;font-weight:400;color:inherit">FB 照片・需 cookies</span></button>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-label">③ 貼上網址</div>
+      <input class="path-input" id="ytUrl" placeholder="https://www.facebook.com/photo/?fbid=..." oninput="updateYtDlpCmd()" />
+      <div id="ytUrlHint" style="font-size:12px;color:#1976D2;margin-top:6px;display:none;"></div>
+    </div>
+
+    <div class="step" id="ytCookiesWrap">
+      <div class="step-label">④ cookies.txt 路徑（FB 必填）</div>
+      <div class="cmd-box" style="font-family:sans-serif;font-size:12px;margin-bottom:8px;">用瀏覽器擴充「<strong>Get cookies.txt LOCALLY</strong>」開啟 Facebook 後匯出，存到本機路徑。</div>
+      <input class="path-input" id="ytCookiesPath" placeholder="C:\FB抓照片\cookies.txt" oninput="updateYtDlpCmd()" />
+    </div>
+
+    <div class="step">
+      <div class="step-label" id="ytSaveStepLabel">⑤ 儲存資料夾</div>
+      <input class="path-input" id="ytSavePath" placeholder="C:\Downloads" oninput="updateYtDlpCmd()" />
+    </div>
+
+    <div class="step">
+      <div class="step-label" id="ytRunStepLabel">⑥ 下載並雙擊執行</div>
+      <div class="cmd-box" id="ytCmdPreview">yt-dlp -f bestvideo+bestaudio/best --merge-output-format mp4 -o "C:\Downloads\%(title)s.%(ext)s" ""</div>
+      <button class="copy-btn" id="ytRunCopyBtn" onclick="downloadYtDlpBat()">⬇ 下載 yt-dlp.bat</button>
+    </div>
+
+    <div style="font-size:12px;color:#aaa;margin-top:8px;">也可複製指令直接在終端機執行</div>
+  </div>
+</div>
+
+<!-- YouTube 下載 modal（打本機影音服務 127.0.0.1:8767，v3.8） -->
+<div class="modal-overlay" id="ytDownloadModal" onclick="closeOnOverlay(event)">
+  <div class="modal" style="max-height:90vh">
+    <button class="modal-close" onclick="closeYtDownload()">✕</button>
+    <div class="modal-title">📥 YouTube 下載（本機）</div>
+    <div class="modal-sub">貼網址就下載到本機資料夾，不用自己跑指令</div>
+
+    <div class="step">
+      <div class="step-label">① 貼上網址（一行一個，可以貼多個）</div>
+      <textarea class="path-input" id="ytdUrls" rows="3" placeholder="https://www.youtube.com/watch?v=..."></textarea>
+    </div>
+
+    <div class="step">
+      <div class="step-label">② 下載格式（可單選，也可兩個都選）</div>
+      <div class="mode-row">
+        <button class="mode-btn active" id="ytdBtnMp4" onclick="toggleYtFormat('mp4')">🎬 MP4<br><span style="font-size:11px;font-weight:400;color:inherit">影片・最佳畫質</span></button>
+        <button class="mode-btn" id="ytdBtnMp3" onclick="toggleYtFormat('mp3')">🎵 MP3<br><span style="font-size:11px;font-weight:400;color:inherit">只要聲音</span></button>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-label">③ 存到哪裡</div>
+      <input class="path-input" id="ytdOut" value="C:\OBS" />
+    </div>
+
+    <button class="copy-btn" id="ytdRunBtn" onclick="startYtDownload()">⬇ 開始下載</button>
+    <div class="yt-note" id="ytdHint">需要本機影音服務在跑（127.0.0.1:8767）；沒開的話按卡片上的 🚀 啟動再回來。</div>
+
+    <div id="ytdProgress" style="display:none">
+      <hr class="divider">
+      <div class="yt-head"><b id="ytdTitle">下載中</b><span id="ytdPct">0%</span></div>
+      <div class="yt-bar" id="ytdBar"><i></i></div>
+      <div id="ytdItems" style="margin-top:14px"></div>
+      <div class="yt-note" id="ytdDone"></div>
+    </div>
+  </div>
+</div>
+
+<!-- 自動右鍵截圖 modal（說明書；實際啟動走卡片右上角 🚀 → autoshot:// 協定，v4.0） -->
+<div class="modal-overlay" id="autoShotModal" onclick="closeOnOverlay(event)">
+  <div class="modal" style="max-height:90vh">
+    <button class="modal-close" onclick="closeAutoShot()">✕</button>
+    <div class="modal-title">📸 自動翻頁截圖（本機）</div>
+    <div class="modal-sub">自動按右方向鍵翻頁、定時截圖存 PNG，適合把電子書／簡報整本抓下來</div>
+
+    <div class="step">
+      <div class="step-label">怎麼啟動</div>
+      <div class="cmd-box" style="font-family:sans-serif">按這張卡片右上角的 <strong>🚀</strong>，瀏覽器問「要開啟 AutoShot 嗎」按允許。</div>
+      <div style="font-size:12px;color:#aaa;margin-top:6px">
+        只有這台電腦有效（協定註冊在 HKCU\Software\Classes\autoshot）。手機或別台電腦點 🚀 不會有反應。<br>
+        也可以直接雙擊桌面的「自動右鍵截圖」捷徑。
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">操作</div>
+      <div class="cmd-box" style="font-family:sans-serif">
+        啟動後先跳設定選單 → 按<strong>確定</strong><br>
+        <strong>F9</strong> 開始／暫停　<strong>F10</strong> 結束　托盤圖示可隨時叫回設定
+      </div>
+      <div style="font-size:12px;color:#aaa;margin-top:6px">流程是「按 → 、等 N 秒、截圖、確認寫檔成功、才按下一次」，所以不會翻頁翻在截圖前面。</div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">設定選單四項</div>
+      <div class="cmd-box" style="font-family:sans-serif">
+        ① <strong>擷取畫面</strong>：列出每台螢幕與長寬，直式會標「（直式）」<br>
+        ② <strong>等待秒數</strong>：按 → 之後等幾秒才截圖，可自行輸入小數<br>
+        ③ <strong>張數上限</strong>：截滿自動停止，0 = 不限<br>
+        ④ <strong>截滿之後</strong>：不做任何事／關機／休眠（倒數 60 秒可取消）<br>
+        ⑤ <strong>存放位置</strong>：可打路徑或按「瀏覽…」，不存在會自動建立
+      </div>
+      <div style="font-size:12px;color:#aaa;margin-top:6px">預設存 <code>桌面\自動截圖\</code>，檔名 shot_YYYYMMDD_HHMMSS.png，同秒會自動加流水號不覆蓋。</div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">注意</div>
+      <div class="cmd-box" style="font-family:sans-serif">
+        多螢幕時<strong>選單台螢幕、別選「全部螢幕合併」</strong>——虛擬桌面一定是矩形，直式橫式混排必然帶黑邊。<br>
+        螢幕轉直式或改解析度不必回選單重選，v5.0 每張截圖前都會重讀尺寸。<br>
+        連續 3 次截圖失敗會自動停止，不會繼續空翻頁。
+      </div>
+    </div>
+
+    <div style="font-size:12px;color:#aaa;margin-top:16px">腳本在 classroom\auto-screenshot\auto-screenshot.ahk，需要 AutoHotkey v2。</div>
+  </div>
+</div>
+
+<!-- 圖檔轉 PDF modal（image-to-pdf SKILL 的網頁版，v5.0）
+     選圖必須由本機服務開系統選檔框：瀏覽器的 file input 只給檔名不給完整路徑。 -->
+<div class="modal-overlay" id="imgPdfModal" onclick="closeOnOverlay(event)">
+  <div class="modal" style="max-height:90vh">
+    <button class="modal-close" onclick="closeImgPdf()">✕</button>
+    <div class="modal-title">📄 圖片合併 PDF（本機）</div>
+    <div class="modal-sub">整個資料夾的圖 → 一份 PDF，圖檔同時重新編號歸檔</div>
+
+    <div class="step">
+      <div class="step-label">這個 Skill 會做什麼（5 個步驟）</div>
+      <div class="cmd-box" style="font-family:sans-serif;line-height:1.75">
+        <strong>① 掃描</strong>：以你選的那張圖<u>所在的資料夾</u>為範圍，掃出所有圖檔<br>
+        <span style="color:#888;font-size:12px">支援 jpg／jpeg／png／webp／bmp／tif／tiff；不進子資料夾，非圖檔不理會。<br>
+        用<strong>自然排序</strong>——1, 2, 10 排成 1、2、10，不會變成 1、10、2。</span><br><br>
+        <strong>② 問名稱</strong>：就是下面那格。資料夾和 PDF 都用這個名字<br><br>
+        <strong>③ 建資料夾</strong>：在同一層建 <code>原資料夾\你打的名稱\</code><br>
+        <span style="color:#888;font-size:12px">等 PDF 真的做出來才建，中途失敗不會留一個空殼資料夾。</span><br><br>
+        <strong>④ 合成 PDF</strong>：照①的順序合成 <code>你打的名稱.pdf</code> 放進去<br>
+        <span style="color:#888;font-size:12px">用 img2pdf 無失真嵌入，維持原解析度與長寬比，不重壓縮。<br>
+        每 50 張先做一份暫存 PDF 最後才合併，所以幾百張大圖也不會吃爆記憶體。</span><br><br>
+        <strong>⑤ 重新命名歸檔</strong>：原圖<u>搬進</u>新資料夾並依序改名<br>
+        <span style="color:#888;font-size:12px">
+        <code>名稱_0001.png</code>、<code>名稱_0002.png</code>…（4 位補零，副檔名保留）<br>
+        是<strong>搬移不是複製</strong>，跑完原本那層就只剩新資料夾。</span>
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">① 選一張圖（決定要處理哪個資料夾）</div>
+      <button class="copy-btn" style="background:#607D8B" id="ipPickBtn" onclick="pickImgPdfFile()">📂 開啟選檔視窗</button>
+      <div style="font-size:12px;color:#aaa;margin-top:6px">
+        選檔視窗會跳在<strong>跑服務的那台電腦</strong>上（不是手機）。選哪張都可以，只是用來指定資料夾。
+      </div>
+      <div id="ipScan" style="font-size:13px;color:#388E3C;margin-top:10px"></div>
+    </div>
+
+    <div class="step">
+      <div class="step-label">② 資料夾與 PDF 的名稱</div>
+      <input class="path-input" id="ipName" placeholder="例如：玩爆你的龍蝦" />
+      <div style="font-size:12px;color:#aaa">不能有 &lt; &gt; : " / \ | ? * 這些字元。</div>
+    </div>
+
+    <button class="copy-btn" id="ipRunBtn" onclick="startImgPdf()">▶ 開始轉換</button>
+    <div class="yt-note" id="ipHint">需要本機影音服務在跑（127.0.0.1:8767）；沒開的話按卡片上的 🚀 啟動再回來。</div>
+
+    <div id="ipProgress" style="display:none">
+      <hr class="divider">
+      <div class="yt-head"><b id="ipTitle">處理中</b><span id="ipPct">0%</span></div>
+      <div class="yt-bar" id="ipBar"><i></i></div>
+      <div class="yt-note" id="ipDone"></div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+
+<script>
+const TOOL_DIR = 'C:\\Users\\admin\\Desktop\\classroom\\transcribe-audio';
+const PYTHON_EXE = 'C:\\Users\\admin\\AppData\\Local\\Programs\\Python\\Python311\\python.exe';
+
+window._currentMode = 'standard';
+
+function openTranscribe() {
+  document.getElementById('transcribeModal').classList.add('open');
+  setMode('standard');
+  updateCmd();
+  window._groqKey = '';
+  window._assemblyAIKey = '';
+  document.getElementById('keyStatus').textContent = '載入中...';
+  document.getElementById('keyStatus').style.color = '#888';
+  if (window.fetchGroqKey) window.fetchGroqKey().then(() => window.updateKeyStatus && window.updateKeyStatus());
+  if (window.fetchAssemblyAIKey) window.fetchAssemblyAIKey();
+}
+
+function setMode(mode) {
+  window._currentMode = mode;
+  document.getElementById('btnStandard').classList.toggle('active', mode === 'standard');
+  document.getElementById('btnDiarize').classList.toggle('active', mode === 'diarize');
+  document.getElementById('speakerWrap').style.display = mode === 'diarize' ? 'block' : 'none';
+  document.getElementById('pipCmd').textContent = mode === 'diarize'
+    ? 'pip install groq assemblyai'
+    : 'pip install groq';
+  if (window.updateKeyStatus) window.updateKeyStatus();
+  updateCmd();
+}
+function closeTranscribe() {
+  document.getElementById('transcribeModal').classList.remove('open');
+}
+function closeOnOverlay(e) {
+  if (e.target === document.getElementById('transcribeModal')) closeTranscribe();
+  if (e.target === document.getElementById('transcriptPackModal')) closeTranscriptPack();
+  if (e.target === document.getElementById('courseFilingModal')) closeCourseFiling();
+  if (e.target === document.getElementById('courseCollectModal')) closeCourseCollect();
+  if (e.target === document.getElementById('subtitleArchiveModal')) closeSubtitleArchive();
+  if (e.target === document.getElementById('ytDlpModal')) closeYtDlp();
+  if (e.target === document.getElementById('ytDownloadModal')) closeYtDownload();
+}
+
+function updateCmd() {
+  const raw = document.getElementById('audioPath').value.trim();
+  const path = raw || 'C:\\OBS';
+  const destRaw = document.getElementById('destPath').value.trim();
+  const dest = destRaw || 'C:\\OBS\\轉檔完成';
+  const mode = window._currentMode || 'standard';
+  const speakers = document.getElementById('speakerCount')?.value || '0';
+  let cmd = `python transcribe.py "${path}" --dest "${dest}"`;
+  if (mode === 'diarize') cmd += ` --mode diarize --speakers ${speakers}`;
+  document.getElementById('cmdPreview').textContent = cmd;
+  document.getElementById('claudePreview').textContent = `用 transcript-training-pack 處理 ${dest}\\檔名_逐字稿.md`;
+}
+
+function downloadBat() {
+  const raw = document.getElementById('audioPath').value.trim();
+  const destRaw = document.getElementById('destPath').value.trim();
+  const path = raw || 'C:\\OBS';
+  const dest = destRaw || 'C:\\OBS\\轉檔完成';
+  const mode = window._currentMode || 'standard';
+  const speakers = document.getElementById('speakerCount')?.value || '0';
+
+  let keyLines = '';
+  let scriptArgs = `"${path}" --dest "${dest}"`;
+
+  if (mode === 'diarize') {
+    const aKey = window._assemblyAIKey || '';
+    if (!aKey) { alert('AssemblyAI Key 尚未載入，請稍後再試'); return; }
+    keyLines = `set "GROQ_API_KEY=${window._groqKey || ''}"\r\nset "ASSEMBLYAI_API_KEY=${aKey}"`;
+    scriptArgs += ` --mode diarize --speakers ${speakers}`;
+  } else {
+    const gKey = window._groqKey || '';
+    if (!gKey) { alert('Groq Key 尚未載入，請稍後再試'); return; }
+    keyLines = `set "GROQ_API_KEY=${gKey}"`;
+  }
+
+  const content = '﻿' + `@echo off\r\n${keyLines}\r\ncd /d "${TOOL_DIR}"\r\n"${PYTHON_EXE}" transcribe.py ${scriptArgs}\r\npause`;
+  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'transcribe.bat';
+  a.click();
+}
+
+function copyCmd(btn, text) {
+  navigator.clipboard.writeText(text);
+  btn.textContent = '已複製 ✓';
+  btn.classList.add('copied');
+  setTimeout(() => { btn.textContent = '複製'; btn.classList.remove('copied'); }, 2000);
+}
+
+function copyRun() {
+  const text = document.getElementById('cmdPreview').textContent;
+  const btn = document.getElementById('runCopyBtn');
+  navigator.clipboard.writeText(text);
+  btn.textContent = '已複製 ✓';
+  btn.classList.add('copied');
+  setTimeout(() => { btn.textContent = '複製指令'; btn.classList.remove('copied'); }, 2000);
+}
+
+function copyClaude() {
+  const text = document.getElementById('claudePreview').textContent;
+  const btn = document.getElementById('claudeCopyBtn');
+  navigator.clipboard.writeText(text);
+  btn.textContent = '已複製 ✓';
+  btn.classList.add('copied');
+  setTimeout(() => { btn.textContent = '複製'; btn.classList.remove('copied'); }, 2000);
+}
+
+// transcript-training-pack modal
+function openTranscriptPack() {
+  document.getElementById('transcriptPackModal').classList.add('open');
+}
+function closeTranscriptPack() {
+  document.getElementById('transcriptPackModal').classList.remove('open');
+}
+
+// course-filing modal
+function openCourseFiling() {
+  document.getElementById('courseFilingModal').classList.add('open');
+}
+function closeCourseFiling() {
+  document.getElementById('courseFilingModal').classList.remove('open');
+}
+
+// course-collect（歸檔）modal
+function openCourseCollect() {
+  document.getElementById('courseCollectModal').classList.add('open');
+}
+function closeCourseCollect() {
+  document.getElementById('courseCollectModal').classList.remove('open');
+}
+
+// 自動右鍵截圖 modal（說明書；啟動走卡片右上角 🚀 → autoshot://）
+function openAutoShot() {
+  document.getElementById('autoShotModal').classList.add('open');
+}
+function closeAutoShot() {
+  document.getElementById('autoShotModal').classList.remove('open');
+}
+
+// 字幕歸檔 modal
+function openSubtitleArchive() {
+  document.getElementById('subtitleArchiveModal').classList.add('open');
+}
+function closeSubtitleArchive() {
+  document.getElementById('subtitleArchiveModal').classList.remove('open');
+}
+
+// yt-dlp modal
+window._ytMode = 'video';
+
+function openYtDlp() {
+  document.getElementById('ytDlpModal').classList.add('open');
+  setYtMode('video');
+  updateYtDlpCmd();
+}
+
+function closeYtDlp() {
+  document.getElementById('ytDlpModal').classList.remove('open');
+}
+
+function setYtMode(mode) {
+  window._ytMode = mode;
+  document.getElementById('btnYtVideo').classList.toggle('active', mode === 'video');
+  document.getElementById('btnYtAudio').classList.toggle('active', mode === 'audio');
+  document.getElementById('btnYtPhoto').classList.toggle('active', mode === 'photo');
+  // 照片模式顯示 cookies 欄位，其他模式隱藏
+  document.getElementById('ytCookiesWrap').style.display = mode === 'photo' ? 'block' : 'none';
+  // 照片模式自動填入固定路徑
+  if (mode === 'photo') {
+    const cookiesEl = document.getElementById('ytCookiesPath');
+    const saveEl = document.getElementById('ytSavePath');
+    if (!cookiesEl.value) cookiesEl.value = 'C:\\FB抓照片\\cookies.txt';
+    if (!saveEl.value) saveEl.value = 'C:\\FB抓照片';
+  }
+  // 調整步驟編號
+  const isPhoto = mode === 'photo';
+  document.getElementById('ytSaveStepLabel').textContent = isPhoto ? '⑤ 儲存資料夾' : '④ 儲存資料夾';
+  document.getElementById('ytRunStepLabel').textContent = isPhoto ? '⑥ 下載並雙擊執行' : '⑤ 下載並雙擊執行';
+  document.getElementById('ytUrl').placeholder = mode === 'photo'
+    ? 'https://www.facebook.com/photo/?fbid=...'
+    : 'https://www.youtube.com/watch?v=...';
+  document.getElementById('ytInstallCmd').textContent = mode === 'photo'
+    ? 'winget install mikf.gallery-dl'
+    : 'winget install yt-dlp.yt-dlp';
+  document.getElementById('ytRunCopyBtn').textContent = mode === 'photo'
+    ? '⬇ 下載 gallery-dl.bat'
+    : '⬇ 下載 yt-dlp.bat';
+  updateYtDlpCmd();
+}
+
+function _normalizeFbUrl(raw) {
+  const setMatch = raw.match(/[?&]set=(a\.[^&]+)/);
+  if (setMatch) return `https://www.facebook.com/media/set/?set=${setMatch[1]}`;
+  return raw;
+}
+
+function _buildYtCmd(url, savePath, cookiesPath) {
+  if (window._ytMode === 'photo') {
+    const cookies = cookiesPath ? `--cookies "${cookiesPath}" ` : '';
+    return `gallery-dl ${cookies}-d "${savePath}" "${url}"`;
+  }
+  const out = `${savePath}\\%(title)s.%(ext)s`;
+  const cookies = cookiesPath ? `--cookies "${cookiesPath}" ` : '';
+  if (window._ytMode === 'audio') return `yt-dlp ${cookies}-x --audio-format mp3 -o "${out}" "${url}"`;
+  return `yt-dlp ${cookies}-f bestvideo+bestaudio/best --merge-output-format mp4 -o "${out}" "${url}"`;
+}
+
+function updateYtDlpCmd() {
+  const raw = document.getElementById('ytUrl').value.trim() || '';
+  const savePath = document.getElementById('ytSavePath').value.trim() || 'C:\\Downloads';
+  const cookiesPath = document.getElementById('ytCookiesPath').value.trim();
+  const hint = document.getElementById('ytUrlHint');
+  let url = raw;
+  if (window._ytMode === 'photo' && raw) {
+    const normalized = _normalizeFbUrl(raw);
+    if (normalized !== raw) {
+      url = normalized;
+      hint.textContent = '✓ 自動轉換為相簿網址：' + normalized;
+      hint.style.display = 'block';
+    } else {
+      hint.style.display = 'none';
+    }
+  } else {
+    hint.style.display = 'none';
+  }
+  document.getElementById('ytCmdPreview').textContent = _buildYtCmd(url, savePath, cookiesPath);
+}
+
+function downloadYtDlpBat() {
+  const rawUrl = document.getElementById('ytUrl').value.trim();
+  if (!rawUrl) { alert('請先貼上網址'); return; }
+  const url = window._ytMode === 'photo' ? _normalizeFbUrl(rawUrl) : rawUrl;
+  const savePath = document.getElementById('ytSavePath').value.trim() || 'C:\\Downloads';
+  const cookiesPath = document.getElementById('ytCookiesPath').value.trim();
+  if (window._ytMode === 'photo' && !cookiesPath) { alert('下載 FB 照片需填寫 cookies.txt 路徑'); return; }
+  const cmd = _buildYtCmd(url, savePath, cookiesPath);
+  const isPhoto = window._ytMode === 'photo';
+  const batCmd = isPhoto ? cmd : cmd.replace(/%/g, '%%');
+  const content = `@echo off\r\nchcp 65001 >nul\r\n${batCmd}\r\npause`;
+  const encoded = new TextEncoder().encode(content);
+  const blob = new Blob([encoded], { type: 'application/octet-stream' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = isPhoto ? 'gallery-dl.bat' : 'yt-dlp.bat';
+  a.click();
+}
+
+// ---------- YouTube 下載（v3.8）----------
+// 靜態頁不能自己跑 yt-dlp，也寫不進本機磁碟，所以交給影音服務（video-to-mp3/server.py）。
+// Chrome 把 127.0.0.1 當安全來源，https 頁面打得到；服務端已開 CORS。
+const YTD_API = 'http://127.0.0.1:8767';
+const ytdFormats = new Set(['mp4']);
+let ytdJobId = null;
+let ytdTimer = null;
+
+function openYtDownload() {
+  document.getElementById('ytDownloadModal').classList.add('open');
+}
+
+function closeYtDownload() {
+  document.getElementById('ytDownloadModal').classList.remove('open');
+}
+
+function toggleYtFormat(fmt) {
+  if (ytdFormats.has(fmt)) ytdFormats.delete(fmt); else ytdFormats.add(fmt);
+  const btn = document.getElementById(fmt === 'mp4' ? 'ytdBtnMp4' : 'ytdBtnMp3');
+  btn.classList.toggle('active', ytdFormats.has(fmt));
+}
+
+function ytdEsc(text) {
+  return String(text).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+
+function ytdReleaseBtn() {
+  const btn = document.getElementById('ytdRunBtn');
+  btn.disabled = false;
+  btn.textContent = '⬇ 開始下載';
+}
+
+function ytdFallbackToLocal(urls) {
+  // HTTPS→localhost fetch 被 Chrome Private Network Access 擋時，
+  // 開 8767 本機頁面的 YouTube 分頁，用 hash 預填網址
+  const hash = encodeURIComponent(urls.join('\n'));
+  window.open(`${YTD_API}/#ytdl:${hash}`, '_blank');
+  ytdReleaseBtn();
+  document.getElementById('ytdHint').innerHTML =
+    '⚠️ 瀏覽器不允許 HTTPS 頁面連本機服務，已幫你開本機頁面操作。<br>'
+    + '<small>（網址已預填，選格式後按下載即可）</small>';
+}
+
+async function startYtDownload() {
+  const urls = document.getElementById('ytdUrls').value.split('\n').map(s => s.trim()).filter(Boolean);
+  if (!urls.length) { alert('請先貼上網址'); return; }
+  if (!ytdFormats.size) { alert('請至少選 MP4 或 MP3'); return; }
+
+  const btn = document.getElementById('ytdRunBtn');
+  btn.disabled = true;
+  btn.textContent = '連線本機服務…';
+
+  // 3 秒逾時：fetch 不通就 fallback 到本機頁面
+  const ac = new AbortController();
+  const timeout = setTimeout(() => ac.abort(), 3000);
+
+  let data;
+  try {
+    const res = await fetch(`${YTD_API}/api/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: ac.signal,
+      body: JSON.stringify({
+        kind: 'ytdl',
+        urls,
+        formats: [...ytdFormats],
+        outputDir: document.getElementById('ytdOut').value.trim() || 'C:\\OBS'
+      })
+    });
+    clearTimeout(timeout);
+    data = await res.json();
+  } catch (err) {
+    clearTimeout(timeout);
+    // AbortError = 逾時，TypeError = 網路不通，都走 fallback
+    if (err.name === 'AbortError' || err.name === 'TypeError') {
+      ytdFallbackToLocal(urls);
+      return;
+    }
+    ytdReleaseBtn();
+    document.getElementById('ytdHint').innerHTML =
+      '❌ 連不上本機服務（127.0.0.1:8767）。按卡片右上角的 🚀 啟動後再試一次。';
+    return;
+  }
+
+  if (data.error) { ytdReleaseBtn(); alert(data.error); return; }
+
+  ytdJobId = data.id;
+  btn.textContent = '下載中…';
+  document.getElementById('ytdHint').textContent = '下載中可以關掉這個視窗，本機服務會繼續跑。';
+  document.getElementById('ytdProgress').style.display = 'block';
+  document.getElementById('ytdDone').textContent = '';
+  ytdTimer = setInterval(pollYtDownload, 700);
+  pollYtDownload();
+}
+
+async function pollYtDownload() {
+  if (!ytdJobId) return;
+  let data;
+  try {
+    data = await (await fetch(`${YTD_API}/api/status?id=${ytdJobId}`)).json();
+  } catch (err) {
+    return;                                   // 服務暫時沒回應就等下一輪
+  }
+
+  const finished = data.items.filter(i => i.status === 'done').length;
+  document.getElementById('ytdTitle').textContent =
+    data.done ? data.message : `下載中（${finished}/${data.items.length}）`;
+  document.getElementById('ytdPct').textContent = `${data.overall}%`;
+  document.getElementById('ytdBar').firstElementChild.style.width = data.overall + '%';
+
+  document.getElementById('ytdItems').innerHTML = data.items.map(item => {
+    const cls = item.status === 'failed' ? 'bad' : item.status === 'done' ? 'ok' : '';
+    const label = { waiting: '等待中', running: item.percent + '%', done: '完成',
+                    failed: '失敗', cancelled: '已取消' }[item.status];
+    return `<div class="yt-item">
+      <div class="yt-head"><b title="${ytdEsc(item.name)}">${ytdEsc(item.name)}</b><span>${label}</span></div>
+      <div class="yt-bar ${cls}"><i style="width:${item.status === 'done' ? 100 : item.percent}%"></i></div>
+      ${item.error ? `<div class="yt-err">${ytdEsc(item.error)}</div>` : ''}
+      ${item.output ? `<div class="yt-out">✅ ${ytdEsc(item.output)}</div>` : ''}
+    </div>`;
+  }).join('');
+
+  if (data.done) {
+    clearInterval(ytdTimer);
+    ytdJobId = null;
+    ytdReleaseBtn();
+    document.getElementById('ytdDone').textContent =
+      data.outputs.length ? `檔案存在：${data.outputDir}` : '';
+  }
+}
+
+// ---------------------------------------------------------------- 圖檔轉 PDF
+// image-to-pdf SKILL 的網頁版，實作在 classroom\video-to-mp3\server.py（同一個 8767）。
+let ipDir = '';
+let ipJobId = null;
+let ipTimer = null;
+
+window.openImgPdf = () => {
+  document.getElementById('imgPdfModal').classList.add('open');
+};
+
+window.closeImgPdf = () => {
+  document.getElementById('imgPdfModal').classList.remove('open');
+};
+
+function ipReleaseBtn() {
+  const btn = document.getElementById('ipRunBtn');
+  btn.disabled = false;
+  btn.textContent = '▶ 開始轉換';
+}
+
+function ipOffline() {
+  document.getElementById('ipHint').innerHTML =
+    '❌ 連不上本機服務（127.0.0.1:8767）。按卡片右上角的 🚀 啟動後再試一次。';
+}
+
+// 選檔視窗開在本機，使用者可能想很久，所以這裡不設逾時
+async function pickImgPdfFile() {
+  const btn = document.getElementById('ipPickBtn');
+  btn.disabled = true;
+  btn.textContent = '選檔視窗已開啟，請看桌面…';
+
+  let data;
+  try {
+    data = await (await fetch(`${YTD_API}/api/imgpdf/pick`, { method: 'POST' })).json();
+  } catch (err) {
+    ipOffline();
+    btn.disabled = false;
+    btn.textContent = '📂 開啟選檔視窗';
+    return;
+  }
+
+  btn.disabled = false;
+  btn.textContent = '📂 開啟選檔視窗';
+
+  // showToast 定義在上面那個 type=module 區塊裡，這裡（普通 script）拿不到，所以直接寫在畫面上
+  if (data.cancelled) {
+    document.getElementById('ipScan').innerHTML = '<span style="color:#888">沒有選檔案</span>';
+    return;
+  }
+  if (data.error) { alert(data.error); return; }
+
+  ipDir = data.dir;
+  const preview = data.names.map(n => ytdEsc(n)).join('、');
+  document.getElementById('ipScan').innerHTML = data.count
+    ? `✅ <b>${data.count}</b> 張圖<br><span style="color:#888;font-size:12px">${ytdEsc(data.dir)}<br>前幾張：${preview}…</span>`
+    : `⚠️ 這個資料夾裡沒有圖檔`;
+
+  const nameInput = document.getElementById('ipName');
+  if (!nameInput.value.trim() && data.suggest) nameInput.value = data.suggest;
+}
+
+async function startImgPdf() {
+  const name = document.getElementById('ipName').value.trim();
+  if (!ipDir) { alert('請先按「開啟選檔視窗」選一張圖'); return; }
+  if (!name) { alert('請先填資料夾與 PDF 的名稱'); return; }
+
+  const btn = document.getElementById('ipRunBtn');
+  btn.disabled = true;
+  btn.textContent = '連線本機服務…';
+
+  let data;
+  try {
+    const res = await fetch(`${YTD_API}/api/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind: 'imgpdf', dir: ipDir, name })
+    });
+    data = await res.json();
+  } catch (err) {
+    ipReleaseBtn();
+    ipOffline();
+    return;
+  }
+
+  if (data.error) { ipReleaseBtn(); alert(data.error); return; }
+
+  ipJobId = data.id;
+  btn.textContent = '處理中…';
+  document.getElementById('ipHint').textContent =
+    '合成中可以關掉這個視窗，本機服務會繼續跑。幾百張大圖要跑幾分鐘。';
+  document.getElementById('ipProgress').style.display = 'block';
+  document.getElementById('ipDone').textContent = '';
+  ipTimer = setInterval(pollImgPdf, 700);
+  pollImgPdf();
+}
+
+async function pollImgPdf() {
+  if (!ipJobId) return;
+  let data;
+  try {
+    data = await (await fetch(`${YTD_API}/api/status?id=${ipJobId}`)).json();
+  } catch (err) {
+    return;                                   // 服務暫時沒回應就等下一輪
+  }
+
+  // 進度條：合成 PDF 記到 50%，圖檔搬完才 100%
+  const moved = data.items.filter(i => i.status === 'done').length;
+  document.getElementById('ipTitle').textContent = data.done
+    ? data.message
+    : (moved ? `歸檔中（${moved}/${data.items.length}）` : `合成 PDF 中（${data.items.length} 張）`);
+  document.getElementById('ipPct').textContent = `${data.overall}%`;
+  document.getElementById('ipBar').firstElementChild.style.width = data.overall + '%';
+
+  if (data.done) {
+    clearInterval(ipTimer);
+    ipJobId = null;
+    ipReleaseBtn();
+    const failed = data.items.find(i => i.error);
+    document.getElementById('ipDone').innerHTML = data.outputs.length
+      ? `✅ ${ytdEsc(data.outputs[0])}`
+      : (failed ? `❌ ${ytdEsc(failed.error)}` : '');
+  }
+}
+</script>
+<script>
+const QA_TOOLS = [{"id": "ai-workbench", "title": "AI 工作台（本機）", "description": "啟動 7 個 Hermes 分頁：3 AGY／2 Claude／2 Codex", "icon": "🚀", "actionType": "link", "href": "aiwork://start", "modalFn": "", "launchHref": "aiwork://start", "order": -1}, {"id": "tool-manager", "title": "AI 工具分類管理", "description": "收藏、分類、搜尋與批次分析常用 AI 工具", "icon": "🗂️", "actionType": "link", "href": "/tool-manager/", "modalFn": "", "launchHref": "", "order": 0}, {"id": "transcribe", "title": "音檔轉逐字稿", "description": "Groq 快速轉錄；可選說話者辨識並自動壓縮大檔", "icon": "🎙️", "actionType": "modal", "href": "", "modalFn": "openTranscribe", "launchHref": "", "order": 1}, {"id": "media-tools-local", "title": "影音轉檔與錄音合併（本機）", "description": "影片轉 MP3、錄音排序合併；需先啟動 8767 服務", "icon": "🎬", "actionType": "link", "href": "http://127.0.0.1:8767/", "modalFn": "", "launchHref": "mediatools://open", "order": 2}, {"id": "transcript-pack", "title": "逐字稿培訓包", "description": "將單一逐字稿整理成培訓報告、摘要與心智圖", "icon": "📝", "actionType": "modal", "href": "", "modalFn": "openTranscriptPack", "launchHref": "", "order": 3}, {"id": "course-filing", "title": "課程整理入 Obsidian", "description": "整合筆記、逐字稿與心智圖，拆解知識點並更新日記", "icon": "📚", "actionType": "modal", "href": "", "modalFn": "openCourseFiling", "launchHref": "", "order": 4}, {"id": "yt-dlp", "title": "網址下載批次檔", "description": "產生 YouTube 影片／MP3 或 FB 照片下載 BAT", "icon": "⬇️", "actionType": "modal", "href": "", "modalFn": "openYtDlp", "launchHref": "", "order": 5}, {"id": "video-progress", "title": "影片製作進度表", "description": "依 9 個階段追蹤每支影片的狀態、進度與連結", "icon": "🎞️", "actionType": "link", "href": "/影片進度表/", "modalFn": "", "launchHref": "", "order": 6}, {"id": "ai-usage", "title": "AI 額度儀表板", "description": "查看 Claude、Codex、Antigravity 即時額度與歷史趨勢", "icon": "📊", "actionType": "link", "href": "/ai-usage/", "modalFn": "", "launchHref": "", "order": 7}, {"id": "skill-manager-local", "title": "AI Skill 管理器（本機）", "description": "管理共用 Skills；需先啟動 127.0.0.1:8768", "icon": "🛠️", "actionType": "link", "href": "http://127.0.0.1:8768/", "modalFn": "", "launchHref": "", "order": 8}, {"id": "line-digest-local", "title": "LINE 對話整理（本機）", "description": "將 LINE 群組對話整理成 Obsidian 摘要；需先啟動 8766", "icon": "💬", "actionType": "link", "href": "http://127.0.0.1:8766/", "modalFn": "", "launchHref": "", "order": 9}, {"id": "course-collect", "title": "課程散檔歸檔", "description": "收齊課程檔案、統一命名後歸檔到 D:\\2026_已整理課程", "icon": "🗃️", "actionType": "modal", "href": "", "modalFn": "openCourseCollect", "launchHref": "", "order": 10}, {"id": "subtitle-archive", "title": "課程字幕歸檔", "description": "用 Arctime 校對版 SRT 取代自動字幕並保留整理結構", "icon": "🔤", "actionType": "modal", "href": "", "modalFn": "openSubtitleArchive", "launchHref": "", "order": 11}, {"id": "yt-download", "title": "YouTube 下載（本機）", "description": "貼多個網址直接下載 MP4／MP3 到 C:\\OBS；需啟動 8767", "icon": "📥", "actionType": "modal", "href": "", "modalFn": "openYtDownload", "launchHref": "mediatools://open", "order": 12}, {"id": "auto-screenshot", "title": "自動翻頁截圖（本機）", "description": "F9 開始／暫停，自動翻頁存 PNG；按 🚀 啟動工具", "icon": "📸", "actionType": "modal", "href": "", "modalFn": "openAutoShot", "launchHref": "autoshot://start", "order": 13}, {"id": "image-to-pdf", "title": "圖片合併 PDF（本機）", "description": "整夾圖片合成 PDF 並依序編號歸檔；需啟動 8767", "icon": "📄", "actionType": "modal", "href": "", "modalFn": "openImgPdf", "launchHref": "mediatools://open", "order": 14}];
+const qaEsc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function qaRender(){
+ const c=document.getElementById('toolsContainer');
+ c.innerHTML=QA_TOOLS.map(t=>`<div class="tool-card-wrap" data-tool-id="${qaEsc(t.id)}"><div class="tool-card" role="button" tabindex="0" onclick="qaActivate('${t.id}')"><div class="tool-icon">${qaEsc(t.icon)}</div><div class="tool-main"><div class="tool-name">${qaEsc(t.title)}</div><div class="tool-desc">${qaEsc(t.description)}</div></div><div class="tool-created-at">QA：${qaEsc(t.actionType)} → ${qaEsc(t.href||t.modalFn||t.launchHref)}</div></div></div>`).join('');
+}
+function qaActivate(id){const t=QA_TOOLS.find(x=>x.id===id); if(t.actionType==='modal'&&typeof window[t.modalFn]==='function'){window[t.modalFn]();return;} document.getElementById('qaStatus').textContent=`唯讀預覽：${t.title} → ${t.href}（未實際啟動）`;}
+window.addEventListener('DOMContentLoaded',()=>{document.querySelector('.header').insertAdjacentHTML('afterend','<div id="qaStatus" style="max-width:1780px;margin:12px auto;padding:12px 18px;background:#fff3cd;border:1px solid #e0b94f;border-radius:10px;color:#5f4800">本機唯讀審閱版：連結與自訂協定不會真正啟動；Modal 可逐張點開檢查。</div>');qaRender();});
+</script>
+</body>
+</html>

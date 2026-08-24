@@ -123,6 +123,37 @@ exports.toolManagerAI = onCall({ secrets: [gptApiKey], region: 'asia-east1' }, a
   }
 });
 
+// tool-manager：抓網址的標題與描述，給 AI 當事實依據
+//
+// 為什麼要有這支：原本 AI 分類完全靠模型記憶去「推測」這個網址是什麼工具，
+// 冷門或比較新的站就直接編一段說明出來。有了真實的 title / description，
+// AI 就是在讀資料而不是回憶，說明與分類的準確度差很多。
+// 瀏覽器不能直接抓（CORS），所以放在 Function 裡代抓。
+
+const { fetchOneMeta, META_CONCURRENCY } = require('./url-meta');
+
+exports.fetchUrlMeta = onCall({ region: 'asia-east1', timeoutSeconds: 120 }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', '請先登入');
+  if (request.auth.token.email !== ALLOWED_EMAIL) throw new HttpsError('permission-denied', '無權限');
+
+  const { urls } = request.data || {};
+  if (!Array.isArray(urls) || urls.length === 0) {
+    throw new HttpsError('invalid-argument', '缺少 urls');
+  }
+  if (urls.length > 40) {
+    throw new HttpsError('invalid-argument', '一次最多 40 個網址');
+  }
+
+  // 限制併發，不然幾十個網址同時開會拖慢彼此也容易被對方擋
+  const results = [];
+  for (let i = 0; i < urls.length; i += META_CONCURRENCY) {
+    const slice = urls.slice(i, i + META_CONCURRENCY);
+    results.push(...await Promise.all(slice.map(u => fetchOneMeta(String(u)))));
+  }
+
+  return { results };
+});
+
 // 工作進度表：GPT 自動分類
 exports.classifyTask = onCall({ secrets: [gptApiKey], region: 'asia-east1' }, async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated', '請先登入');

@@ -2,8 +2,15 @@
 #SingleInstance Force
 ; =====================================================================
 ;  自動右鍵截圖.ahk
-;  版號：v5.0
+;  版號：v5.1
 ;  版更記錄：
+;    v5.1 (2026-08-08) 修正第一張圖漏截：原本 F9 一開始就先送右方向鍵，
+;                      按 F9 時螢幕上那一頁會直接被翻掉、沒有截到。
+;                      改成「開始時先截目前這一頁，之後才按右鍵翻頁」。
+;                      第一張仍等滿設定秒數才截（避免把『執行中』提示框
+;                      拍進圖裡），開始提示的顯示時間也一併壓到等待秒數
+;                      以內。暫停後按 F9 恢復不會重截同一頁（只有這一輪
+;                      還沒截過圖時才先截）。
 ;    v5.0 (2026-08-08) 修正直式／不同縮放螢幕被裁切，並新增截完後的動作：
 ;                      (1) DPI 感知改成 PER_MONITOR_AWARE_V2（舊系統自動
 ;                          退回 SetProcessDPIAware）。原本只有系統層級
@@ -106,7 +113,7 @@ ShowMenu() {
                : (CapChoice >= 1 && CapChoice <= cnt) ? CapChoice
                : prim
 
-    MenuGui := Gui("+AlwaysOnTop", "自動右鍵截圖 v5.0")
+    MenuGui := Gui("+AlwaysOnTop", "自動右鍵截圖 v5.1")
     MenuGui.SetFont("s10", "Microsoft JhengHei")
 
     MenuGui.Add("Text", , "要擷取哪個畫面？（尺寸會在每次截圖前自動重讀，轉直式不必回來重選）")
@@ -193,7 +200,7 @@ MenuConfirm(*) {
 
     ShotCount := 0                                        ; 改設定後重新計數
     MenuGui.Destroy()
-    TrayTip "自動右鍵截圖 v5.0"
+    TrayTip "自動右鍵截圖 v5.1"
           , "擷取範圍：" CapName "　" CapW "×" CapH "`n"
           . "間隔：" (WaitAfterKey / 1000) " 秒　張數：" (MaxShots > 0 ? MaxShots " 張" : "不限") "`n"
           . "截滿之後：" AfterDoneText() "`n"
@@ -242,6 +249,7 @@ RefreshCapRect() {
 ; ---------------- 主流程 ----------------
 Toggle() {
     global Running, FailCount, ShotCount, CapChoice, CapName, CapW, CapH, MaxShots, WaitAfterKey
+    local firstShot, tipMs
     if (CapChoice = 0) {
         Notify "請先在選單設定擷取畫面（托盤圖示 → 設定）", 2500
         return
@@ -252,9 +260,16 @@ Toggle() {
             ShotCount := 0                ; 上一輪已截滿，這次重新計數
         FailCount := 0
         RefreshCapRect()
+        ; 這一輪還沒截過圖 → 先截目前這一頁，不要一開始就把它翻掉
+        firstShot := (ShotCount = 0)
+        ; 提示框要在截圖前消失，否則會被拍進第一張圖裡
+        tipMs := firstShot ? Min(2000, Max(300, WaitAfterKey - 500)) : 2000
         Notify "▶ 執行中｜" CapName " " CapW "×" CapH "｜每 " (WaitAfterKey / 1000) " 秒一張｜"
-             . (MaxShots > 0 ? "目標 " MaxShots " 張（已 " ShotCount "）" : "不限張數（已 " ShotCount " 張）"), 2000
-        SetTimer Step_Press, -1          ; 立刻起跑第一輪
+             . (MaxShots > 0 ? "目標 " MaxShots " 張（已 " ShotCount "）" : "不限張數（已 " ShotCount " 張）"), tipMs
+        if firstShot
+            SetTimer Step_Capture, -WaitAfterKey   ; 第一張：不按右鍵，直接截目前畫面
+        else
+            SetTimer Step_Press, -1                ; 恢復執行：照原流程先翻頁
     } else {
         Notify "⏸ 已暫停（已截 " ShotCount " 張）", 1500
     }
@@ -306,7 +321,7 @@ Step_Capture() {
         Notify "📸 已截 " ShotCount (MaxShots > 0 ? " / " MaxShots : "") " 張", 800
         if (MaxShots > 0 && ShotCount >= MaxShots) {          ; 截滿就收工
             Running := false
-            TrayTip "自動右鍵截圖 v5.0"
+            TrayTip "自動右鍵截圖 v5.1"
                   , "已截滿 " MaxShots " 張，自動停止。`n存放：" SaveDir
             if (AfterDone != "none")
                 StartAfterDone()
@@ -333,7 +348,7 @@ StartAfterDone() {
     local btnCancel, btnNow
 
     AfterLeft := AfterCountdown
-    AfterGui := Gui("+AlwaysOnTop", "自動右鍵截圖 v5.0")
+    AfterGui := Gui("+AlwaysOnTop", "自動右鍵截圖 v5.1")
     AfterGui.SetFont("s11", "Microsoft JhengHei")
     AfterText := AfterGui.Add("Text", "w400 r3", "")
     btnCancel := AfterGui.Add("Button", "xm w190 Default", "取消（什麼都不做）")

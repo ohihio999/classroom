@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>影片進度表</title>
+  <!-- v1.0 2026-05-31：初版建立 -->
+  <!-- v1.1 2026-05-31：編輯密碼保護；進度格顯示連結與備註預覽；備註彈跳視窗 -->
+  <!-- v1.2 2026-05-31：備註格只顯示自訂標籤；點開後歷程全展開不折疊 -->
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; min-height: 100vh; }
+
+    .header { background: #1976D2; color: white; padding: 16px 20px; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 10; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+    .header h1 { font-size: 18px; font-weight: 600; }
+    .header-right { display: flex; gap: 10px; align-items: center; }
+    .mode-badge { font-size: 13px; opacity: 0.9; }
+    .hbtn { background: rgba(255,255,255,0.2); border: none; color: white; padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 14px; }
+    .hbtn:hover { background: rgba(255,255,255,0.3); }
+
+    .container { padding: 16px; overflow-x: auto; }
+    .table-wrapper { min-width: 960px; }
+
+    .col-headers { display: grid; grid-template-columns: 170px repeat(9, 1fr); gap: 6px; margin-bottom: 6px; padding: 0 4px; }
+    .col-h { text-align: center; font-size: 11px; color: #888; font-weight: 600; line-height: 1.4; }
+    .col-h-sub { font-weight: 400; color: #bbb; }
+
+    .ep-row { display: grid; grid-template-columns: 170px repeat(9, 1fr); gap: 6px; background: white; border-radius: 10px; padding: 8px; margin-bottom: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); align-items: start; }
+    .ep-title { display: flex; align-items: center; gap: 4px; padding: 4px 4px 0; }
+    .ep-name { font-size: 14px; font-weight: 600; color: #222; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ep-del { background: none; border: none; color: #ddd; cursor: pointer; font-size: 15px; padding: 2px 4px; border-radius: 4px; flex-shrink: 0; }
+    .ep-del:hover { color: #e53935; background: #fce4ec; }
+
+    /* Progress cell */
+    .prog-cell { display: flex; flex-direction: column; gap: 3px; }
+    .prog-btn { border-radius: 8px; padding: 8px 4px; text-align: center; cursor: pointer; border: none; width: 100%; transition: transform 0.1s, box-shadow 0.1s; }
+    .prog-btn:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+    .prog-btn:active { transform: translateY(0); }
+    .prog-btn.pending    { background: #f0f0f0; color: #aaa; }
+    .prog-btn.in_progress { background: #e3f2fd; color: #1565C0; border: 2px solid #1976D2; }
+    .prog-btn.completed  { background: #e8f5e9; color: #2e7d32; }
+    .p-icon { font-size: 16px; display: block; }
+    .p-lbl  { font-size: 10px; font-weight: 600; display: block; margin-top: 2px; }
+
+    /* Cell links */
+    .cell-link { display: block; font-size: 11px; color: #1565C0; text-decoration: none; background: #e3f2fd; border-radius: 4px; padding: 3px 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .cell-link:hover { background: #bbdefb; }
+
+    /* Cell notes preview */
+    .cell-notes { font-size: 11px; color: #777; background: #fafafa; border-left: 2px solid #e0e0e0; border-radius: 0 4px 4px 0; padding: 3px 6px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .cell-notes:hover { background: #f0f0f0; border-left-color: #1976D2; color: #444; }
+
+    .add-ep-btn { display: flex; align-items: center; justify-content: center; gap: 8px; background: white; border: 2px dashed #ccc; border-radius: 10px; padding: 14px; cursor: pointer; color: #888; font-size: 14px; margin-top: 4px; transition: all 0.2s; width: 100%; }
+    .add-ep-btn:hover { border-color: #1976D2; color: #1976D2; background: #e3f2fd; }
+    .loading { text-align: center; padding: 48px; color: #aaa; font-size: 15px; }
+
+    /* Modal */
+    .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 100; justify-content: center; align-items: center; padding: 16px; }
+    .overlay.open { display: flex; }
+    .modal { background: white; border-radius: 16px; padding: 24px; width: 100%; max-width: 500px; max-height: 90vh; overflow-y: auto; }
+    .modal-title    { font-size: 17px; font-weight: 700; color: #222; margin-bottom: 4px; }
+    .modal-subtitle { font-size: 13px; color: #888; margin-bottom: 20px; }
+
+    .f-group { margin-bottom: 18px; }
+    .f-label { font-size: 12px; font-weight: 600; color: #555; display: block; margin-bottom: 6px; }
+
+    /* Status selector (edit) */
+    .status-row { display: flex; gap: 8px; }
+    .s-btn { flex: 1; padding: 10px; border-radius: 8px; border: 2px solid #e0e0e0; cursor: pointer; font-size: 13px; text-align: center; background: white; transition: all 0.15s; }
+    .s-btn.sel-pending    { border-color: #999; background: #f0f0f0; color: #555; }
+    .s-btn.sel-in_progress { border-color: #1976D2; background: #e3f2fd; color: #1565C0; font-weight: 600; }
+    .s-btn.sel-completed  { border-color: #2e7d32; background: #e8f5e9; color: #2e7d32; font-weight: 600; }
+
+    /* Status badge (view) */
+    .status-badge { display: inline-block; padding: 6px 16px; border-radius: 8px; font-size: 14px; font-weight: 600; }
+    .status-badge.pending    { background: #f0f0f0; color: #888; }
+    .status-badge.in_progress { background: #e3f2fd; color: #1565C0; }
+    .status-badge.completed  { background: #e8f5e9; color: #2e7d32; }
+
+    /* Tags */
+    .tag-list { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; min-height: 10px; }
+    .tag { background: #e3f2fd; color: #1565C0; border-radius: 20px; padding: 4px 10px; font-size: 13px; display: flex; align-items: center; gap: 4px; }
+    .tag-x { cursor: pointer; color: #90caf9; font-size: 16px; line-height: 1; }
+    .tag-x:hover { color: #e53935; }
+    .tag-ro { background: #e3f2fd; color: #1565C0; border-radius: 20px; padding: 4px 10px; font-size: 13px; }
+
+    .inp-row { display: flex; gap: 6px; }
+    .inp { border: 1.5px solid #e0e0e0; border-radius: 8px; padding: 8px 10px; font-size: 14px; flex: 1; outline: none; font-family: inherit; }
+    .inp:focus { border-color: #1976D2; }
+    textarea.inp { resize: vertical; min-height: 100px; }
+
+    /* Changes full-expand view */
+    .changes-view { font-size: 14px; line-height: 1.7; color: #333; white-space: pre-wrap; word-break: break-word; background: #f9f9f9; border-radius: 8px; padding: 12px 14px; min-height: 60px; border: 1.5px solid #e0e0e0; }
+    .changes-view.empty { color: #aaa; font-style: italic; }
+    .ink-btn { background: #1976D2; color: white; border: none; border-radius: 8px; padding: 8px 14px; cursor: pointer; font-size: 13px; white-space: nowrap; }
+    .ink-btn:hover { background: #1565C0; }
+
+    /* Links (edit) */
+    .link-row { display: grid; grid-template-columns: 1fr 1.5fr auto; gap: 6px; margin-bottom: 6px; align-items: center; }
+    .link-x { background: none; border: none; color: #ccc; cursor: pointer; font-size: 18px; padding: 0 4px; }
+    .link-x:hover { color: #e53935; }
+    .add-link-btn { background: #f5f5f5; border: none; border-radius: 8px; padding: 8px 14px; cursor: pointer; font-size: 13px; color: #555; margin-top: 4px; }
+    .add-link-btn:hover { background: #e0e0e0; }
+
+    /* Links (view) */
+    .view-links { display: flex; flex-wrap: wrap; gap: 6px; }
+    .view-link { display: inline-flex; align-items: center; gap: 4px; background: #e3f2fd; color: #1565C0; border-radius: 6px; padding: 6px 12px; font-size: 13px; text-decoration: none; }
+    .view-link:hover { background: #bbdefb; }
+    .view-empty { font-size: 13px; color: #aaa; }
+
+    /* Modal actions */
+    .modal-actions { display: flex; gap: 10px; margin-top: 20px; }
+    .btn-save   { flex: 1; background: #1976D2; color: white; border: none; border-radius: 10px; padding: 13px; font-size: 15px; font-weight: 600; cursor: pointer; }
+    .btn-save:hover { background: #1565C0; }
+    .btn-cancel { background: #f5f5f5; color: #555; border: none; border-radius: 10px; padding: 13px 20px; font-size: 15px; cursor: pointer; }
+    .btn-cancel:hover { background: #e0e0e0; }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <h1>🎬 影片進度表</h1>
+  <div class="header-right">
+    <span class="mode-badge" id="modeBadge"></span>
+    <button class="hbtn" id="modeBtn"></button>
+    <button class="hbtn" id="addEpHeaderBtn">＋ 新增一集</button>
+  </div>
+</div>
+
+<div class="container">
+  <div class="table-wrapper">
+    <div class="col-headers">
+      <div class="col-h" style="text-align:left;color:#555">集數</div>
+      <div class="col-h">進度1<br><span class="col-h-sub">錄製匯出</span></div>
+      <div class="col-h">進度2<br><span class="col-h-sub">影音校對</span></div>
+      <div class="col-h">進度3<br><span class="col-h-sub">影片1剪</span></div>
+      <div class="col-h">進度4<br><span class="col-h-sub">影音校對</span></div>
+      <div class="col-h">進度5<br><span class="col-h-sub">影片2剪</span></div>
+      <div class="col-h">進度6<br><span class="col-h-sub">文字校對</span></div>
+      <div class="col-h">進度7<br><span class="col-h-sub">影片3剪</span></div>
+      <div class="col-h">進度8<br><span class="col-h-sub">影音總校對</span></div>
+      <div class="col-h">進度9<br><span class="col-h-sub">最終完成</span></div>
+    </div>
+    <div id="epList"><div class="loading">載入中…</div></div>
+    <button class="add-ep-btn" id="addEpTableBtn">＋ 新增一集</button>
+  </div>
+</div>
+
+<!-- Progress modal (view & edit) -->
+<div class="overlay" id="progOverlay">
+  <div class="modal">
+    <div class="modal-title" id="progTitle"></div>
+    <div class="modal-subtitle" id="progSub"></div>
+
+    <!-- VIEW section -->
+    <div id="viewSection">
+      <div class="f-group">
+        <span class="f-label">狀態</span>
+        <div id="viewStatus"></div>
+      </div>
+      <div class="f-group">
+        <span class="f-label">負責人</span>
+        <div class="tag-list" id="viewResp"></div>
+      </div>
+      <div class="f-group">
+        <span class="f-label">影片連結</span>
+        <div class="view-links" id="viewLinks"></div>
+      </div>
+      <div class="f-group">
+        <span class="f-label">編輯描述歷程</span>
+        <div class="changes-view" id="viewChanges"></div>
+      </div>
+    </div>
+
+    <!-- EDIT section -->
+    <div id="editSection">
+      <div class="f-group">
+        <span class="f-label">狀態</span>
+        <div class="status-row">
+          <button class="s-btn" data-v="pending"     id="sPending">○ 待完成</button>
+          <button class="s-btn" data-v="in_progress" id="sInProg">⟳ 進行中</button>
+          <button class="s-btn" data-v="completed"   id="sComp">✓ 已完成</button>
+        </div>
+      </div>
+      <div class="f-group">
+        <span class="f-label">負責人</span>
+        <div class="tag-list" id="respTags"></div>
+        <div class="inp-row">
+          <input class="inp" id="respInp" placeholder="輸入姓名">
+          <button class="ink-btn" id="respAddBtn">新增</button>
+        </div>
+      </div>
+      <div class="f-group">
+        <span class="f-label">影片連結</span>
+        <div id="linkRows"></div>
+        <button class="add-link-btn" id="addLinkBtn">＋ 新增連結</button>
+      </div>
+      <div class="f-group">
+        <span class="f-label">首頁顯示名稱</span>
+        <input class="inp" id="changesLabelInp" placeholder="例：第5集剪接記錄（留空則不顯示）">
+      </div>
+      <div class="f-group">
+        <span class="f-label">編輯描述歷程</span>
+        <textarea class="inp" id="changesInp" placeholder="說明這個進度的修改內容…"></textarea>
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn-cancel" id="progCancelBtn">關閉</button>
+      <button class="btn-save"   id="progSaveBtn">儲存</button>
+    </div>
+  </div>
+</div>
+
+<!-- Password modal -->
+<div class="overlay" id="pwOverlay">
+  <div class="modal" style="max-width:340px">
+    <div class="modal-title">🔐 輸入編輯密碼</div>
+    <div class="modal-subtitle">輸入正確密碼後可新增與修改資料</div>
+    <div class="f-group" style="margin-top:16px">
+      <input class="inp" id="pwInp" type="password" placeholder="••••" style="text-align:center;font-size:22px;letter-spacing:6px">
+      <div id="pwError" style="color:#e53935;font-size:12px;margin-top:6px;display:none;text-align:center">密碼錯誤，請重試</div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" id="pwCancelBtn">取消</button>
+      <button class="btn-save"   id="pwConfirmBtn">確認</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add episode modal -->
+<div class="overlay" id="addEpOverlay">
+  <div class="modal" style="max-width:400px">
+    <div class="modal-title">新增一集</div>
+    <div class="modal-subtitle" style="margin-bottom:16px">輸入集數名稱</div>
+    <div class="f-group">
+      <span class="f-label">集數名稱</span>
+      <input class="inp" id="newEpInp" placeholder="例：白水聖帝第6集">
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" id="addEpCancelBtn">取消</button>
+      <button class="btn-save"   id="addEpConfirmBtn">新增</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getFirestore, collection, doc, addDoc, setDoc, deleteDoc, onSnapshot, orderBy, query }
+  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBf0sHTsndFCksNlh46G_2mw9rk5zmPdc0",
+  authDomain: "my-teaching-tools-2b36c.firebaseapp.com",
+  projectId: "my-teaching-tools-2b36c",
+  storageBucket: "my-teaching-tools-2b36c.firebasestorage.app",
+  messagingSenderId: "82693897353",
+  appId: "1:82693897353:web:f667501aad05c536c09a58"
+};
+
+const db = getFirestore(initializeApp(firebaseConfig));
+
+const STEPS = [
+  { id:1, desc:"錄製匯出影片",        resp:["陳佳興"] },
+  { id:2, desc:"影音校對",            resp:["陳幼慧"] },
+  { id:3, desc:"影片1剪",             resp:["陳佳興"] },
+  { id:4, desc:"影音校對",            resp:["璟樺","怡君"] },
+  { id:5, desc:"影片2剪",             resp:["陳佳興"] },
+  { id:6, desc:"文字校對",            resp:["璟樺","怡君"] },
+  { id:7, desc:"影片3剪",             resp:["陳佳興"] },
+  { id:8, desc:"影音總校對",          resp:["陳幼慧"] },
+  { id:9, desc:"影片4剪（最終完成）",  resp:["陳佳興"] },
+];
+
+const ICON  = { pending:"○", in_progress:"⟳", completed:"✓" };
+const SLBL  = { pending:"○ 待完成", in_progress:"⟳ 進行中", completed:"✓ 已完成" };
+const EDIT_PWD = "1234";
+
+let episodes = [];
+let es = {};
+let editMode = sessionStorage.getItem("vpEdit") === "1";
+
+/* ── Mode UI ── */
+function syncModeUI() {
+  const badge  = document.getElementById("modeBadge");
+  const modeBtn = document.getElementById("modeBtn");
+  const addH   = document.getElementById("addEpHeaderBtn");
+  const addT   = document.getElementById("addEpTableBtn");
+  if (editMode) {
+    badge.textContent   = "✏️ 編輯模式";
+    modeBtn.textContent = "退出編輯";
+    addH.style.display  = addT.style.display = "";
+  } else {
+    badge.textContent   = "🔒 檢視模式";
+    modeBtn.textContent = "切換編輯";
+    addH.style.display  = addT.style.display = "none";
+  }
+  renderEpisodes();
+}
+
+document.getElementById("modeBtn").onclick = () => {
+  if (editMode) {
+    editMode = false;
+    sessionStorage.removeItem("vpEdit");
+    syncModeUI();
+  } else {
+    openPwModal();
+  }
+};
+
+/* ── Password ── */
+function openPwModal() {
+  document.getElementById("pwInp").value = "";
+  document.getElementById("pwError").style.display = "none";
+  document.getElementById("pwOverlay").classList.add("open");
+  setTimeout(() => document.getElementById("pwInp").focus(), 80);
+}
+function closePwModal() { document.getElementById("pwOverlay").classList.remove("open"); }
+
+document.getElementById("pwCancelBtn").onclick = closePwModal;
+document.getElementById("pwOverlay").addEventListener("click", e => { if (e.target.id === "pwOverlay") closePwModal(); });
+
+function confirmPw() {
+  if (document.getElementById("pwInp").value === EDIT_PWD) {
+    editMode = true;
+    sessionStorage.setItem("vpEdit", "1");
+    closePwModal();
+    syncModeUI();
+  } else {
+    document.getElementById("pwError").style.display = "block";
+    document.getElementById("pwInp").value = "";
+    document.getElementById("pwInp").focus();
+  }
+}
+document.getElementById("pwConfirmBtn").onclick = confirmPw;
+document.getElementById("pwInp").onkeydown = e => { if (e.key === "Enter") confirmPw(); };
+
+/* ── Firestore ── */
+onSnapshot(query(collection(db, "video_episodes"), orderBy("order")), snap => {
+  episodes = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  renderEpisodes();
+});
+
+function defaultProgress() {
+  const p = {};
+  STEPS.forEach(s => { p[s.id] = { status:"pending", responsible:[...s.resp], links:[], changes:"" }; });
+  return p;
+}
+
+function esc(str) {
+  return String(str).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+
+/* ── Render ── */
+function renderEpisodes() {
+  const list = document.getElementById("epList");
+  if (!episodes.length) {
+    list.innerHTML = `<div class="loading">尚無資料${editMode ? '，請按「新增一集」' : ''}</div>`;
+    return;
+  }
+  list.innerHTML = episodes.map(ep => `
+    <div class="ep-row">
+      <div class="ep-title">
+        <span class="ep-name" title="${esc(ep.title)}">${esc(ep.title)}</span>
+        ${editMode ? `<button class="ep-del" data-id="${esc(ep.id)}" title="刪除">✕</button>` : ""}
+      </div>
+      ${STEPS.map(s => {
+        const prog  = ep.progress?.[s.id] || {};
+        const st    = prog.status || "pending";
+        const links = prog.links  || [];
+        const label = prog.changesLabel || "";
+        return `<div class="prog-cell">
+          <button class="prog-btn ${st}" data-epid="${esc(ep.id)}" data-sid="${s.id}">
+            <span class="p-icon">${ICON[st]}</span>
+            <span class="p-lbl">P${s.id}</span>
+          </button>
+          ${links.map(l => `<a class="cell-link" href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.label || l.url)}</a>`).join("")}
+          ${label ? `<div class="cell-notes" data-epid="${esc(ep.id)}" data-sid="${s.id}">📝 ${esc(label)}</div>` : ""}
+        </div>`;
+      }).join("")}
+    </div>`).join("");
+}
+
+/* ── Event delegation ── */
+document.getElementById("epList").addEventListener("click", e => {
+  if (e.target.closest("a.cell-link")) return;
+  const pb = e.target.closest(".prog-btn");
+  if (pb) { openMainModal(pb.dataset.epid, +pb.dataset.sid); return; }
+  const cn = e.target.closest(".cell-notes");
+  if (cn) { openMainModal(cn.dataset.epid, +cn.dataset.sid); return; }
+  const del = e.target.closest(".ep-del");
+  if (del && editMode) {
+    const ep = episodes.find(e2 => e2.id === del.dataset.id);
+    if (ep) deleteEpisode(ep.id, ep.title);
+  }
+});
+
+/* ── Main modal ── */
+function openMainModal(epId, stepId) {
+  const ep   = episodes.find(e => e.id === epId);
+  const step = STEPS.find(s => s.id === stepId);
+  const prog = ep.progress?.[stepId] || {};
+  es = {
+    epId, stepId,
+    status:       prog.status       || "pending",
+    responsible:  [...(prog.responsible || step.resp)],
+    links:        JSON.parse(JSON.stringify(prog.links || [])),
+    changesLabel: prog.changesLabel || "",
+    changes:      prog.changes      || ""
+  };
+
+  document.getElementById("progTitle").textContent = `進度${stepId} — ${step.desc}`;
+  document.getElementById("progSub").textContent   = ep.title;
+
+  const vs = document.getElementById("viewSection");
+  const es_ = document.getElementById("editSection");
+  const saveBtn = document.getElementById("progSaveBtn");
+  const cancelBtn = document.getElementById("progCancelBtn");
+
+  if (editMode) {
+    vs.style.display  = "none";
+    es_.style.display = "";
+    saveBtn.style.display = "";
+    cancelBtn.textContent = "取消";
+    document.getElementById("changesLabelInp").value = es.changesLabel;
+    document.getElementById("changesInp").value = es.changes;
+    renderRespTags();
+    renderLinkRows();
+    setStatus(es.status);
+  } else {
+    vs.style.display  = "";
+    es_.style.display = "none";
+    saveBtn.style.display = "none";
+    cancelBtn.textContent = "關閉";
+    document.getElementById("viewStatus").innerHTML =
+      `<span class="status-badge ${es.status}">${SLBL[es.status]}</span>`;
+    document.getElementById("viewResp").innerHTML =
+      es.responsible.map(r => `<span class="tag-ro">${esc(r)}</span>`).join("");
+    document.getElementById("viewLinks").innerHTML = es.links.length
+      ? es.links.map(l => `<a class="view-link" href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.label || l.url)} ↗</a>`).join("")
+      : `<span class="view-empty">（無連結）</span>`;
+    const vc = document.getElementById("viewChanges");
+    if (es.changes) { vc.textContent = es.changes; vc.classList.remove("empty"); }
+    else            { vc.textContent = "（無）";    vc.classList.add("empty"); }
+  }
+  document.getElementById("progOverlay").classList.add("open");
+}
+
+function closeProgModal() { document.getElementById("progOverlay").classList.remove("open"); }
+document.getElementById("progCancelBtn").onclick = closeProgModal;
+document.getElementById("progOverlay").addEventListener("click", e => { if (e.target.id === "progOverlay") closeProgModal(); });
+
+/* Status */
+function setStatus(v) {
+  es.status = v;
+  document.querySelectorAll(".s-btn").forEach(btn => {
+    btn.className = "s-btn" + (btn.dataset.v === v ? " sel-" + v : "");
+  });
+}
+document.querySelectorAll(".s-btn").forEach(btn => btn.onclick = () => setStatus(btn.dataset.v));
+
+/* Responsible */
+function renderRespTags() {
+  document.getElementById("respTags").innerHTML =
+    es.responsible.map((r, i) => `<span class="tag">${esc(r)}<span class="tag-x" data-i="${i}">×</span></span>`).join("");
+}
+document.getElementById("respTags").addEventListener("click", e => {
+  const x = e.target.closest(".tag-x");
+  if (x) { es.responsible.splice(+x.dataset.i, 1); renderRespTags(); }
+});
+function addResp() {
+  const inp = document.getElementById("respInp");
+  const v = inp.value.trim();
+  if (v) { es.responsible.push(v); inp.value = ""; renderRespTags(); }
+}
+document.getElementById("respAddBtn").onclick = addResp;
+document.getElementById("respInp").onkeydown  = e => { if (e.key === "Enter") addResp(); };
+
+/* Links */
+function renderLinkRows() {
+  document.getElementById("linkRows").innerHTML = es.links.map((l, i) => `
+    <div class="link-row">
+      <input class="inp link-label" data-i="${i}" value="${esc(l.label)}" placeholder="標籤（如：進度3完成版）">
+      <input class="inp link-url"   data-i="${i}" value="${esc(l.url)}"   placeholder="https://youtu.be/…">
+      <button class="link-x" data-i="${i}">✕</button>
+    </div>`).join("");
+}
+document.getElementById("linkRows").addEventListener("click", e => {
+  const x = e.target.closest(".link-x");
+  if (x) { es.links.splice(+x.dataset.i, 1); renderLinkRows(); }
+});
+document.getElementById("addLinkBtn").onclick = () => {
+  es.links.push({ label:"", url:"" }); renderLinkRows();
+  const us = document.querySelectorAll(".link-url");
+  if (us.length) us[us.length - 1].focus();
+};
+function getLinksFromDOM() {
+  return Array.from(document.querySelectorAll(".link-row")).map(row => ({
+    label: row.querySelector(".link-label").value.trim(),
+    url:   row.querySelector(".link-url").value.trim()
+  })).filter(l => l.url);
+}
+
+/* Save */
+document.getElementById("progSaveBtn").onclick = async () => {
+  if (!editMode) return;
+  const ep = episodes.find(e => e.id === es.epId);
+  const progress = JSON.parse(JSON.stringify(ep.progress || {}));
+  progress[es.stepId] = {
+    status:       es.status,
+    responsible:  es.responsible,
+    links:        getLinksFromDOM(),
+    changesLabel: document.getElementById("changesLabelInp").value.trim(),
+    changes:      document.getElementById("changesInp").value.trim()
+  };
+  await setDoc(doc(db, "video_episodes", es.epId), { progress }, { merge: true });
+  closeProgModal();
+};
+
+/* ── Add episode ── */
+function openAddEp() {
+  if (!editMode) return;
+  document.getElementById("newEpInp").value = "";
+  document.getElementById("addEpOverlay").classList.add("open");
+  setTimeout(() => document.getElementById("newEpInp").focus(), 80);
+}
+function closeAddEp() { document.getElementById("addEpOverlay").classList.remove("open"); }
+
+document.getElementById("addEpHeaderBtn").onclick = openAddEp;
+document.getElementById("addEpTableBtn").onclick  = openAddEp;
+document.getElementById("addEpCancelBtn").onclick = closeAddEp;
+document.getElementById("addEpOverlay").addEventListener("click", e => { if (e.target.id === "addEpOverlay") closeAddEp(); });
+
+async function confirmAddEp() {
+  if (!editMode) return;
+  const title = document.getElementById("newEpInp").value.trim();
+  if (!title) return;
+  const maxOrder = episodes.length ? Math.max(...episodes.map(e => e.order || 0)) : 0;
+  await addDoc(collection(db, "video_episodes"), {
+    title, order: maxOrder + 1,
+    createdAt: new Date().toISOString(),
+    progress: defaultProgress()
+  });
+  closeAddEp();
+}
+document.getElementById("addEpConfirmBtn").onclick = confirmAddEp;
+document.getElementById("newEpInp").onkeydown = e => { if (e.key === "Enter") confirmAddEp(); };
+
+/* ── Delete episode ── */
+async function deleteEpisode(id, title) {
+  if (!editMode) return;
+  if (!confirm(`確定要刪除「${title}」？此動作無法復原。`)) return;
+  await deleteDoc(doc(db, "video_episodes", id));
+}
+
+/* ── Init ── */
+syncModeUI();
+</script>
+</body>
+</html>

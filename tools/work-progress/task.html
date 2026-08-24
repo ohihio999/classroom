@@ -5,6 +5,8 @@
   v1.3.0 — 進度條目改單行：數字.內文 時間 ✏️🗑️；數字改純文字；字體縮回 14px；按鈕垂直置中
   v1.4.0 — 狀態改為進行中/完成兩選項；移除待處理/待確認
   v1.5.0 — 新增進度時可選填時間（預設當下）；編輯進度時可修改時間
+  v1.6.0 — 移除封存功能（封存區、封存/解除封存、封存標記顯示）；返回一律回工作區
+  v1.7.0 — 完成的任務不再顯示「已逾期」，改顯示完成時間；轉成完成時記錄 completedAt
 -->
 <!DOCTYPE html>
 <html lang="zh-TW">
@@ -50,7 +52,6 @@
     .badge-inprogress { background: #E3F2FD; color: #1565C0; }
     .badge-review { background: #F3E5F5; color: #6A1B9A; }
     .badge-done { background: #E8F5E9; color: #2E7D32; }
-    .badge-archived { background: #ede7f6; color: #5e35b1; }
 
     .btn { padding: 10px 16px; border-radius: 8px; border: none; cursor: pointer; font-size: 14px; font-weight: 600; }
     .btn-primary { background: #1976D2; color: white; }
@@ -123,7 +124,6 @@
     <button class="back-btn" onclick="goBack()">←</button>
     <h1 id="headerTitle">任務詳情</h1>
     <div class="header-actions">
-      <button class="hbtn" id="archiveEntryBtn" onclick="goArchive()">🗃️ 封存區</button>
       <button class="hbtn" onclick="location.href='index.html'">📋 工作區</button>
       <button class="hbtn" onclick="location.href='/'">🏠</button>
     </div>
@@ -242,7 +242,6 @@ const STATUS_BADGE = { in_progress:'badge-inprogress', done:'badge-done' };
 
 const params = new URLSearchParams(location.search);
 const taskId = params.get('id');
-const from = params.get('from') === 'archive' ? 'archive' : 'index';
 
 let currentUser = null;
 let currentMemberKeys = [];
@@ -367,19 +366,16 @@ function renderError(message) {
 function renderTask() {
   document.title = `${task.title || '任務詳情'} — 工作進度表`;
   document.getElementById('headerTitle').textContent = task.title || '任務詳情';
-  document.getElementById('archiveEntryBtn').style.display = task.archived === true ? 'none' : '';
 
   const canEdit = canEditMain(task);
   const canProgress = canWriteProgress(task);
   const progressEntries = normalizeProgressEntries(task.progressEntries);
   const badgeClass = STATUS_BADGE[task.status] || 'badge-inprogress';
   const badgeLabel = STATUS_LABEL[task.status] || task.status || '—';
-  const archiveBadge = task.archived === true ? `<span class="badge badge-archived">已封存</span>` : '';
   const actions = [];
 
   if (canEdit) {
     actions.push(`<button class="btn btn-outline" onclick="openEdit()">編輯任務</button>`);
-    actions.push(`<button class="btn ${task.archived === true ? 'btn-secondary' : 'btn-danger'}" id="archiveToggleBtn" onclick="toggleArchive()">${task.archived === true ? '解除封存' : '封存任務'}</button>`);
   }
 
   const progressComposer = canProgress ? `
@@ -400,7 +396,7 @@ function renderTask() {
     <div class="task-head">
       <div class="task-title-wrap">
         <div class="task-title">${escHtml(task.title || '—')}</div>
-        <div class="task-subtitle">${archiveBadge} <span class="badge ${badgeClass}">${escHtml(badgeLabel)}</span></div>
+        <div class="task-subtitle"><span class="badge ${badgeClass}">${escHtml(badgeLabel)}</span></div>
       </div>
       <div class="task-actions">${actions.join('')}</div>
     </div>
@@ -408,14 +404,14 @@ function renderTask() {
     <div class="meta-bar">
       <span><span class="meta-key">負責人</span>${escHtml(task.assignee || '—')}</span>
       <span class="meta-sep">·</span>
-      <span><span class="meta-key">截止</span>${escHtml(dueDateLabel(task.dueDate))}</span>
+      <span><span class="meta-key">截止</span>${escHtml(task.status === 'done' ? (task.dueDate || '未設截止日期') : dueDateLabel(task.dueDate))}</span>
+      ${task.status === 'done' ? `<span class="meta-sep">·</span><span><span class="meta-key">完成</span>${escHtml(formatDateTime(task.completedAt || task.updatedAt))}</span>` : ''}
       <span class="meta-sep">·</span>
       <span><span class="meta-key">分類</span>${escHtml(task.category || '其他')}</span>
       <span class="meta-sep">·</span>
       <span><span class="meta-key">可見性</span>${escHtml(formatVisibility(task.visibility))}</span>
       <span class="meta-sep">·</span>
       <span><span class="meta-key">建立者</span>${escHtml(task.createdByEmail || '—')}</span>
-      ${task.archived === true ? `<span class="meta-sep">·</span><span><span class="meta-key">封存者</span>${escHtml(task.archivedByEmail || '未知')}</span>` : ''}
     </div>
 
     <div style="margin-top:16px">
@@ -449,7 +445,7 @@ function renderTask() {
     </div>
 
     <div class="meta-footer">
-      建立時間：${escHtml(formatDateTime(task.createdAt))}　更新時間：${escHtml(formatDateTime(task.updatedAt))}　封存時間：${escHtml(formatDateTime(task.archivedAt))}
+      建立時間：${escHtml(formatDateTime(task.createdAt))}　更新時間：${escHtml(formatDateTime(task.updatedAt))}
     </div>
   `;
   const ptEl = document.getElementById('progressTime');
@@ -461,11 +457,7 @@ window.goBack = function() {
     history.back();
     return;
   }
-  location.href = from === 'archive' ? 'archive.html' : 'index.html';
-};
-
-window.goArchive = function() {
-  location.href = 'archive.html';
+  location.href = 'index.html';
 };
 
 window.saveProgressEntry = async function() {
@@ -566,31 +558,6 @@ window.deleteProgressEntry = async function(entryId) {
   }
 };
 
-window.toggleArchive = async function() {
-  if (!task || !canEditMain(task)) return;
-  const btn = document.getElementById('archiveToggleBtn');
-  const nextArchived = task.archived !== true;
-  const confirmText = nextArchived ? '確定要封存這筆任務？' : '確定要解除封存這筆任務？';
-  if (!confirm(confirmText)) return;
-
-  btn.disabled = true;
-  btn.textContent = nextArchived ? '封存中…' : '解除中…';
-  try {
-    await updateDoc(doc(db, 'work_progress', task.id), {
-      archived: nextArchived,
-      archivedAt: nextArchived ? serverTimestamp() : null,
-      archivedBy: nextArchived ? currentUser.uid : null,
-      archivedByEmail: nextArchived ? (currentUser.email || '') : null,
-      updatedAt: serverTimestamp()
-    });
-    location.href = nextArchived ? 'archive.html' : 'index.html';
-  } catch (e) {
-    alert(`${nextArchived ? '封存' : '解除封存'}失敗：${e.message}`);
-    btn.disabled = false;
-    btn.textContent = nextArchived ? '封存任務' : '解除封存';
-  }
-};
-
 window.openEdit = function() {
   if (!task || !canEditMain(task)) return;
   document.getElementById('editTitle').value = task.title || '';
@@ -616,17 +583,22 @@ window.saveEdit = async function() {
   btn.disabled = true;
   btn.textContent = '儲存中…';
   try {
+    const newStatus = document.getElementById('editStatus').value;
+    const prevStatus = task.status;
     const data = {
       title: document.getElementById('editTitle').value.trim(),
       assignee: ASSIGNEE_MAP[assigneeKey] || assigneeKey,
       assigneeKey,
       dueDate: document.getElementById('editDueDate').value,
-      status: document.getElementById('editStatus').value,
+      status: newStatus,
       category: document.getElementById('editCategory').value || '其他',
       description: document.getElementById('editDescription').value.trim(),
       visibility: document.getElementById('editVisibility').value,
       updatedAt: serverTimestamp()
     };
+    // 剛轉成完成 → 記下完成時間；轉回進行中 → 清掉
+    if (newStatus === 'done' && prevStatus !== 'done') data.completedAt = serverTimestamp();
+    else if (newStatus !== 'done') data.completedAt = null;
     await updateDoc(doc(db, 'work_progress', task.id), data);
     task = { ...task, ...data };
     closeEdit();

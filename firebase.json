@@ -11,7 +11,7 @@
   "hosting": {
     "site": "my-teaching-tools-2b36c",
     "public": "tools",
-    "ignore": ["firebase.json", "**/.*", "**/node_modules/**", "TG小幫手/**", "FB文章擷取帶圖片/**", "LINE對話自動化整理含圖片/**", "**/*.py"],
+    "ignore": ["firebase.json", "**/.*", "**/node_modules/**", "**/*.bak-*", "TG小幫手/**", "FB文章擷取帶圖片/**", "LINE對話自動化整理含圖片/**", "**/*.py"],
     "headers": [
       {
         "source": "/ai-usage{,/**}",

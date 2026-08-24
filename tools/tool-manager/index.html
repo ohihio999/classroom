@@ -1,6 +1,16 @@
 <!--
-  版本：v1.5
+  版本：v2.0
   版更記錄：
+  v2.0 (2026-08-08) - AI 準確度大修 + 版面重做。
+      準確度：①新增 Cloud Function fetchUrlMeta，分析前先實際連到網址抓 title/meta description，讓 AI 依真實內容判斷而不是憑記憶編（治幻覺主因）；
+      ②網址改由前端正則抽取，不再讓 AI 產生，杜絕捏造網址；③分類新增「收錄範圍」欄位餵給 AI，不再只給名稱讓它猜邊界；
+      ④要求 AI 回 confidence 與理由，資料不足必須填 low、說明留空，不准補寫；⑤categoryId 白名單驗證，AI 捏造的 ID 會被標記而非默默寫入；
+      ⑥自動比對重複（網址正規化去 www/斜線/utm）並預設不勾；⑦分批送分析（12 筆一批）避免長清單後段品質下降；⑧預設模型 gpt-4o-mini → gpt-4.1-mini。
+      修 bug：①categoryId 對不到分類的工具原本在畫面上直接消失（資料還在 Firestore），新增「未分類」區可見並可重新指派；
+      ②分類名含單引號會讓按鈕失效（esc() 轉 &#39; 經 HTML 屬性解碼後截斷 JS 字串），全面改用 data 屬性 + 事件委派；
+      ③刪分類原本連工具一起砍且不可復原，改成必須先選「搬到其他分類／留成未分類／一併刪除」。
+      版面：側欄重做（統計、分類導覽與篩選、JSON 完整備份匯出）；批量預覽改為逐項可編輯（勾選、改名、改分類）；
+      搜尋改本地即時篩選優先、AI 語意搜尋才打 API；AI 重新分析從 confirm() 改為可逐項採用的視窗。
   v1.5 (2026-05-01) - 新增「← 首頁」返回按鈕至側欄頂部
   v1.4 (2026-04-30) - AI 功能改走 Firebase Functions，OpenAI API Key 留在後端，不再要求前端輸入
   v1.3 (2026-04-30) - 工具列新增編輯按鈕，可直接修改名稱、分類與連結
@@ -206,6 +216,87 @@
       color: #EEF1FF;
       background: rgba(124, 141, 255, 0.14);
     }
+
+    /* ===== SIDEBAR: 統計與分類導覽 ===== */
+    .side-stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 7px;
+    }
+    .stat-box {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(173, 187, 255, 0.14);
+      border-radius: var(--radius-sm);
+      padding: 9px 6px;
+      text-align: center;
+    }
+    .stat-box.warn {
+      background: rgba(208, 90, 115, 0.16);
+      border-color: rgba(232, 130, 152, 0.4);
+      cursor: pointer;
+    }
+    .stat-box.warn:hover { background: rgba(208, 90, 115, 0.26); }
+    .stat-num { font-size: 17px; font-weight: 700; color: #F4F6FF; line-height: 1.2; }
+    .stat-lbl { font-size: 10.5px; color: #9DA8CF; margin-top: 2px; letter-spacing: 0.02em; }
+
+    .side-nav-hd {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 11.5px;
+      font-weight: 600;
+      color: #9DA8CF;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .side-nav-add {
+      background: transparent;
+      border: 1px solid rgba(173, 187, 255, 0.24);
+      color: #C3CCF0;
+      border-radius: 6px;
+      width: 22px;
+      height: 22px;
+      font-size: 14px;
+      line-height: 1;
+      cursor: pointer;
+      transition: all 0.15s var(--easing);
+    }
+    .side-nav-add:hover { border-color: #8EA0FF; color: #FFF; background: rgba(124, 141, 255, 0.2); }
+
+    .side-nav { display: flex; flex-direction: column; gap: 2px; }
+    .side-nav-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 9px;
+      border-radius: var(--radius-sm);
+      font-size: 13px;
+      color: #C7CFEC;
+      cursor: pointer;
+      border: 1px solid transparent;
+      background: transparent;
+      width: 100%;
+      text-align: left;
+      transition: background 0.13s var(--easing), color 0.13s var(--easing);
+    }
+    .side-nav-item:hover { background: rgba(255, 255, 255, 0.07); color: #F2F5FF; }
+    .side-nav-item.active {
+      background: rgba(124, 141, 255, 0.22);
+      border-color: rgba(160, 173, 255, 0.4);
+      color: #FFFFFF;
+      font-weight: 600;
+    }
+    .side-nav-item.orphan { color: #F0A8B8; }
+    .side-nav-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .side-nav-count {
+      font-size: 11.5px;
+      color: #9DA8CF;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 999px;
+      padding: 1px 7px;
+      flex-shrink: 0;
+    }
+    .side-nav-item.active .side-nav-count { background: rgba(255, 255, 255, 0.22); color: #FFF; }
 
     /* ===== MAIN ===== */
     .main {
@@ -576,6 +667,28 @@
       text-transform: uppercase;
       margin-bottom: 5px;
     }
+    .fhint {
+      font-size: 11.5px;
+      color: var(--text-3);
+      margin-top: 5px;
+      line-height: 1.55;
+    }
+
+    /* AI 建議的逐項比對：左邊現值、右邊建議，各自可勾選 */
+    .diff-row {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 9px;
+      align-items: start;
+      padding: 11px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .diff-row:last-of-type { border-bottom: none; }
+    .diff-row input[type=checkbox] { margin-top: 3px; width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
+    .diff-k { font-size: 11px; font-weight: 600; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.04em; }
+    .diff-old { font-size: 12.5px; color: var(--text-3); text-decoration: line-through; margin-top: 2px; word-break: break-word; }
+    .diff-new { font-size: 13px; color: var(--text); font-weight: 500; margin-top: 2px; word-break: break-word; }
+    .diff-same { font-size: 12px; color: var(--text-3); margin-top: 2px; }
 
     .modal-hint {
       font-size: 13px;
@@ -611,6 +724,78 @@
     .bp-name { font-weight: 600; color: var(--text); margin-bottom: 2px; }
     .bp-url { color: var(--text-3); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .bp-cat { color: var(--accent); font-size: 11px; font-weight: 600; margin-top: 3px; }
+
+    /* 可編輯的預覽列：每一筆都能改分類、能取消勾選 */
+    .batch-preview { max-height: 340px; }
+    .bp-row { display: grid; grid-template-columns: auto 1fr; gap: 9px; align-items: start; }
+    .bp-chk { margin-top: 3px; width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
+    .bp-item.off { opacity: 0.45; background: #FAFAFC; }
+    .bp-item.dupe { background: #FFF7F9; }
+    .bp-name-in {
+      width: 100%; border: 1px solid transparent; background: transparent;
+      font-size: 12.5px; font-weight: 600; color: var(--text);
+      padding: 3px 5px; border-radius: 5px; font-family: inherit; outline: none;
+    }
+    .bp-name-in:hover { border-color: var(--border); background: #FFF; }
+    .bp-name-in:focus { border-color: var(--accent); background: #FFF; }
+    .bp-cat-sel {
+      margin-top: 4px; width: 100%; font-size: 11.5px; padding: 4px 6px;
+      border: 1px solid var(--border); border-radius: 5px; background: #FFF;
+      color: var(--text); font-family: inherit; outline: none;
+    }
+    .bp-cat-sel:focus { border-color: var(--accent); }
+    .bp-cat-sel.unset { border-color: var(--danger); color: var(--danger); }
+    .bp-desc { color: var(--text-2); font-size: 11.5px; margin-top: 4px; line-height: 1.5; }
+    .bp-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+    .bp-tag {
+      font-size: 10.5px; font-weight: 600; padding: 1px 6px;
+      border-radius: 999px; border: 1px solid transparent;
+    }
+    .bp-tag.hi { background: #E4F6EE; color: #1F7A57; }
+    .bp-tag.mid { background: #FFF4E0; color: #9A6209; }
+    .bp-tag.lo { background: #FDE9EE; color: #A93A54; }
+    .bp-tag.src { background: var(--surface-soft); color: var(--text-2); }
+    .bp-tag.dupe { background: #FDE9EE; color: #A93A54; }
+
+    .batch-hd { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+    .batch-sel { font-size: 11.5px; color: var(--text-2); }
+
+    .chk-line {
+      display: flex; align-items: flex-start; gap: 8px; cursor: pointer;
+      font-size: 12.5px; color: var(--text-2); margin: 10px 0 14px;
+    }
+    .chk-line input { margin-top: 2px; width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
+    .chk-line small { display: block; color: var(--text-3); font-size: 11px; margin-top: 1px; }
+
+    /* 進度列（抓取／分批分析） */
+    .prog-wrap { margin-top: 10px; }
+    .prog-bar { height: 6px; border-radius: 999px; background: var(--surface-soft); overflow: hidden; }
+    .prog-bar i { display: block; height: 100%; background: var(--accent); width: 0; transition: width 0.25s var(--easing); }
+    .prog-txt { font-size: 11.5px; color: var(--text-2); margin-top: 5px; }
+
+    /* ===== 篩選列 ===== */
+    .filter-bar {
+      display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+      margin-bottom: 14px; font-size: 12.5px; color: var(--text-2);
+    }
+    .filter-chip {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: var(--accent-tint); color: var(--accent);
+      border: 1px solid var(--accent-soft); border-radius: 999px;
+      padding: 4px 10px; font-weight: 600;
+    }
+    .filter-chip button {
+      border: none; background: transparent; color: inherit;
+      cursor: pointer; font-size: 13px; line-height: 1; padding: 0;
+    }
+
+    /* ===== 未分類區 ===== */
+    .cat-card.orphan .cat-hd { background: linear-gradient(135deg, #D05A73, #B84B63); }
+    .orphan-note {
+      font-size: 12px; color: var(--text-2); background: #FFF7F9;
+      border: 1px solid #F3D4DC; border-radius: var(--radius-sm);
+      padding: 9px 12px; margin-bottom: 10px; line-height: 1.6;
+    }
 
     /* ===== HISTORY ===== */
     .hist-item {
@@ -942,16 +1127,27 @@
 
   <a href="/admin/" style="display:flex;align-items:center;gap:6px;color:#9DA8CF;font-size:12.5px;font-weight:600;text-decoration:none;padding:4px 2px;opacity:0.8;transition:opacity 0.15s" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.8'">← 首頁</a>
 
+  <div class="side-stats" id="sideStats"></div>
+
   <button class="btn-save" onclick="openAddEntry(true)">＋ 新增工具</button>
+  <button class="btn-ai" onclick="openModal('modalBatch');closeDrawerIfMobile()">✨ AI 批量解析</button>
 
   <hr class="divider" />
 
-  <button class="btn-ai" onclick="openModal('modalBatch');toggleDrawer()">✨ AI 批量解析</button>
-
-  <div class="btn-row">
-    <button class="btn-outline" onclick="exportHTML()">HTML 匯出</button>
-    <button class="btn-outline" onclick="exportMD()">MD 匯出</button>
+  <div class="side-nav-hd">
+    <span>分類導覽</span>
+    <button class="side-nav-add" onclick="openModal('modalAddCat')" title="新增分類">＋</button>
   </div>
+  <div class="side-nav" id="sideNav"></div>
+
+  <hr class="divider" />
+
+  <div class="side-nav-hd"><span>匯出與備份</span></div>
+  <div class="btn-row">
+    <button class="btn-outline" onclick="exportHTML()">HTML</button>
+    <button class="btn-outline" onclick="exportMD()">MD</button>
+  </div>
+  <button class="btn-outline" onclick="exportJSON()" title="完整資料備份，可用來復原">JSON 備份</button>
 </div>
 
 <!-- ===== MAIN ===== -->
@@ -969,11 +1165,15 @@
   <div class="search-wrap">
     <span class="search-icon">🔍</span>
     <input class="search-input" id="searchInput" type="text"
-      placeholder="用自然語言搜尋，例如：找算命占卜的工具、影片字幕相關..."
+      placeholder="打字即時篩選名稱與說明；要用語意找（例如「算命占卜的工具」）就按右邊 AI 搜尋"
+      oninput="applyLocalFilter()"
       onkeydown="if(event.key==='Enter') doSearch()" />
     <button class="btn-clear-search" id="clearSearchBtn" onclick="clearSearch()" style="display:none">✕ 清除</button>
     <button class="btn-search" id="searchBtn" onclick="doSearch()">✨ AI 搜尋</button>
   </div>
+
+  <!-- 目前的篩選狀態（本地關鍵字／側欄分類），有作用中才顯示 -->
+  <div class="filter-bar" id="filterBar" style="display:none"></div>
 
   <!-- Search Results (hidden by default) -->
   <div id="searchResults" style="display:none">
@@ -1033,7 +1233,65 @@
       <div class="flabel">圖示 Emoji</div>
       <input class="fi" id="newCatIcon" placeholder="例：💡" maxlength="4" />
     </div>
+    <div class="field">
+      <div class="flabel">這個分類收什麼？（給 AI 看的）</div>
+      <textarea class="fi" id="newCatDesc" style="min-height:64px"
+        placeholder="例：文字轉圖片、圖片編修、去背放大這類影像生成工具。純影片剪輯不算。"></textarea>
+      <div class="fhint">AI 分類時只看得到分類名稱，寫一句話講清楚邊界（尤其是「不包含什麼」），分類會準很多。</div>
+    </div>
     <button class="btn-save" onclick="addCategory()">建立分類</button>
+  </div>
+</div>
+
+<!-- ===== MODAL: Edit Category ===== -->
+<div class="overlay" id="modalEditCat">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('modalEditCat')">✕</button>
+    <div class="modal-title">編輯分類</div>
+    <input type="hidden" id="editCatId" />
+    <div class="field">
+      <div class="flabel">分類名稱</div>
+      <input class="fi" id="editCatName" />
+    </div>
+    <div class="field">
+      <div class="flabel">圖示 Emoji</div>
+      <input class="fi" id="editCatIcon" maxlength="4" />
+    </div>
+    <div class="field">
+      <div class="flabel">這個分類收什麼？（給 AI 看的）</div>
+      <textarea class="fi" id="editCatDesc" style="min-height:64px"></textarea>
+      <div class="fhint">寫清楚邊界與「不包含什麼」，AI 分類會準很多。</div>
+    </div>
+    <button class="btn-save" onclick="saveEditCat()">儲存</button>
+  </div>
+</div>
+
+<!-- ===== MODAL: Delete Category ===== -->
+<!-- 原本刪分類直接把底下工具一起砍掉且無法復原，改成一定要先決定工具去哪 -->
+<div class="overlay" id="modalDelCat">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('modalDelCat')">✕</button>
+    <div class="modal-title">刪除分類</div>
+    <input type="hidden" id="delCatId" />
+    <div class="modal-hint" id="delCatHint"></div>
+
+    <div id="delCatMoveWrap">
+      <div class="field">
+        <div class="flabel">這些工具要怎麼處理？</div>
+        <select class="fi" id="delCatAction" onchange="onDelCatActionChange()">
+          <option value="move">搬到其他分類（建議）</option>
+          <option value="orphan">留著，變成未分類</option>
+          <option value="delete">連同工具一起刪除</option>
+        </select>
+      </div>
+      <div class="field" id="delCatTargetWrap">
+        <div class="flabel">搬到哪個分類</div>
+        <select class="fi" id="delCatTarget"></select>
+      </div>
+    </div>
+
+    <button class="btn-save" style="background:linear-gradient(135deg,#D05A73,#B84B63);box-shadow:0 10px 20px rgba(208,90,115,0.26)"
+      onclick="confirmDelCat()">確定刪除分類</button>
   </div>
 </div>
 
@@ -1105,7 +1363,9 @@
       </select>
     </div>
     <div class="modal-hint" style="margin-top:6px;font-size:12px">
-      OpenAI API Key 由後端 Firebase Functions 保管；這裡只會記住你選的模型。
+      OpenAI API Key 由後端 Firebase Functions 保管；這裡只會記住你選的模型。<br>
+      預設是 <code>gpt-4.1-mini</code>。分類老是分錯的話換成 <code>gpt-4.1</code> 或 GPT-5 系列會更準，
+      但真正影響準確度最大的是<strong>把每個分類的「收錄範圍」寫清楚</strong>（分類卡片上的 ✎）。
     </div>
     <button class="btn-save" onclick="saveSettings()">儲存設定</button>
     <div id="settingsMsg"></div>
@@ -1118,7 +1378,7 @@
     <button class="modal-close" onclick="closeModal('modalBatch')">✕</button>
     <div class="modal-title">✨ AI 批量解析</div>
     <div class="modal-hint">
-      貼上工具清單，GPT-4o-mini 會自動解析名稱、網址，並根據你的分類自動歸類。<br>
+      貼上工具清單，系統會<strong>先實際連到每個網址</strong>抓標題與描述，再讓 AI 依據抓到的真實內容分類。<br>
       支援格式：<code>工具名稱 URL</code>、<code>[名稱](URL)</code>、或純文字描述。
     </div>
 
@@ -1128,14 +1388,35 @@
         placeholder="例：&#10;紫薇斗數 https://example.com&#10;[AI占卜](https://example2.com)&#10;TXTOS（Semantic OS）：https://txtos.com"></textarea>
     </div>
 
+    <label class="chk-line">
+      <input type="checkbox" id="batchFetch" checked />
+      <span>先抓取網頁內容再分析<small>關掉會快很多，但說明容易是 AI 編的</small></span>
+    </label>
+
     <button class="btn-save" id="batchBtn" onclick="runBatch()">🤖 AI 自動分析</button>
     <div id="batchStatus"></div>
 
     <div id="batchPreviewWrap" style="display:none;margin-top:18px">
-      <div class="flabel" style="margin-bottom:8px">解析結果預覽</div>
+      <div class="batch-hd">
+        <span class="flabel" style="margin:0">解析結果（可逐項修改）</span>
+        <span class="batch-sel" id="batchSelCount"></span>
+      </div>
       <div id="batchPreviewList" class="batch-preview"></div>
-      <button class="btn-save" style="margin-top:14px" onclick="confirmBatch()">確認匯入</button>
+      <button class="btn-save" style="margin-top:14px" id="batchConfirmBtn" onclick="confirmBatch()">確認匯入</button>
     </div>
+  </div>
+</div>
+
+<!-- ===== MODAL: AI 重新分析結果 =====
+     取代原本的 confirm()：多行擠成一團看不清，而且只能全採用或全不採用。 -->
+<div class="overlay" id="modalReclass">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('modalReclass')">✕</button>
+    <div class="modal-title">🤖 AI 重新分析</div>
+    <div class="modal-hint" id="reclassHint"></div>
+    <input type="hidden" id="reclassToolId" />
+    <div id="reclassDiff"></div>
+    <button class="btn-save" style="margin-top:16px" onclick="applyReclass()">套用勾選的項目</button>
   </div>
 </div>
 
@@ -1166,6 +1447,8 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const functions = getFunctions(app, 'asia-east1');
 const toolManagerAIFn = httpsCallable(functions, 'toolManagerAI');
+// 抓網址的 title / meta description，給 AI 當事實依據（瀏覽器直接抓會被 CORS 擋）
+const fetchUrlMetaFn = httpsCallable(functions, 'fetchUrlMeta');
 
 const ALLOWED_EMAIL = 'ohihio@gmail.com';
 
@@ -1185,11 +1468,18 @@ let history = [];
 let collapsed = new Set();
 let openDescs = {};
 let pendingBatch = [];
+let reclassSuggestion = null;
+
+let localFilter = '';          // 搜尋框的即時關鍵字篩選
+let activeCat = '';            // 側欄選中的分類；'' = 全部，ORPHAN_ID = 未分類
 
 const COLORS = ['c1','c2','c3','c4','c5','c6','c7'];
+const ORPHAN_ID = '__orphan__';
+const BATCH_SIZE = 12;         // 一次丟太多，後段品質會掉，分批送
 
 function getSelectedModel() {
-  return localStorage.getItem('openai_model') || 'gpt-4o-mini';
+  // 原本預設 gpt-4o-mini，是選單裡最弱的一個，分類品質差很多
+  return localStorage.getItem('openai_model') || 'gpt-4.1-mini';
 }
 
 async function callOpenAIJSON(prompt) {
@@ -1200,6 +1490,55 @@ async function callOpenAIJSON(prompt) {
   } catch (error) {
     throw new Error(error.message || 'AI 呼叫失敗');
   }
+}
+
+// ===== 共用工具 =====
+
+// 去重用的正規化：把同一個網站的不同寫法收斂成同一把 key
+// （大小寫、www、結尾斜線、utm 追蹤參數、http/https 都不該算成不同工具）
+function normalizeUrl(raw) {
+  const text = String(raw || '').trim();
+  if (!text) return '';
+  try {
+    const url = new URL(/^https?:\/\//i.test(text) ? text : `https://${text}`);
+    const host = url.hostname.toLowerCase().replace(/^www\./, '');
+    const path = url.pathname.replace(/\/+$/, '');
+    const params = new URLSearchParams(url.search);
+    [...params.keys()].forEach(k => {
+      if (/^(utm_|fbclid|gclid|ref|source)/i.test(k)) params.delete(k);
+    });
+    const query = params.toString();
+    return `${host}${path}${query ? '?' + query : ''}`;
+  } catch {
+    return text.toLowerCase();
+  }
+}
+
+function findDuplicate(url, name) {
+  const key = normalizeUrl(url);
+  if (key) {
+    const byUrl = tools.find(t => normalizeUrl(t.url) === key);
+    if (byUrl) return byUrl;
+  }
+  const cleanName = String(name || '').trim().toLowerCase();
+  if (!cleanName) return null;
+  return tools.find(t => String(t.name || '').trim().toLowerCase() === cleanName) || null;
+}
+
+function validCategoryId(id) {
+  return categories.some(c => c.id === id) ? id : '';
+}
+
+// 工具目前實際看得到的分類；categoryId 壞掉或分類被刪就算未分類
+function isOrphan(tool) {
+  return !categories.some(c => c.id === tool.categoryId);
+}
+
+function matchesFilter(tool) {
+  if (!localFilter) return true;
+  const needle = localFilter.toLowerCase();
+  return [tool.name, tool.url, tool.description]
+    .some(field => String(field || '').toLowerCase().includes(needle));
 }
 
 // ===== Init =====
@@ -1236,55 +1575,167 @@ function init() {
 }
 
 // ===== Render =====
+//
+// 所有按鈕都用 data-act / data-id 由事件委派處理，不再把名稱塞進 onclick 字串。
+// 舊寫法 onclick="delCat('${esc(name)}')" 遇到名稱含單引號會壞：esc() 把 ' 轉成
+// &#39;，HTML 屬性解析時又還原成 '，JS 字串就被截斷了。
+
+function renderToolRow(tool) {
+  const dup = '';
+  return `
+    <div class="tool-row">
+      <a class="tool-name" href="${esc(tool.url)}" target="_blank" rel="noopener">${esc(tool.name)}</a>
+      <div class="tool-acts">
+        <button class="btn-del-tool" ${tool.description
+          ? `data-act="desc" data-id="${esc(tool.id)}" title="說明"`
+          : 'type="button" title="無說明" disabled'}>${tool.description ? (openDescs[tool.id] ? '📝' : '📄') : '📄'}</button>
+        <button class="btn-del-tool" data-act="edit" data-id="${esc(tool.id)}" title="編輯">✏️</button>
+        <button class="btn-del-tool" data-act="reclass" data-id="${esc(tool.id)}" title="AI 重新分析">🤖</button>
+        <button class="btn-del-tool" data-act="delTool" data-id="${esc(tool.id)}" title="刪除">🗑</button>
+      </div>
+    </div>
+    ${tool.description ? `
+      <div class="desc-panel ${openDescs[tool.id] ? 'open' : ''}">
+        <div class="desc-item">
+          <div class="desc-item-hd">${esc(tool.name)}</div>
+          <div class="desc-content">${renderMd(tool.description)}</div>
+        </div>
+      </div>` : ''}${dup}`;
+}
+
 function render() {
   const list = document.getElementById('catList');
   const empty = document.getElementById('emptyState');
 
-  if (categories.length === 0) {
+  renderSidebar();
+  renderFilterBar();
+
+  const orphans = tools.filter(isOrphan);
+
+  if (categories.length === 0 && orphans.length === 0) {
     list.innerHTML = '';
     empty.style.display = 'block';
     return;
   }
   empty.style.display = 'none';
 
-  list.innerHTML = categories.map((cat, idx) => {
-    const catTools = tools.filter(t => t.categoryId === cat.id);
+  const visibleCats = categories.filter(c => !activeCat || activeCat === c.id);
+  let html = visibleCats.map((cat, idx) => {
+    const catTools = tools.filter(t => t.categoryId === cat.id && matchesFilter(t));
+    // 篩選中的空分類不用佔位置
+    if (localFilter && catTools.length === 0) return '';
+
     const colorClass = cat.color || COLORS[idx % COLORS.length];
-    const isOpen = !collapsed.has(cat.id);
+    const isOpen = !collapsed.has(cat.id) || !!localFilter;
 
     return `
-    <div class="cat-card">
-      <div class="cat-hd ${colorClass}" onclick="toggleCat('${cat.id}')">
+    <div class="cat-card" id="cat-${esc(cat.id)}">
+      <div class="cat-hd ${colorClass}" data-act="toggleCat" data-id="${esc(cat.id)}">
         <span class="cat-arrow ${isOpen ? 'open' : ''}">▶</span>
         <span class="cat-icon">${esc(cat.icon || '📁')}</span>
         <span class="cat-name">${esc(cat.name)}</span>
         <span class="cat-count">${catTools.length}</span>
-        <button class="btn-del-cat" onclick="event.stopPropagation();delCat('${cat.id}','${esc(cat.name)}')" title="刪除分類">✕</button>
+        <button class="btn-del-cat" data-act="editCat" data-id="${esc(cat.id)}" title="編輯分類">✎</button>
+        <button class="btn-del-cat" data-act="delCat" data-id="${esc(cat.id)}" title="刪除分類">✕</button>
       </div>
       <div class="cat-body ${isOpen ? 'open' : ''}">
         ${catTools.length === 0
           ? '<div style="color:var(--text-3);font-size:12.5px;padding:10px 0">尚無工具</div>'
-          : catTools.map(t => `
-            <div class="tool-row">
-              <a class="tool-name" href="${esc(t.url)}" target="_blank" rel="noopener">${esc(t.name)}</a>
-              <div class="tool-acts">
-                <button class="btn-del-tool" ${t.description ? `onclick="toggleDesc('${t.id}')" title="說明"` : 'type="button" title="無說明" disabled'}>${t.description ? (openDescs[t.id] ? '📝' : '📄') : '📄'}</button>
-                <button class="btn-del-tool" onclick="openEditTool('${t.id}')" title="編輯">✏️</button>
-                <button class="btn-del-tool" onclick="aiReclassify('${t.id}','${esc(t.name)}','${esc(t.url)}')" title="AI 重新分析">🤖</button>
-                <button class="btn-del-tool" onclick="delTool('${t.id}','${esc(t.name)}')" title="刪除">🗑</button>
-              </div>
-            </div>
-            ${t.description ? `
-              <div class="desc-panel ${openDescs[t.id] ? 'open' : ''}">
-              <div class="desc-item">
-                <div class="desc-item-hd">${esc(t.name)}</div>
-                <div class="desc-content">${renderMd(t.description)}</div>
-              </div>
-              </div>` : ''}`).join('')}
+          : catTools.map(renderToolRow).join('')}
       </div>
     </div>`;
   }).join('');
+
+  // 未分類：分類 ID 對不到任何分類的工具。舊版這些工具在畫面上直接消失，
+  // 但資料還在 Firestore，等於看不見也刪不掉。
+  const orphanVisible = orphans.filter(matchesFilter);
+  if (orphans.length && (!activeCat || activeCat === ORPHAN_ID) && (!localFilter || orphanVisible.length)) {
+    const isOpen = !collapsed.has(ORPHAN_ID) || !!localFilter;
+    html += `
+    <div class="cat-card orphan" id="cat-${ORPHAN_ID}">
+      <div class="cat-hd" data-act="toggleCat" data-id="${ORPHAN_ID}">
+        <span class="cat-arrow ${isOpen ? 'open' : ''}">▶</span>
+        <span class="cat-icon">⚠️</span>
+        <span class="cat-name">未分類</span>
+        <span class="cat-count">${orphanVisible.length}</span>
+      </div>
+      <div class="cat-body ${isOpen ? 'open' : ''}">
+        <div class="orphan-note">
+          這些工具的分類代號對不到任何現有分類（分類被刪掉，或匯入時分類代號有誤）。
+          它們還在資料庫裡，用 ✏️ 指定分類就會歸位。
+        </div>
+        ${orphanVisible.map(renderToolRow).join('')}
+      </div>
+    </div>`;
+  }
+
+  if (!html) {
+    html = `<div style="color:var(--text-3);font-size:13px;padding:24px;text-align:center">
+      找不到符合「${esc(localFilter)}」的工具</div>`;
+  }
+
+  list.innerHTML = html;
 }
+
+function renderSidebar() {
+  const orphanCount = tools.filter(isOrphan).length;
+
+  document.getElementById('sideStats').innerHTML = `
+    <div class="stat-box"><div class="stat-num">${tools.length}</div><div class="stat-lbl">工具</div></div>
+    <div class="stat-box"><div class="stat-num">${categories.length}</div><div class="stat-lbl">分類</div></div>
+    ${orphanCount
+      ? `<div class="stat-box warn" data-act="filterCat" data-id="${ORPHAN_ID}" title="點擊只看未分類">
+           <div class="stat-num">${orphanCount}</div><div class="stat-lbl">未分類</div></div>`
+      : `<div class="stat-box"><div class="stat-num">0</div><div class="stat-lbl">未分類</div></div>`}`;
+
+  const rows = [
+    `<button class="side-nav-item ${activeCat ? '' : 'active'}" data-act="filterCat" data-id="">
+       <span class="side-nav-name">全部工具</span>
+       <span class="side-nav-count">${tools.length}</span>
+     </button>`,
+    ...categories.map(cat => `
+      <button class="side-nav-item ${activeCat === cat.id ? 'active' : ''}" data-act="filterCat" data-id="${esc(cat.id)}">
+        <span>${esc(cat.icon || '📁')}</span>
+        <span class="side-nav-name">${esc(cat.name)}</span>
+        <span class="side-nav-count">${tools.filter(t => t.categoryId === cat.id).length}</span>
+      </button>`),
+  ];
+
+  if (orphanCount) {
+    rows.push(`
+      <button class="side-nav-item orphan ${activeCat === ORPHAN_ID ? 'active' : ''}" data-act="filterCat" data-id="${ORPHAN_ID}">
+        <span>⚠️</span>
+        <span class="side-nav-name">未分類</span>
+        <span class="side-nav-count">${orphanCount}</span>
+      </button>`);
+  }
+
+  document.getElementById('sideNav').innerHTML = rows.join('');
+}
+
+function renderFilterBar() {
+  const bar = document.getElementById('filterBar');
+  const chips = [];
+
+  if (activeCat) {
+    const label = activeCat === ORPHAN_ID
+      ? '⚠️ 未分類'
+      : (() => { const c = categories.find(x => x.id === activeCat); return c ? `${c.icon || '📁'} ${c.name}` : activeCat; })();
+    chips.push(`<span class="filter-chip">${esc(label)}<button data-act="clearCat" title="取消分類篩選">✕</button></span>`);
+  }
+  if (localFilter) {
+    chips.push(`<span class="filter-chip">🔍 ${esc(localFilter)}<button data-act="clearText" title="清除關鍵字">✕</button></span>`);
+  }
+
+  bar.innerHTML = chips.length ? `<span>篩選中：</span>${chips.join('')}` : '';
+  bar.style.display = chips.length ? 'flex' : 'none';
+}
+
+window.applyLocalFilter = () => {
+  localFilter = document.getElementById('searchInput').value.trim();
+  document.getElementById('clearSearchBtn').style.display = localFilter ? '' : 'none';
+  render();
+};
 
 function renderMd(md) {
   if (!md) return '';
@@ -1308,7 +1759,66 @@ function refreshCatDropdown() {
   document.getElementById('editCat').innerHTML = options;
 }
 
-// ===== Toggles =====
+// ===== 事件委派 =====
+// 一個監聽器處理清單與側欄的所有點擊，名稱／ID 走 data 屬性，不進 HTML 字串。
+function handleDelegatedClick(event) {
+  const target = event.target.closest('[data-act]');
+  if (!target) return;
+
+  const act = target.dataset.act;
+  const id = target.dataset.id || '';
+
+  switch (act) {
+    case 'toggleCat':
+      if (collapsed.has(id)) collapsed.delete(id); else collapsed.add(id);
+      render();
+      break;
+    case 'desc':
+      openDescs[id] = !openDescs[id];
+      render();
+      break;
+    case 'edit':
+      openEditTool(id);
+      break;
+    case 'reclass': {
+      const tool = tools.find(t => t.id === id);
+      if (tool) aiReclassify(tool);
+      break;
+    }
+    case 'delTool': {
+      const tool = tools.find(t => t.id === id);
+      if (tool) delTool(tool);
+      break;
+    }
+    case 'editCat':
+      event.stopPropagation();
+      openEditCat(id);
+      break;
+    case 'delCat':
+      event.stopPropagation();
+      openDelCat(id);
+      break;
+    case 'filterCat':
+      activeCat = activeCat === id ? '' : id;
+      render();
+      closeDrawerIfMobile();
+      break;
+    case 'clearCat':
+      activeCat = '';
+      render();
+      break;
+    case 'clearText':
+      document.getElementById('searchInput').value = '';
+      applyLocalFilter();
+      break;
+  }
+}
+
+document.getElementById('catList').addEventListener('click', handleDelegatedClick);
+document.getElementById('sidebar').addEventListener('click', handleDelegatedClick);
+document.getElementById('filterBar').addEventListener('click', handleDelegatedClick);
+
+// ===== Toggles（保留給既有呼叫點）=====
 window.toggleCat = id => {
   if (collapsed.has(id)) collapsed.delete(id);
   else collapsed.add(id);
@@ -1388,44 +1898,130 @@ window.saveEditTool = async () => {
 };
 
 // ===== Delete Tool =====
-window.delTool = async (id, name) => {
-  if (!confirm(`確定刪除「${name}」？`)) return;
-  await deleteDoc(doc(db, 'tool_manager_tools', id));
-  await log(`刪除工具「${name}」`);
-  toast(`已刪除「${name}」`);
+window.delTool = async (tool) => {
+  if (!confirm(`確定刪除「${tool.name}」？`)) return;
+  await deleteDoc(doc(db, 'tool_manager_tools', tool.id));
+  await log(`刪除工具「${tool.name}」`);
+  toast(`已刪除「${tool.name}」`);
 };
 
 // ===== Add Category =====
 window.addCategory = async () => {
   const name = document.getElementById('newCatName').value.trim();
   const icon = document.getElementById('newCatIcon').value.trim() || '📁';
+  const description = document.getElementById('newCatDesc').value.trim();
   if (!name) return toast('請填寫分類名稱');
 
   const color = COLORS[categories.length % COLORS.length];
   await addDoc(collection(db, 'tool_manager_categories'), {
-    name, icon, color,
+    name, icon, color, description,
     createdAt: serverTimestamp()
   });
   await log(`新增分類「${name}」`);
   closeModal('modalAddCat');
   document.getElementById('newCatName').value = '';
   document.getElementById('newCatIcon').value = '';
+  document.getElementById('newCatDesc').value = '';
   toast(`✓ 新增分類「${name}」`);
 };
 
+// ===== Edit Category =====
+window.openEditCat = id => {
+  const cat = categories.find(c => c.id === id);
+  if (!cat) return toast('找不到這個分類');
+  document.getElementById('editCatId').value = cat.id;
+  document.getElementById('editCatName').value = cat.name || '';
+  document.getElementById('editCatIcon').value = cat.icon || '';
+  document.getElementById('editCatDesc').value = cat.description || '';
+  openModal('modalEditCat');
+};
+
+window.saveEditCat = async () => {
+  const id = document.getElementById('editCatId').value;
+  const name = document.getElementById('editCatName').value.trim();
+  if (!id) return toast('找不到要儲存的分類');
+  if (!name) return toast('請填寫分類名稱');
+
+  await updateDoc(doc(db, 'tool_manager_categories', id), {
+    name,
+    icon: document.getElementById('editCatIcon').value.trim() || '📁',
+    description: document.getElementById('editCatDesc').value.trim(),
+  });
+  await log(`編輯分類「${name}」`);
+  closeModal('modalEditCat');
+  toast(`✓ 已更新分類「${name}」`);
+};
+
 // ===== Delete Category =====
-window.delCat = async (id, name) => {
+// 舊版是一個 confirm 就把底下的工具全部連帶刪除，救不回來。
+// 現在一定要先決定工具去哪，預設是搬到別的分類。
+window.openDelCat = id => {
+  const cat = categories.find(c => c.id === id);
+  if (!cat) return toast('找不到這個分類');
+
   const count = tools.filter(t => t.categoryId === id).length;
-  if (!confirm(`確定刪除分類「${name}」？${count > 0 ? `\n其中 ${count} 個工具將一併刪除。` : ''}`)) return;
+  document.getElementById('delCatId').value = id;
+  document.getElementById('delCatHint').innerHTML = count
+    ? `分類「<strong>${esc(cat.name)}</strong>」底下有 <strong>${count}</strong> 個工具。`
+    : `分類「<strong>${esc(cat.name)}</strong>」底下沒有工具，可以直接刪除。`;
+
+  const wrap = document.getElementById('delCatMoveWrap');
+  wrap.style.display = count ? '' : 'none';
+
+  const others = categories.filter(c => c.id !== id);
+  document.getElementById('delCatTarget').innerHTML = others.length
+    ? others.map(c => `<option value="${esc(c.id)}">${esc(c.icon || '📁')} ${esc(c.name)}</option>`).join('')
+    : '<option value="">（沒有其他分類）</option>';
+
+  const action = document.getElementById('delCatAction');
+  action.value = others.length ? 'move' : 'orphan';
+  onDelCatActionChange();
+
+  openModal('modalDelCat');
+};
+
+window.onDelCatActionChange = () => {
+  const action = document.getElementById('delCatAction').value;
+  document.getElementById('delCatTargetWrap').style.display = action === 'move' ? '' : 'none';
+};
+
+window.confirmDelCat = async () => {
+  const id = document.getElementById('delCatId').value;
+  const cat = categories.find(c => c.id === id);
+  if (!cat) return toast('找不到這個分類');
+
+  const affected = tools.filter(t => t.categoryId === id);
+  const action = affected.length ? document.getElementById('delCatAction').value : 'orphan';
+
+  if (action === 'move') {
+    const target = document.getElementById('delCatTarget').value;
+    if (!target) return toast('請選擇要搬去的分類');
+  }
+  if (action === 'delete' &&
+      !confirm(`真的要連同 ${affected.length} 個工具一起刪除嗎？這個動作無法復原。`)) {
+    return;
+  }
 
   const batch = writeBatch(db);
-  tools.filter(t => t.categoryId === id).forEach(t => {
-    batch.delete(doc(db, 'tool_manager_tools', t.id));
-  });
+  let note = '';
+
+  if (action === 'move') {
+    const target = document.getElementById('delCatTarget').value;
+    const targetCat = categories.find(c => c.id === target);
+    affected.forEach(t => batch.update(doc(db, 'tool_manager_tools', t.id), { categoryId: target }));
+    note = `，${affected.length} 個工具搬到「${targetCat ? targetCat.name : target}」`;
+  } else if (action === 'delete') {
+    affected.forEach(t => batch.delete(doc(db, 'tool_manager_tools', t.id)));
+    note = `，連同 ${affected.length} 個工具一起刪除`;
+  } else if (affected.length) {
+    note = `，${affected.length} 個工具變成未分類`;
+  }
+
   batch.delete(doc(db, 'tool_manager_categories', id));
   await batch.commit();
-  await log(`刪除分類「${name}」`);
-  toast(`已刪除分類「${name}」`);
+  await log(`刪除分類「${cat.name}」${note}`);
+  closeModal('modalDelCat');
+  toast(`已刪除分類「${cat.name}」`);
 };
 
 // ===== History =====
@@ -1459,49 +2055,171 @@ window.saveSettings = () => {
 };
 
 // ===== AI Batch =====
+//
+// 流程刻意拆成三段，每段的責任分清楚：
+//   1. 本地解析：用正則把網址與名稱抽出來。網址絕對不能讓 AI 產生，
+//      否則它會「順手」補出看似合理但不存在的網址。
+//   2. 抓取：實際連到每個網址拿 title / description，給 AI 當事實依據。
+//   3. AI 分類：只做「選分類 + 依據抓到的內容寫說明 + 給信心度」。
+
+const URL_RE = /https?:\/\/[^\s<>()「」，,；;]+|(?:www\.)[^\s<>()「」，,；;]+/i;
+
+function parseBatchInput(text) {
+  const entries = [];
+  text.split('\n').forEach(line => {
+    const raw = line.trim();
+    if (!raw) return;
+
+    // [名稱](網址) 這種 markdown 連結優先處理
+    const md = raw.match(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/);
+    if (md) {
+      entries.push({ name: md[1].trim(), url: md[2].trim(), source: raw });
+      return;
+    }
+
+    const urlMatch = raw.match(URL_RE);
+    const url = urlMatch ? urlMatch[0].replace(/[.,、。]+$/, '') : '';
+    const name = raw
+      .replace(URL_RE, '')
+      .replace(/^[-*•\d.)\s]+/, '')
+      .replace(/[:：\-–—|,，]+\s*$/, '')
+      .trim();
+
+    if (!url && !name) return;
+    entries.push({ name, url, source: raw });
+  });
+  return entries;
+}
+
+function setBatchProgress(percent, text) {
+  const status = document.getElementById('batchStatus');
+  status.innerHTML = `
+    <div class="prog-wrap">
+      <div class="prog-bar"><i style="width:${percent}%"></i></div>
+      <div class="prog-txt">${esc(text)}</div>
+    </div>`;
+}
+
+function buildCategoryBlock() {
+  return categories.map(c => {
+    const scope = (c.description || '').trim();
+    return `- ${c.id}: ${c.icon || ''} ${c.name}\n  收錄範圍：${scope || '（未填寫，請依名稱judge）'}`;
+  }).join('\n');
+}
+
+async function classifyChunk(chunk, offset) {
+  const lines = chunk.map((item, i) => {
+    const parts = [`[${offset + i + 1}] 使用者寫的：${item.source}`];
+    if (item.meta?.ok) {
+      if (item.meta.title) parts.push(`    網頁標題：${item.meta.title}`);
+      if (item.meta.description) parts.push(`    網頁描述：${item.meta.description}`);
+      if (!item.meta.title && !item.meta.description) parts.push(`    網頁：連得上，但沒有可用的標題或描述`);
+    } else if (item.meta) {
+      parts.push(`    網頁：抓取失敗（${item.meta.error}）`);
+    }
+    return parts.join('\n');
+  }).join('\n\n');
+
+  const prompt = `你是工具分類助手。把每個工具分到最合適的分類，並根據「提供的資料」寫說明。
+
+可用分類（categoryId 只能從這裡選，一字不差）：
+${buildCategoryBlock()}
+
+待分類的工具：
+${lines}
+
+嚴格遵守以下規則：
+1. categoryId 只能填上面出現過的 ID。沒有任何分類明顯合適時，填空字串 ""，不要硬塞一個最接近的。
+2. description 只能根據上面提供的「網頁標題」「網頁描述」「使用者寫的」改寫，30 到 60 字。
+   若這些資料不足以說明這個工具是做什麼的，description 就填空字串 ""。
+   絕對不要依你的印象、記憶或猜測補寫任何功能描述。這點最重要。
+3. confidence 填 high、medium 或 low，代表你對這個分類的把握程度。
+   資料不足、或工具橫跨多個分類時必須填 low，不要為了好看填 high。
+4. name 用最能識別這個工具的名稱：優先取網頁標題裡的產品名（去掉「- 首頁」「| 品牌」這類贅字），
+   其次用使用者寫的名稱。
+5. 每個編號都要回一筆，不可遺漏、不可合併、不可自行新增項目。
+6. 不要回傳網址，網址由系統自己處理。
+
+只回傳 JSON，不含其他文字：
+{"tools":[{"index":1,"name":"...","categoryId":"...","description":"...","confidence":"high","reason":"12字內說明為何分到這個分類"}]}`;
+
+  const parsed = await callOpenAIJSON(prompt);
+  return Array.isArray(parsed.tools) ? parsed.tools : [];
+}
+
 window.runBatch = async () => {
   const text = document.getElementById('batchText').value.trim();
   const statusEl = document.getElementById('batchStatus');
   const btn = document.getElementById('batchBtn');
+  const wantFetch = document.getElementById('batchFetch').checked;
 
   if (!text) return toast('請貼入工具清單');
   if (categories.length === 0) return toast('請先新增分類');
 
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span>AI 分析中...';
-  statusEl.innerHTML = '';
+  btn.innerHTML = '<span class="spinner"></span>處理中...';
   document.getElementById('batchPreviewWrap').style.display = 'none';
 
-  const catList = categories.map(c => `- ${c.id}: ${c.icon || ''} ${c.name}`).join('\n');
-
-  const prompt = `你是工具分類助手。現有分類（格式：ID: 名稱）：
-${catList}
-
-以下是工具清單（格式不限，可能含名稱和網址）：
-${text}
-
-請提取所有工具，分配到最合適的分類，回傳 JSON（僅 JSON，不含其他文字）：
-{"tools":[{"name":"工具名稱","url":"https://...","categoryId":"分類ID","description":"一段簡短說明，50字以內"}]}`;
-
   try {
-    const parsed = await callOpenAIJSON(prompt);
-    pendingBatch = parsed.tools || [];
+    const entries = parseBatchInput(text);
+    if (!entries.length) throw new Error('這段文字裡找不到任何工具');
 
-    if (pendingBatch.length === 0) throw new Error('未解析到任何工具');
+    // --- 抓取網頁內容
+    if (wantFetch) {
+      const withUrl = entries.filter(e => e.url);
+      setBatchProgress(8, `正在連線抓取 ${withUrl.length} 個網址…`);
+      if (withUrl.length) {
+        try {
+          const res = await fetchUrlMetaFn({ urls: withUrl.map(e => e.url) });
+          const metaMap = new Map((res.data?.results || []).map(r => [r.url, r]));
+          withUrl.forEach(e => { e.meta = metaMap.get(e.url) || null; });
+        } catch (err) {
+          setBatchProgress(30, `抓取失敗（${err.message}），改用純文字分析`);
+        }
+      }
+    }
 
-    document.getElementById('batchPreviewList').innerHTML = pendingBatch.map(t => {
-      const cat = categories.find(c => c.id === t.categoryId);
-      const desc = (t.description || '').trim();
-      return `<div class="bp-item">
-        <div class="bp-name">${esc(t.name)}</div>
-        <div class="bp-url">${esc(t.url)}</div>
-        <div class="bp-cat">${cat ? (cat.icon + ' ' + cat.name) : '（未知分類）'}</div>
-        ${desc ? `<div class="bp-url">${esc(desc)}</div>` : ''}
-      </div>`;
-    }).join('');
+    // --- 分批送 AI
+    const results = [];
+    for (let i = 0; i < entries.length; i += BATCH_SIZE) {
+      const chunk = entries.slice(i, i + BATCH_SIZE);
+      const done = Math.round((i / entries.length) * 60) + 35;
+      setBatchProgress(done, `AI 分析中… ${i + 1}-${Math.min(i + BATCH_SIZE, entries.length)} / ${entries.length}`);
+      results.push(...await classifyChunk(chunk, i));
+    }
 
+    // --- 把 AI 的答案對回本地項目；網址一律用本地抽到的
+    const byIndex = new Map(results.map(r => [Number(r.index), r]));
+    pendingBatch = entries.map((entry, i) => {
+      const ai = byIndex.get(i + 1) || {};
+      const categoryId = validCategoryId(String(ai.categoryId || ''));
+      const dupe = findDuplicate(entry.url, ai.name || entry.name);
+      return {
+        name: (ai.name || entry.name || entry.url || '未命名').trim(),
+        url: entry.url,
+        categoryId,
+        description: (ai.description || '').trim(),
+        confidence: ['high', 'medium', 'low'].includes(ai.confidence) ? ai.confidence : 'low',
+        reason: (ai.reason || '').trim(),
+        // AI 給的 ID 不在清單裡就是幻覺，標記出來讓使用者知道這筆要自己選
+        badId: !!ai.categoryId && !categoryId,
+        fetched: !!entry.meta?.ok,
+        fetchError: entry.meta && !entry.meta.ok ? entry.meta.error : '',
+        dupeOf: dupe ? dupe.name : '',
+        include: !dupe,                       // 重複的預設不勾
+      };
+    });
+
+    renderBatchPreview();
     document.getElementById('batchPreviewWrap').style.display = 'block';
-    statusEl.innerHTML = `<div class="msg-ok">✓ 解析完成，共 ${pendingBatch.length} 個工具</div>`;
+
+    const fetched = pendingBatch.filter(t => t.fetched).length;
+    const lowConf = pendingBatch.filter(t => t.confidence === 'low' || !t.categoryId).length;
+    const dupes = pendingBatch.filter(t => t.dupeOf).length;
+    statusEl.innerHTML = `<div class="msg-ok">✓ 解析完成，共 ${pendingBatch.length} 個工具`
+      + (wantFetch ? `（成功抓取 ${fetched} 個網頁）` : '')
+      + `${lowConf ? `，<strong>${lowConf} 個需要你確認分類</strong>` : ''}`
+      + `${dupes ? `，${dupes} 個疑似重複已預設不勾選` : ''}</div>`;
 
   } catch(e) {
     statusEl.innerHTML = `<div class="msg-err">❌ ${esc(e.message)}</div>`;
@@ -1511,31 +2229,101 @@ ${text}
   }
 };
 
+function renderBatchPreview() {
+  const confLabel = { high: '把握高', medium: '普通', low: '不確定' };
+
+  document.getElementById('batchPreviewList').innerHTML = pendingBatch.map((t, i) => {
+    const options = `<option value="">— 請選擇分類 —</option>` + categories.map(c =>
+      `<option value="${esc(c.id)}" ${c.id === t.categoryId ? 'selected' : ''}>${esc(c.icon || '📁')} ${esc(c.name)}</option>`
+    ).join('');
+
+    const tags = [
+      `<span class="bp-tag ${t.confidence === 'high' ? 'hi' : t.confidence === 'medium' ? 'mid' : 'lo'}">${confLabel[t.confidence]}</span>`,
+      t.fetched ? `<span class="bp-tag src">已讀網頁</span>`
+                : (t.fetchError ? `<span class="bp-tag lo">沒抓到：${esc(t.fetchError)}</span>` : ''),
+      t.badId ? `<span class="bp-tag lo">AI 給的分類不存在</span>` : '',
+      t.dupeOf ? `<span class="bp-tag dupe">疑似已有：${esc(t.dupeOf)}</span>` : '',
+      t.reason ? `<span class="bp-tag src">${esc(t.reason)}</span>` : '',
+    ].filter(Boolean).join('');
+
+    return `<div class="bp-item ${t.include ? '' : 'off'} ${t.dupeOf ? 'dupe' : ''}">
+      <div class="bp-row">
+        <input class="bp-chk" type="checkbox" ${t.include ? 'checked' : ''} data-bi="${i}" data-bf="include" />
+        <div>
+          <input class="bp-name-in" value="${esc(t.name)}" data-bi="${i}" data-bf="name" />
+          <div class="bp-url">${esc(t.url || '（沒有網址）')}</div>
+          <select class="bp-cat-sel ${t.categoryId ? '' : 'unset'}" data-bi="${i}" data-bf="categoryId">${options}</select>
+          ${t.description
+            ? `<div class="bp-desc">${esc(t.description)}</div>`
+            : `<div class="bp-desc" style="color:var(--text-3)">（資料不足，沒有寫說明）</div>`}
+          <div class="bp-tags">${tags}</div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+
+  updateBatchSelCount();
+}
+
+// 預覽區的修改即時寫回 pendingBatch
+document.getElementById('batchPreviewList').addEventListener('input', event => {
+  const el = event.target;
+  const index = Number(el.dataset.bi);
+  const field = el.dataset.bf;
+  if (Number.isNaN(index) || !field || !pendingBatch[index]) return;
+
+  if (field === 'include') {
+    pendingBatch[index].include = el.checked;
+    el.closest('.bp-item').classList.toggle('off', !el.checked);
+  } else {
+    pendingBatch[index][field] = el.value;
+    if (field === 'categoryId') el.classList.toggle('unset', !el.value);
+  }
+  updateBatchSelCount();
+});
+
+function updateBatchSelCount() {
+  const chosen = pendingBatch.filter(t => t.include);
+  const missing = chosen.filter(t => !t.categoryId).length;
+  document.getElementById('batchSelCount').innerHTML =
+    `已勾選 ${chosen.length} / ${pendingBatch.length}`
+    + (missing ? `　<span style="color:var(--danger)">還有 ${missing} 個沒選分類</span>` : '');
+}
+
 window.confirmBatch = async () => {
-  if (!pendingBatch.length) return;
-  const count = pendingBatch.length;
+  const chosen = pendingBatch.filter(t => t.include);
+  if (!chosen.length) return toast('沒有勾選任何工具');
+
+  const missing = chosen.filter(t => !t.categoryId);
+  if (missing.length) {
+    return toast(`還有 ${missing.length} 個沒選分類，選完才能匯入`);
+  }
+
   const batch = writeBatch(db);
-  pendingBatch.forEach(t => {
+  chosen.forEach(t => {
     const ref = doc(collection(db, 'tool_manager_tools'));
     batch.set(ref, {
       name: t.name || '',
       url: t.url || '',
-      categoryId: t.categoryId || '',
+      categoryId: t.categoryId,
       description: t.description || '',
       createdAt: serverTimestamp()
     });
   });
   await batch.commit();
-  await log(`批量匯入 ${count} 個工具`);
+  await log(`批量匯入 ${chosen.length} 個工具`);
+
   pendingBatch = [];
   document.getElementById('batchPreviewWrap').style.display = 'none';
   document.getElementById('batchText').value = '';
   document.getElementById('batchStatus').innerHTML = '';
   closeModal('modalBatch');
-  toast(`✓ 已匯入 ${count} 個工具`);
+  toast(`✓ 已匯入 ${chosen.length} 個工具`);
 };
 
 // ===== AI Search =====
+// 只在「本地關鍵字找不到、或使用者明確要語意搜尋」時才花這一次 API 呼叫。
+// 打字當下的即時篩選走 applyLocalFilter()，不碰網路。
 window.doSearch = async () => {
   const query = document.getElementById('searchInput').value.trim();
 
@@ -1615,6 +2403,7 @@ window.clearSearch = () => {
   document.getElementById('searchResults').style.display = 'none';
   document.getElementById('clearSearchBtn').style.display = 'none';
   document.getElementById('catList').style.display = '';
+  localFilter = '';
   render();
 };
 
@@ -1624,7 +2413,66 @@ window.toggleDrawer = () => {
   document.getElementById('drawerOverlay').classList.toggle('open');
 };
 
-// ===== AI Suggest (sidebar: URL → fill name/cat/desc) =====
+// 手機版點側欄項目後要把抽屜收起來，桌機版側欄常駐則不動
+window.closeDrawerIfMobile = () => {
+  if (window.matchMedia('(max-width: 768px)').matches &&
+      document.getElementById('sidebar').classList.contains('open')) {
+    toggleDrawer();
+  }
+};
+
+// ===== 單一工具的 AI 分析（新增表單與既有工具共用）=====
+// 一樣先抓網頁再問 AI，理由同批量：不抓的話說明就是憑印象編的。
+async function analyzeOneUrl(url, currentName) {
+  let meta = null;
+  try {
+    const res = await fetchUrlMetaFn({ urls: [url] });
+    meta = res.data?.results?.[0] || null;
+  } catch {
+    meta = null;                              // 抓不到就退回純網址判斷，不中斷流程
+  }
+
+  const factLines = [];
+  if (currentName) factLines.push(`目前名稱：${currentName}`);
+  factLines.push(`網址：${url}`);
+  if (meta?.ok) {
+    if (meta.title) factLines.push(`網頁標題：${meta.title}`);
+    if (meta.description) factLines.push(`網頁描述：${meta.description}`);
+    if (!meta.title && !meta.description) factLines.push('網頁：連得上，但沒有可用的標題或描述');
+  } else if (meta) {
+    factLines.push(`網頁：抓取失敗（${meta.error}）`);
+  }
+
+  const prompt = `你是工具分類助手。根據以下資料判斷這個工具該歸到哪一類。
+
+可用分類（categoryId 只能從這裡選，一字不差）：
+${buildCategoryBlock()}
+
+資料：
+${factLines.join('\n')}
+
+嚴格遵守：
+1. categoryId 只能填上面出現過的 ID；沒有明顯合適的就填 ""。
+2. description 只能根據上面的資料改寫，30 到 60 字；資料不足就填 ""。
+   絕對不要依印象或猜測補寫功能。
+3. confidence 填 high / medium / low，資料不足時必須填 low。
+
+只回傳 JSON：
+{"name":"...","categoryId":"...","description":"...","confidence":"high","reason":"12字內理由"}`;
+
+  const parsed = await callOpenAIJSON(prompt);
+  return {
+    name: (parsed.name || '').trim(),
+    categoryId: validCategoryId(String(parsed.categoryId || '')),
+    description: (parsed.description || '').trim(),
+    confidence: ['high', 'medium', 'low'].includes(parsed.confidence) ? parsed.confidence : 'low',
+    reason: (parsed.reason || '').trim(),
+    fetched: !!meta?.ok,
+    fetchError: meta && !meta.ok ? meta.error : '',
+  };
+}
+
+// ===== AI Suggest（新增工具表單：URL → 填入名稱／分類／說明）=====
 window.aiSuggest = async () => {
   const url = document.getElementById('fUrl').value.trim();
 
@@ -1633,24 +2481,19 @@ window.aiSuggest = async () => {
 
   const btn = document.getElementById('aiSuggestBtn');
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span>分析中...';
-
-  const catList = categories.map(c => `- ${c.id}: ${c.icon || ''} ${c.name}`).join('\n');
-  const prompt = `根據以下網址，推測這是什麼工具，給出建議。
-網址：${url}
-
-現有分類（格式：ID: 名稱）：
-${catList}
-
-請回傳 JSON（僅 JSON，不含其他文字）：
-{"name":"工具名稱","categoryId":"最適合的分類ID","description":"一段簡短說明，50字以內"}`;
+  btn.innerHTML = '<span class="spinner"></span>讀取網頁中...';
 
   try {
-    const parsed = await callOpenAIJSON(prompt);
-    if (parsed.name) document.getElementById('fName').value = parsed.name;
-    if (parsed.categoryId) document.getElementById('fCat').value = parsed.categoryId;
-    if (parsed.description) document.getElementById('fDesc').value = parsed.description;
-    toast('✓ AI 已填入建議');
+    const result = await analyzeOneUrl(url, document.getElementById('fName').value.trim());
+    if (result.name) document.getElementById('fName').value = result.name;
+    if (result.categoryId) document.getElementById('fCat').value = result.categoryId;
+    if (result.description) document.getElementById('fDesc').value = result.description;
+
+    const notes = [];
+    if (!result.fetched) notes.push(result.fetchError ? `沒讀到網頁（${result.fetchError}）` : '沒讀到網頁');
+    if (!result.categoryId) notes.push('AI 無法判斷分類，請自己選');
+    if (result.confidence === 'low') notes.push('AI 對這次判斷沒把握');
+    toast(notes.length ? `⚠️ 已填入，但：${notes.join('；')}` : '✓ AI 已依網頁內容填入');
   } catch(e) {
     toast(`❌ 分析失敗：${e.message}`);
   } finally {
@@ -1659,38 +2502,85 @@ ${catList}
   }
 };
 
-// ===== AI Reclassify (existing tool: AI re-analyze URL → confirm → update) =====
-window.aiReclassify = async (toolId, toolName, toolUrl) => {
+// ===== AI Reclassify（既有工具重新分析）=====
+// 舊版用 confirm() 顯示結果，只能全採用或全不採用；現在逐項勾選。
+window.aiReclassify = async (tool) => {
   if (categories.length === 0) return toast('請先新增分類');
+  if (!tool.url) return toast('這個工具沒有網址，無法分析');
 
-  toast('🤖 AI 分析中...');
-
-  const catList = categories.map(c => `- ${c.id}: ${c.icon || ''} ${c.name}`).join('\n');
-  const prompt = `根據以下工具資訊，建議最適合的名稱與分類。
-工具名稱（目前）：${toolName}
-網址：${toolUrl}
-
-現有分類（格式：ID: 名稱）：
-${catList}
-
-請回傳 JSON（僅 JSON，不含其他文字）：
-{"name":"建議的工具名稱","categoryId":"最適合的分類ID","description":"一段簡短說明，50字以內"}`;
+  toast('🤖 讀取網頁並分析中…');
 
   try {
-    const parsed = await callOpenAIJSON(prompt);
-    const newCat = categories.find(c => c.id === parsed.categoryId);
-    const msg = `AI 建議：\n名稱：${parsed.name}\n分類：${newCat ? (newCat.icon + ' ' + newCat.name) : parsed.categoryId}\n說明：${parsed.description || '（無）'}\n\n確認套用？`;
-    if (!confirm(msg)) return;
-    const updates = {};
-    if (parsed.name) updates.name = parsed.name;
-    if (parsed.categoryId) updates.categoryId = parsed.categoryId;
-    if (parsed.description) updates.description = parsed.description;
-    await updateDoc(doc(db, 'tool_manager_tools', toolId), updates);
-    await log(`AI 重新分類「${toolName}」→「${parsed.name || toolName}」`);
-    toast(`✓ 已更新「${parsed.name || toolName}」`);
+    const result = await analyzeOneUrl(tool.url, tool.name);
+    reclassSuggestion = { toolId: tool.id, ...result };
+
+    const currentCat = categories.find(c => c.id === tool.categoryId);
+    const newCat = categories.find(c => c.id === result.categoryId);
+
+    const rows = [];
+    const addRow = (key, label, oldVal, newVal) => {
+      if (!newVal || newVal === oldVal) {
+        rows.push(`<div class="diff-row"><div></div><div>
+          <div class="diff-k">${label}</div>
+          <div class="diff-same">${newVal ? '與現在相同，不需更動' : 'AI 沒有給建議'}</div>
+        </div></div>`);
+        return;
+      }
+      rows.push(`<div class="diff-row">
+        <input type="checkbox" checked data-rf="${key}" />
+        <div>
+          <div class="diff-k">${label}</div>
+          <div class="diff-old">${esc(oldVal || '（空白）')}</div>
+          <div class="diff-new">${esc(newVal)}</div>
+        </div>
+      </div>`);
+    };
+
+    addRow('name', '名稱', tool.name, result.name);
+    addRow('categoryId', '分類',
+      currentCat ? `${currentCat.icon || '📁'} ${currentCat.name}` : '（未分類）',
+      newCat ? `${newCat.icon || '📁'} ${newCat.name}` : '');
+    addRow('description', '說明', tool.description, result.description);
+
+    const warn = [];
+    if (!result.fetched) warn.push(result.fetchError ? `沒讀到網頁（${esc(result.fetchError)}）` : '沒讀到網頁內容');
+    if (result.confidence === 'low') warn.push('AI 對這次判斷<strong>沒把握</strong>');
+    if (!result.categoryId) warn.push('AI 判斷不出分類');
+
+    document.getElementById('reclassHint').innerHTML =
+      `「${esc(tool.name)}」<br>`
+      + (result.reason ? `AI 理由：${esc(result.reason)}<br>` : '')
+      + (warn.length ? `<span style="color:var(--danger)">⚠️ ${warn.join('；')}</span>` : '✓ 依網頁實際內容判斷');
+
+    document.getElementById('reclassToolId').value = tool.id;
+    document.getElementById('reclassDiff').innerHTML = rows.join('');
+    openModal('modalReclass');
   } catch(e) {
     toast(`❌ 分析失敗：${e.message}`);
   }
+};
+
+window.applyReclass = async () => {
+  const toolId = document.getElementById('reclassToolId').value;
+  const tool = tools.find(t => t.id === toolId);
+  if (!tool || !reclassSuggestion) return toast('找不到要更新的工具');
+
+  const updates = {};
+  document.querySelectorAll('#reclassDiff input[type=checkbox]:checked').forEach(box => {
+    const field = box.dataset.rf;
+    if (reclassSuggestion[field]) updates[field] = reclassSuggestion[field];
+  });
+
+  if (!Object.keys(updates).length) {
+    closeModal('modalReclass');
+    return toast('沒有勾選任何項目');
+  }
+
+  await updateDoc(doc(db, 'tool_manager_tools', toolId), updates);
+  await log(`AI 重新分析「${tool.name}」，更新了 ${Object.keys(updates).join('、')}`);
+  closeModal('modalReclass');
+  reclassSuggestion = null;
+  toast(`✓ 已更新「${updates.name || tool.name}」`);
 };
 
 // ===== Export =====
@@ -1733,6 +2623,25 @@ window.exportMD = () => {
   });
   dl('小程式分類管理.md', md, 'text/markdown');
   toast('✓ Markdown 已匯出');
+};
+
+// 完整資料備份：HTML／MD 是給人看的，這份是給機器讀的，能拿來復原
+window.exportJSON = () => {
+  const payload = {
+    exportedAt: new Date().toISOString(),
+    source: 'tool-manager',
+    categories: categories.map(c => ({
+      id: c.id, name: c.name, icon: c.icon || '', color: c.color || '',
+      description: c.description || '',
+    })),
+    tools: tools.map(t => ({
+      id: t.id, name: t.name, url: t.url || '',
+      categoryId: t.categoryId || '', description: t.description || '',
+    })),
+  };
+  const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  dl(`tool-manager備份_${stamp}.json`, JSON.stringify(payload, null, 2), 'application/json');
+  toast('✓ JSON 備份已下載');
 };
 
 function dl(name, content, type) {

@@ -1,8 +1,24 @@
 <!DOCTYPE html>
 <!--
-  AI 額度儀表板 — 三大 AI CLI 月訂閱使用量
-  版號：v1.3.0
+  AI 額度儀表板 — AI CLI 月訂閱使用量
+  版號：v2.2.2
   版更記錄：
+  - v2.2.2 (2026-07-29) 額度條恢復網站原始固定色碼：剩餘 50% 以上綠色、
+    25%～未滿 50% 藍色、未滿 25% 紅色；取消混色與漸變。
+  - v2.2.1 (2026-07-29) 額度條色階改用高飽和亮綠、亮藍與亮紅，提升辨識度。
+  - v2.2.0 (2026-07-29) 所有額度條改顯示剩餘量，100% 起隨使用下降；色彩由高額度綠色、
+    中段藍色連續轉為低額度紅色，趨勢圖預設同步改為剩餘。
+  - v2.1.3 (2026-07-29) Codex 無 5 小時資料時，短期圖表自動顯示週額度並明確標記。
+  - v2.1.2 (2026-07-29) 全頁可見名稱統一為 Antigravity，移除 Gemini CLI 趨勢線；
+    Codex 在所選窗口無數據時仍保留圖例與摘要說明。
+  - v2.1.1 (2026-07-29) 移除獨立 Gemini CLI 額度卡片；Antigravity 卡片標題移除 agy 前綴。
+  - v2.1.0 (2026-07-29) 顯示 Antigravity 真實四個額度池（Session、Weekly、
+    Claude、Claude Weekly），並將兩個 agy 池分成獨立趨勢線；來源暫時不可用時安全降級。
+  - v2.0.1 (2026-07-29) 歷史查詢改用文件 ID 升序索引與 7 天 cursor 限量讀取，再於前端依 schema、
+    文件 ID 與 collectedAt 過濾 6 小時／24 小時／7 天，避開額外索引需求且不混入 current。
+  - v2.0.0 (2026-07-29) 新增每 5 分鐘歷史樣本折線圖：可切換 6 小時／24 小時／7 天、
+    短期／週窗口，以及已用／剩餘／區間消耗；同圖比較 Claude、Codex、Gemini CLI 與 agy。
+    agy 另設獨立狀態卡；目前無可靠自動額度來源時明確顯示未取得，不再讓 Gemini CLI 數字被誤認為 agy。
   - v1.3.0 (2026-07-28) 手機常駐三改：①「已 X 分鐘未更新」改用計時器每 30 秒自己重算（原本只在收到新資料時才算，
     電腦關機後數字會凍住、看起來像剛更新）②可「加到主畫面」全螢幕常駐（manifest.json + sw.js）＋螢幕恆亮開關
     （Screen Wake Lock，設定記在 localStorage，切回前景自動重新取得）③Codex 卡片改依 collect.ps1 的 source 欄位
@@ -33,6 +49,7 @@
     --hairline:    #e1e0d9;
     --border:      rgba(11,11,11,0.10);
     --track:       #eeede8;
+    --fill-good:   #18a05e;
     --fill-normal: #2a78d6;
     --fill-warn:   #fab219;
     --fill-crit:   #d03b3b;
@@ -47,6 +64,7 @@
       --hairline:    #2c2c2a;
       --border:      rgba(255,255,255,0.10);
       --track:       #2c2c2a;
+      --fill-good:   #18a05e;
       --fill-normal: #3987e5;
       --fill-warn:   #fab219;
       --fill-crit:   #d03b3b;
@@ -93,6 +111,30 @@
   .meter-reset { font-size: 0.72rem; color: var(--ink-muted); margin-top: 4px; }
   .state-note { font-size: 0.85rem; color: var(--ink-2); line-height: 1.6; }
   .err { color: var(--fill-crit); font-size: 0.85rem; }
+  .chart-card { padding-bottom: 12px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 12px; }
+  .control-group { display: flex; gap: 4px; padding: 3px; background: var(--track); border-radius: 9px; }
+  .control-btn {
+    border: 0; border-radius: 7px; padding: 6px 9px; background: transparent;
+    color: var(--ink-2); font-family: inherit; font-size: 0.72rem; font-weight: 600; cursor: pointer;
+  }
+  .control-btn.active { background: var(--surface); color: var(--ink); box-shadow: 0 1px 3px var(--border); }
+  .chart-wrap { position: relative; min-height: 220px; overflow: hidden; }
+  .chart { display: block; width: 100%; height: 220px; }
+  .grid-line { stroke: var(--hairline); stroke-width: 1; }
+  .axis-text { fill: var(--ink-muted); font-size: 10px; }
+  .series-line { fill: none; stroke-width: 2.2; stroke-linejoin: round; stroke-linecap: round; }
+  .legend { display: flex; flex-wrap: wrap; gap: 8px 13px; margin-top: 8px; }
+  .legend-item { display: inline-flex; align-items: center; gap: 5px; color: var(--ink-2); font-size: 0.72rem; }
+  .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .chart-summary {
+    display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px;
+    margin: 10px 0 2px;
+  }
+  .summary-cell { padding: 8px; border: 1px solid var(--border); border-radius: 8px; }
+  .summary-label { color: var(--ink-muted); font-size: 0.68rem; }
+  .summary-value { margin-top: 2px; font-size: 0.88rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .chart-note { margin-top: 8px; color: var(--ink-muted); font-size: 0.7rem; line-height: 1.5; }
   .link-btn {
     display: block; text-align: center; text-decoration: none;
     margin-top: 12px; padding: 10px;
@@ -119,15 +161,37 @@
 <body>
 <div class="wrap">
   <h1>AI 額度儀表板</h1>
-  <div class="sub">Claude / Codex / Gemini 官方額度・電腦開機時每 5 分鐘更新</div>
+  <div class="sub">Claude / Codex / Antigravity・電腦開機時每 5 分鐘更新</div>
   <div id="app"><div class="loading">載入中…</div></div>
+  <section class="card chart-card">
+    <div class="card-head"><h2>用量趨勢</h2><span id="sample-count" class="badge">載入中</span></div>
+    <div class="controls" aria-label="圖表選項">
+      <div id="range-controls" class="control-group">
+        <button class="control-btn" data-range="6">6 小時</button>
+        <button class="control-btn active" data-range="24">24 小時</button>
+        <button class="control-btn" data-range="168">7 天</button>
+      </div>
+      <div id="window-controls" class="control-group">
+        <button class="control-btn active" data-window="short">短期</button>
+        <button class="control-btn" data-window="week">週窗口</button>
+      </div>
+      <div id="metric-controls" class="control-group">
+        <button class="control-btn" data-metric="used">已用</button>
+        <button class="control-btn active" data-metric="remaining">剩餘</button>
+        <button class="control-btn" data-metric="delta">區間消耗</button>
+      </div>
+    </div>
+    <div id="chart-wrap" class="chart-wrap"><div class="loading">等待歷史樣本…</div></div>
+    <div id="chart-summary" class="chart-summary"></div>
+    <div id="chart-note" class="chart-note">歷史從新版收集器啟用後開始累積；區間消耗為相鄰樣本已用百分比的正增量，重置造成的下降不算消耗。Codex 無短期資料時會改用週額度並在名稱標明；Antigravity 本機來源暫時不可用時不顯示替代線。</div>
+  </section>
   <footer id="foot"></footer>
   <button id="wake" class="wake" type="button">螢幕保持開啟：關</button>
 </div>
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getFirestore, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, collection, doc, documentId, limit, onSnapshot, orderBy, query, startAt } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBf0sHTsndFCksNlh46G_2mw9rk5zmPdc0",
@@ -142,6 +206,9 @@ const db = getFirestore(app);
 
 const $app = document.getElementById("app");
 const $foot = document.getElementById("foot");
+const $chartWrap = document.getElementById("chart-wrap");
+const $chartSummary = document.getElementById("chart-summary");
+const $sampleCount = document.getElementById("sample-count");
 
 function fmtTime(iso) {
   if (!iso) return "";
@@ -151,14 +218,34 @@ function fmtTime(iso) {
   return `${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+function visibleText(value) {
+  return String(value || "")
+    .replace(/\bagy\b/gi, "Antigravity")
+    .replace(/Gemini CLI/gi, "其他來源");
+}
+
+function remainingColor(remaining) {
+  if (remaining >= 50) return "#18a05e";
+  if (remaining >= 25) return "#2a78d6";
+  return "#d03b3b";
+}
+
 function meter(label, m) {
-  if (!m || m.percent == null) return "";
-  const p = Math.max(0, Math.min(100, Number(m.percent)));
-  const cls = p >= 90 ? "crit" : p >= 70 ? "warn" : "";
-  const reset = m.resetsAt ? `<div class="meter-reset">重置 ${fmtTime(m.resetsAt)}</div>` : "";
+  const used = m ? (m.usedPercent ?? m.percent) : null;
+  if (used == null) return "";
+  const remainingRaw = m.remainingFraction != null
+    ? Number(m.remainingFraction) * 100
+    : 100 - Number(used);
+  const remaining = Math.max(0, Math.min(100, remainingRaw));
+  const display = Number(remaining.toFixed(1));
+  const color = remainingColor(remaining);
+  const resetTime = m.resetTime || m.resetsAt;
+  const reset = resetTime ? `<div class="meter-reset">重置 ${fmtTime(resetTime)}</div>` : "";
   return `<div class="meter">
-    <div class="meter-top"><span class="meter-label">${label}</span><span class="meter-val">${p}%</span></div>
-    <div class="bar"><div class="bar-fill ${cls}" style="width:${p}%"></div></div>
+    <div class="meter-top"><span class="meter-label">${label}</span><span class="meter-val">剩餘 ${display}%</span></div>
+    <div class="bar" role="progressbar" aria-label="${label}剩餘額度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${display}">
+      <div class="bar-fill" style="width:${remaining}%;background:${color}"></div>
+    </div>
     ${reset}
   </div>`;
 }
@@ -188,24 +275,20 @@ function render(data) {
       + xNote
     : `<div class="err">讀取失敗：${x.error || "無資料"}</div>`);
 
-  const g = data.gemini || {};
-  let gBody;
-  if (g.status === "ok" && Array.isArray(g.models) && g.models.length) {
-    const used = g.models.filter(m => m.percent > 0).sort((a, b) => b.percent - a.percent);
-    const zeros = g.models.length - used.length;
-    gBody = used.map(m => meter(m.name.replace(/^gemini-/, ""), m)).join("");
-    if (used.length === 0) {
-      gBody += `<div class="state-note">全部 ${g.models.length} 個模型今日 0%</div>`
-        + (g.models[0].resetsAt ? `<div class="meter-reset">重置 ${fmtTime(g.models[0].resetsAt)}</div>` : "");
-    } else if (zeros > 0) {
-      gBody += `<div class="meter-reset">其餘 ${zeros} 個模型 0%</div>`;
-    }
-  } else if (g.status === "error") {
-    gBody = `<div class="err">讀取失敗：${g.error || "無資料"}</div>`;
+  const a = data.agy || {};
+  let aBody;
+  if (a.status === "ok") {
+    aBody = meter("Session 額度", a.session) + meter("Weekly 額度", a.weekly)
+      + meter("Claude 額度", a.claude) + meter("Claude Weekly 額度", a.claudeWeekly)
+      + `<div class="meter-reset">來源：Antigravity 本機服務・${fmtTime(a.collectedAt || a.checkedAt || data.collectedAt)}</div>`;
+  } else if (a.status === "error") {
+    aBody = `<div class="err">讀取失敗：${visibleText(a.error) || "無資料"}</div>`;
   } else {
-    gBody = `<div class="state-note">尚無 Gemini 數據，等收集腳本下一輪更新。</div>`;
+    aBody = `<div class="state-note">未取得 Antigravity 額度。${visibleText(a.reason) || "目前沒有可靠的自動查詢來源。"}</div>`
+      + `<div class="meter-reset">${visibleText(a.action) || "請由 Antigravity 介面查看；不顯示其他來源的替代數字。"}</div>`
+      + (a.checkedAt ? `<div class="meter-reset">最後檢查 ${fmtTime(a.checkedAt)}・來源 ${visibleText(a.source || "antigravity-cli")}</div>` : "");
   }
-  html += card("Gemini", g.tier ? g.tier.toUpperCase().replace("-TIER", "") : "", gBody);
+  html += card("Antigravity", a.status === "ok" ? "LIVE" : "資料不可用", aBody);
 
   $app.innerHTML = html;
   lastCollectedAt = data.collectedAt || null;
@@ -239,6 +322,191 @@ onSnapshot(doc(db, "ai_usage", "current"), snap => {
 }, err => {
   $app.innerHTML = `<div class="err">Firestore 連線失敗：${err.message}</div>`;
 });
+
+// ---------- 每 5 分鐘歷史樣本折線圖 ----------
+// 樣本和 current 共用 ai_usage collection，避免另開 collection 後必須先部署新規則。
+// 只用 Firestore 預設文件 ID 升序索引，從 7 天前的 sample ID cursor 開始限量查詢；
+// 精確時間與 schema 篩選留在前端，避免 documentId 範圍條件再搭配排序觸發額外索引需求。
+const HISTORY_QUERY_LIMIT = 2100; // 每 5 分鐘一筆，7 天約 2016 筆，另留少量排程誤差緩衝。
+const SERIES = [
+  { key: "claude", label: "Claude", color: "#d97706" },
+  { key: "codex", label: "Codex", color: "#2a78d6" },
+  { key: "agyGemini", label: "Antigravity Gemini", color: "#8b5cf6" },
+  { key: "agyClaude", label: "Antigravity Claude", color: "#ec4899" }
+];
+let historySamples = [];
+let chartRangeHours = 24;
+let chartWindow = "short";
+let chartMetric = "remaining";
+let unsubscribeHistory = null;
+
+function primaryPercent(data, key, windowName) {
+  const provider = key === "agyGemini" || key === "agyClaude" ? (data.agy || {}) : (data[key] || {});
+  if (provider.status !== "ok") return null;
+  if (key === "claude" || key === "codex") {
+    const item = windowName === "week"
+      ? provider.sevenDay
+      : (provider.fiveHour || (key === "codex" ? provider.sevenDay : null));
+    return item && item.percent != null ? Number(item.percent) : null;
+  }
+  if (key === "agyGemini" || key === "agyClaude") {
+    const agy = data.agy || {};
+    if (agy.status !== "ok") return null;
+    const item = key === "agyClaude"
+      ? (windowName === "week" ? agy.claudeWeekly : agy.claude)
+      : (windowName === "week" ? agy.weekly : agy.session);
+    const used = item ? (item.usedPercent ?? item.percent) : null;
+    return used != null ? Number(used) : null;
+  }
+  return null;
+}
+
+function metricPoints(samples, key) {
+  let previous = null;
+  return samples.map(sample => {
+    const used = primaryPercent(sample.data, key, chartWindow);
+    let value = null;
+    if (Number.isFinite(used)) {
+      if (chartMetric === "remaining") value = 100 - used;
+      else if (chartMetric === "delta") value = previous == null ? 0 : Math.max(0, used - previous);
+      else value = used;
+      previous = used;
+    }
+    return { time: sample.time, value };
+  });
+}
+
+function seriesLabel(series, samples) {
+  if (series.key !== "codex" || chartWindow !== "short") return series.label;
+  const usesWeekly = samples.some(sample => {
+    const codex = sample.data.codex || {};
+    const hasShort = codex.fiveHour && codex.fiveHour.percent != null;
+    const hasWeekly = codex.sevenDay && codex.sevenDay.percent != null;
+    return codex.status === "ok" && !hasShort && hasWeekly;
+  });
+  return usesWeekly ? "Codex（週額度）" : series.label;
+}
+
+function svgPath(points, xFor, yFor) {
+  let path = "";
+  let drawing = false;
+  for (const point of points) {
+    if (!Number.isFinite(point.value)) {
+      drawing = false;
+      continue;
+    }
+    path += `${drawing ? "L" : "M"}${xFor(point.time).toFixed(1)},${yFor(point.value).toFixed(1)} `;
+    drawing = true;
+  }
+  return path.trim();
+}
+
+function renderChart() {
+  const cutoff = Date.now() - chartRangeHours * 3600000;
+  const samples = historySamples.filter(sample => sample.time >= cutoff);
+  $sampleCount.textContent = `${samples.length} 筆`;
+  if (samples.length < 2) {
+    $chartWrap.innerHTML = `<div class="state-note">歷史樣本尚不足 2 筆。新版收集器每 5 分鐘新增一筆，累積後會自動出現折線。</div>`;
+    $chartSummary.innerHTML = "";
+    return;
+  }
+
+  const width = 520, height = 220, left = 34, right = 8, top = 10, bottom = 25;
+  const plotW = width - left - right, plotH = height - top - bottom;
+  const minT = samples[0].time, maxT = samples[samples.length - 1].time;
+  const xFor = time => left + ((time - minT) / Math.max(1, maxT - minT)) * plotW;
+  const yMax = chartMetric === "delta"
+    ? Math.max(5, ...SERIES.flatMap(s => metricPoints(samples, s.key).map(p => p.value || 0)))
+    : 100;
+  const yFor = value => top + plotH - (Math.max(0, Math.min(yMax, value)) / yMax) * plotH;
+
+  let svg = `<svg class="chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="AI 額度歷史折線圖">`;
+  for (let i = 0; i <= 4; i++) {
+    const value = yMax * (1 - i / 4);
+    const y = top + plotH * i / 4;
+    svg += `<line class="grid-line" x1="${left}" y1="${y}" x2="${width - right}" y2="${y}"/>`
+      + `<text class="axis-text" x="${left - 5}" y="${y + 3}" text-anchor="end">${Math.round(value)}%</text>`;
+  }
+  for (const series of SERIES) {
+    const path = svgPath(metricPoints(samples, series.key), xFor, yFor);
+    if (path) svg += `<path class="series-line" stroke="${series.color}" d="${path}"/>`;
+  }
+  svg += `<text class="axis-text" x="${left}" y="${height - 6}">${fmtTime(new Date(minT).toISOString())}</text>`
+    + `<text class="axis-text" x="${width - right}" y="${height - 6}" text-anchor="end">${fmtTime(new Date(maxT).toISOString())}</text></svg>`;
+
+  const legend = SERIES.map(series =>
+    `<span class="legend-item"><span class="legend-dot" style="background:${series.color}"></span>${seriesLabel(series, samples)}</span>`
+  ).join("");
+  $chartWrap.innerHTML = svg + `<div class="legend">${legend}</div>`;
+
+  const summaries = SERIES.map(series => {
+    const values = metricPoints(samples, series.key).map(p => p.value).filter(Number.isFinite);
+    if (!values.length) {
+      return `<div class="summary-cell"><div class="summary-label">${seriesLabel(series, samples)}</div>`
+        + `<div class="summary-value">此窗口無資料</div></div>`;
+    }
+    const latest = values[values.length - 1];
+    const intervalTotal = chartMetric === "delta" ? values.reduce((sum, value) => sum + value, 0) : null;
+    return `<div class="summary-cell"><div class="summary-label">${seriesLabel(series, samples)}</div>`
+      + `<div class="summary-value">${(intervalTotal == null ? latest : intervalTotal).toFixed(1)}%</div></div>`;
+  }).join("");
+  $chartSummary.innerHTML = summaries;
+}
+
+function bindControls(id, dataName, setValue) {
+  document.getElementById(id).addEventListener("click", event => {
+    const button = event.target.closest(".control-btn");
+    if (!button) return;
+    button.parentElement.querySelectorAll(".control-btn").forEach(item => item.classList.toggle("active", item === button));
+    setValue(button.dataset[dataName]);
+    renderChart();
+  });
+}
+bindControls("range-controls", "range", value => {
+  chartRangeHours = Number(value);
+  renderChart();
+});
+bindControls("window-controls", "window", value => { chartWindow = value; });
+bindControls("metric-controls", "metric", value => { chartMetric = value; });
+
+function sampleIdAt(time) {
+  return "sample_" + new Date(time).toISOString().replace(/[-:]/g, "").replace(".", "");
+}
+
+function subscribeHistory() {
+  if (unsubscribeHistory) unsubscribeHistory();
+  const sevenDayCutoffId = sampleIdAt(Date.now() - 168 * 3600000);
+  $sampleCount.textContent = "載入中";
+  unsubscribeHistory = onSnapshot(
+    query(
+      collection(db, "ai_usage"),
+      orderBy(documentId(), "asc"),
+      startAt(sevenDayCutoffId),
+      limit(HISTORY_QUERY_LIMIT)
+    ),
+    snapshot => {
+      historySamples = snapshot.docs
+        .map(item => {
+          if (!item.id.startsWith("sample_")) return null;
+          try {
+            const data = JSON.parse(item.data().data || "{}");
+            if (data.schemaVersion !== 2) return null;
+            return { id: item.id, time: new Date(data.collectedAt || item.data().updatedAt).getTime(), data };
+          } catch {
+            return null;
+          }
+        })
+        .filter(sample => sample && Number.isFinite(sample.time))
+        .sort((a, b) => a.time - b.time);
+      renderChart();
+    },
+    error => {
+      $sampleCount.textContent = "讀取失敗";
+      $chartWrap.innerHTML = `<div class="err">歷史數據讀取失敗：${error.message}</div>`;
+    }
+  );
+}
+subscribeHistory();
 
 // ---------- 常駐用：螢幕恆亮開關 ----------
 // Wake Lock 一離開前景就會被系統釋放，所以要記住使用者的選擇並在回前景時重新取得。

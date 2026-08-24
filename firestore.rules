@@ -92,6 +92,38 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow write: if isAdmin();
     }
+    // ── 投票系統（/vote/ 前台、/admin/vote/ 後台）──────────────
+    // 活動設定：任何人可讀（前台要載入選項與名單），只有管理者能建立與修改
+    function pollOf(pollId) {
+      return get(/databases/$(database)/documents/polls/$(pollId)).data;
+    }
+    match /polls/{pollId} {
+      allow read: if true;
+      allow write: if isAdmin();
+
+      // 票：doc id = 投票人姓名，天然擋掉同一人重複投票
+      match /votes/{person} {
+        allow read: if true;
+        allow create: if isAdmin() || (request.resource.data.keys().hasOnly(['person', 'picks', 'comment', 'createdAt'])
+          && request.resource.data.person == person
+          && request.resource.data.picks is list
+          && request.resource.data.picks.size() > 0
+          && request.resource.data.picks.size() <= pollOf(pollId).votesPerPerson
+          && pollOf(pollId).status == 'open');
+        allow update: if isAdmin();
+        // 投票人自行撤銷重投，僅限該場活動有開這個開關時
+        allow delete: if isAdmin() || pollOf(pollId).allowRevoke == true;
+      }
+
+      // 自由提案：開關打開時任何人可投稿，審核與刪除限管理者
+      match /proposals/{propId} {
+        allow read: if isAdmin();
+        allow create: if pollOf(pollId).allowProposal == true
+          && request.resource.data.status == 'pending';
+        allow update, delete: if isAdmin();
+      }
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

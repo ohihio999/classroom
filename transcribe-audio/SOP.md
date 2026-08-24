@@ -1,101 +1,51 @@
-# SOP：手動音檔轉逐字稿（Groq Whisper API）
+# SOP：音檔轉逐字稿與標準短字幕（Groq Whisper / AssemblyAI）
 
-## 前置作業（一次性設定）
-
-### 1. 取得 Groq API Key
-前往 https://console.groq.com/keys → 建立新 API Key
-
-### 2. 設定環境變數
-以系統管理員開啟命令提示字元，執行：
-```
-setx GROQ_API_KEY "你的API金鑰"
-```
-設定後重新開啟終端機才生效。確認方式：
-```
-echo %GROQ_API_KEY%
-```
-
-### 3. 安裝 Python 套件
-```
-pip install groq
-```
+本工具提供高精度語音轉繁體中文逐字稿、字級時間戳與自動短字幕切分，支援動態小抄與分類詞庫。
 
 ---
 
-## 每次使用流程
+## ⚡ 核心能力（v2.2.0）
+
+1. **自動短字幕切分（v2.2.0 新增）**：轉錄時自動調用 `word-level` 字級時間戳，將 Whisper 粗糙長句切成 **7~10 字 / 1.5 秒** 的標準短字幕（`.srt`），完全解決長句退化問題。
+2. **分類詞庫與小抄（v2.1.0+）**：自動從同目錄 `.info.json` 抽取專有名詞，並套用 `lexicon/lexicon.json` 的專門術語與錯字替換（`--categories AI`）。
+3. **幻覺與雜訊過濾**：自動清除 Whisper 水印句（「請不吝點贊…」）與相鄰重複迴圈。
+4. **自動音訊切段**：超過 25MB 音檔自動無損切分，不需手動跑 ffmpeg。
+
+---
+
+## 🚀 使用流程
 
 ### 步驟一：準備音檔
-
-支援格式：mp3、mp4、wav、m4a、ogg、webm
-**單檔上限 25MB**（超過見下方「大檔處理」）
-
-把音檔放到：
-```
-C:\Users\admin\Desktop\classroom\transcribe-audio\inbox\
-```
+支援格式：`mp3`、`mp4`、`wav`、`m4a`、`ogg`、`webm`。
 
 ### 步驟二：執行轉錄
-
-開啟終端機，執行：
-```
+開啟終端機執行：
+```bash
 cd C:\Users\admin\Desktop\classroom\transcribe-audio
-python transcribe.py inbox\你的音檔.mp3
+python transcribe.py "你的音檔路徑.mp3"
+```
+*如需指定特定詞庫分類（如 AI）：*
+```bash
+python transcribe.py "你的音檔路徑.mp3" --categories AI
 ```
 
-等待完成，1 小時音檔約 **1–2 分鐘**。
-
-### 步驟三：確認輸出
-
-輸出位置：
-```
-done\你的音檔_逐字稿.md
-```
-
-### 步驟四：後處理
-
-把逐字稿路徑告訴 Claude：
-```
-用 transcript-training-pack 處理 C:\Users\admin\Desktop\classroom\transcribe-audio\done\你的音檔_逐字稿.md
-```
-
-Claude 會自動產出：培訓報告、摘要、心智圖、心智圖網頁版（HTML）。
+### 步驟三：產出成品
+轉錄完成後，同目錄下將自動產出：
+1. `<檔名>_逐字稿.md`：繁體中文完整逐字稿。
+2. `<檔名>_逐字稿.srt`（或 `<檔名>.srt`）：**已自動切好 7~10 字/條的標準短字幕**（可直接外掛播放或匯入剪映）。
+3. `<檔名>.words.json`：單詞級毫秒時間戳資料庫。
 
 ---
 
-## 大檔處理（超過 25MB）
+## 📂 專案檔案結構
 
-程式會自動偵測並給出壓縮指令。如需手動壓縮：
-
-```
-ffmpeg -i 原始音檔.mp3 -ac 1 -ar 16000 -b:a 32k 壓縮後.mp3
-```
-
-- `-ac 1`：單聲道（語音足夠）
-- `-ar 16000`：16kHz 取樣率（Whisper 標準）
-- `-b:a 32k`：32kbps 位元率，1 小時約 14MB
-
----
-
-## 常見問題
-
-**Q：轉出來是簡體字怎麼辦？**
-Whisper 輸出語言跟音檔語言有關，目前設定 `language="zh"` 固定中文。
-若仍出現簡體，可在 transcript-training-pack 步驟要求轉換。
-
-**Q：免費額度多少？**
-Groq 免費方案：每天約 28,800 秒（8 小時）音訊，4–10 場/月完全足夠。
-
-**Q：多人對話能區分說話者嗎？**
-目前版本不支援說話者分離（diarization），v1 先不做。
-
----
-
-## 資料夾結構
-
-```
-transcribe-audio\
-├── transcribe.py      ← 主程式
-├── SOP.md             ← 本文件
-├── inbox\             ← 音檔丟這裡
-└── done\              ← 逐字稿輸出到這裡
+```text
+transcribe-audio/
+├── transcribe.py          ← 主轉錄程式 (v2.2.0)
+├── refine_srt.py          ← 字幕精修與長句聚合模組
+├── lexicon/               ← 分類詞庫系統
+│   ├── lexicon.py         ← 詞庫載入與 Prompt 生成器
+│   └── lexicon.json       ← 詞庫本體（AI、通用、字幕工具）
+├── CHANGELOG.md           ← 詳細演進與版本歷程記錄
+└── SOP.md                 ← 本操作手冊
 ```

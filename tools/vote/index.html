@@ -1,0 +1,589 @@
+<!--
+  版本：v1.1
+  版更記錄：
+  v1.1 (2026-08-21) - 移除左上角「← 首頁」返回連結（三頁一致）
+  v1.0 (2026-08-20) - 通用投票系統前台。取代 menu-order-api /desk/vote_firebase.html 的寫死版本：
+                      名單、選項、票數、時間全部改讀 Firestore polls/{pollId}；不帶參數時自動顯示
+                      後台設為「進行中」的場次，?poll=xxx 可指定場次（含歷年）。新增點圖放大燈箱、
+                      選項標題／說明／地圖連結（可做旅遊景點投票）、開始與截止時間控制、
+                      票數隱藏開關、留言欄、自由提案。管理功能（清空、改設定）已移除至 /admin/vote/。
+-->
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>投票系統</title>
+<style>
+  :root { --brand:#1976D2; --ok:#16a34a; --warn:#b45309; --danger:#dc2626; --muted:#6b7280; --line:#e5e7eb; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans TC','PingFang TC','Microsoft JhengHei',sans-serif; background:#f5f5f5; color:#111827; }
+  .header { background:var(--brand); color:#fff; padding:18px 20px; text-align:center; box-shadow:0 2px 8px rgba(0,0,0,.2); position:relative; }
+  .header h1 { font-size:21px; font-weight:600; line-height:1.3; }
+  .header p { font-size:13px; opacity:.85; margin-top:5px; }
+  .wrap { width:min(100%,1180px); margin:0 auto; padding:18px 16px 40px; }
+  .card { background:#fff; border-radius:14px; padding:16px; box-shadow:0 4px 12px rgba(0,0,0,.07); margin-bottom:16px; }
+  .card h2 { font-size:16px; font-weight:600; margin-bottom:12px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .step { background:var(--brand); color:#fff; width:22px; height:22px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-size:13px; flex-shrink:0; }
+  .top { display:grid; grid-template-columns:1fr; gap:16px; }
+  @media (min-width:900px){ .top { grid-template-columns:340px 1fr; align-items:start; } .sticky { position:sticky; top:16px; } }
+  select, input[type=text], textarea { width:100%; font-size:16px; padding:10px 12px; border-radius:10px; border:1px solid var(--line); font-family:inherit; background:#fff; }
+  textarea { resize:vertical; min-height:70px; }
+  .pill { display:inline-flex; align-items:center; gap:6px; background:#e8f1fd; border:1px solid #cfe1fb; color:#1558a8; padding:6px 12px; border-radius:999px; font-size:14px; font-weight:600; }
+  .status { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:12px; }
+  .btns { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+  .btn { border:0; border-radius:10px; padding:11px 16px; cursor:pointer; font-weight:600; font-size:15px; font-family:inherit; }
+  .btn.primary { background:var(--brand); color:#fff; }
+  .btn.secondary { background:#eef2ff; color:#1d4ed8; }
+  .btn.ghost { background:#f3f4f6; color:#374151; }
+  .btn.danger { background:#fee2e2; color:#b91c1c; }
+  .btn:disabled { opacity:.45; cursor:not-allowed; }
+  .grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+  @media (min-width:700px){ .grid { grid-template-columns:repeat(3,minmax(0,1fr)); } }
+  @media (min-width:1000px){ .grid { grid-template-columns:repeat(4,minmax(0,1fr)); } }
+  .opt { border:2px solid transparent; border-radius:14px; overflow:hidden; background:#fafafa; cursor:pointer; transition:transform .12s,box-shadow .12s,border-color .12s; position:relative; display:flex; flex-direction:column; }
+  .opt:hover { transform:translateY(-2px); box-shadow:0 10px 20px rgba(0,0,0,.08); }
+  .opt.selected { border-color:var(--brand); box-shadow:0 0 0 4px rgba(25,118,210,.15); }
+  .opt.locked { opacity:.5; pointer-events:none; }
+  .opt .imgbox { position:relative; background:#e9eaec; }
+  .opt img { display:block; width:100%; aspect-ratio:4/3; object-fit:contain; }
+  .opt .noimg { display:flex; align-items:center; justify-content:center; aspect-ratio:16/6; color:#9ca3af; font-size:13px; }
+  .zoom { position:absolute; right:8px; top:8px; background:rgba(17,24,39,.72); color:#fff; border:0; width:34px; height:34px; border-radius:50%; cursor:pointer; font-size:16px; line-height:1; display:flex; align-items:center; justify-content:center; }
+  .zoom:hover { background:rgba(17,24,39,.92); }
+  .opt .cap { padding:10px 12px; display:flex; flex-direction:column; gap:4px; flex:1; }
+  .opt .cap .t { font-size:15px; font-weight:600; line-height:1.3; }
+  .opt .cap .d { font-size:12px; color:var(--muted); line-height:1.4; }
+  .opt .cap a { font-size:12px; color:var(--brand); text-decoration:none; }
+  .opt .cap a:hover { text-decoration:underline; }
+  .check { position:absolute; left:8px; top:8px; width:28px; height:28px; border-radius:50%; background:#fff; border:2px solid var(--line); display:flex; align-items:center; justify-content:center; font-size:15px; color:transparent; }
+  .opt.selected .check { background:var(--brand); border-color:var(--brand); color:#fff; }
+  .results { display:grid; grid-template-columns:repeat(1,minmax(0,1fr)); gap:10px; }
+  @media (min-width:700px){ .results { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+  .meter { background:#f7f8fa; border-radius:10px; padding:10px 12px; border:1px solid #f0f1f4; }
+  .meter .flex { display:flex; justify-content:space-between; align-items:baseline; gap:10px; margin-bottom:6px; }
+  .meter .nm { font-size:14px; font-weight:600; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .meter .ct { font-size:13px; color:var(--muted); flex-shrink:0; }
+  .bar { height:9px; background:#e5e7eb; border-radius:999px; overflow:hidden; }
+  .bar > span { display:block; height:9px; background:var(--brand); width:0; transition:width .25s; }
+  .rank1 .bar > span { background:#f59e0b; }
+  .muted { color:var(--muted); }
+  .small { font-size:13px; }
+  .tag { display:inline-block; border:1px solid var(--line); border-radius:999px; padding:4px 10px; font-size:12px; color:#374151; background:#f9fafb; margin:2px 4px 2px 0; }
+  .tag.done { background:#ecfdf5; border-color:#a7f3d0; color:#047857; }
+  .banner { border-radius:10px; padding:12px 14px; font-size:14px; margin-bottom:14px; line-height:1.5; }
+  .banner.info { background:#eff6ff; border:1px solid #bfdbfe; color:#1e40af; }
+  .banner.warn { background:#fffbeb; border:1px solid #fde68a; color:#92400e; }
+  .banner.done { background:#ecfdf5; border:1px solid #a7f3d0; color:#065f46; }
+  .lightbox { position:fixed; inset:0; background:rgba(0,0,0,.9); display:none; align-items:center; justify-content:center; z-index:60; padding:20px; }
+  .lightbox.open { display:flex; }
+  .lightbox img { max-width:100%; max-height:88vh; object-fit:contain; border-radius:6px; }
+  .lightbox .close { position:absolute; right:18px; top:14px; background:none; border:0; color:#fff; font-size:34px; cursor:pointer; line-height:1; }
+  .lightbox .lbcap { position:absolute; bottom:18px; left:0; right:0; text-align:center; color:#fff; font-size:14px; padding:0 20px; }
+  .lightbox .nav { position:absolute; top:50%; transform:translateY(-50%); background:rgba(255,255,255,.15); color:#fff; border:0; width:46px; height:64px; font-size:26px; cursor:pointer; border-radius:8px; }
+  .lightbox .nav.prev { left:12px; } .lightbox .nav.next { right:12px; }
+  .toast { position:fixed; left:50%; bottom:26px; transform:translateX(-50%) translateY(20px); background:#111827; color:#fff; padding:12px 20px; border-radius:10px; font-size:14px; opacity:0; pointer-events:none; transition:.25s; z-index:80; max-width:90vw; text-align:center; }
+  .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+  .loading { text-align:center; padding:60px 20px; color:var(--muted); }
+  footer { text-align:center; color:#9ca3af; font-size:12px; padding:10px 0 30px; }
+  .field { margin-top:12px; }
+  .field label { display:block; font-size:13px; font-weight:600; margin-bottom:6px; color:#374151; }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1 id="pollTitle">投票系統</h1>
+  <p id="pollDesc"></p>
+</div>
+
+<div class="wrap">
+  <div id="loading" class="loading">載入中…</div>
+
+  <div id="main" style="display:none">
+    <div id="banner"></div>
+
+    <div class="top">
+      <section class="card sticky">
+        <h2><span class="step">1</span>選擇投票人</h2>
+        <div id="voterPick"></div>
+        <div class="status">
+          <span class="pill">剩餘票數：<span id="remain">0</span> / <span id="perPerson">0</span></span>
+          <span id="votedTip" class="muted small"></span>
+        </div>
+        <div id="commentField" class="field" style="display:none">
+          <label for="commentInput">留言／理由（選填）</label>
+          <textarea id="commentInput" placeholder="想補充的話寫在這裡"></textarea>
+        </div>
+        <div class="btns">
+          <button id="submitBtn" class="btn primary" disabled>送出投票</button>
+          <button id="clearSelBtn" class="btn ghost">清除選擇</button>
+          <button id="revokeBtn" class="btn danger" style="display:none" disabled>撤銷我的投票重投</button>
+        </div>
+        <p class="muted small" style="margin-top:10px" id="ruleTip"></p>
+      </section>
+
+      <section class="card">
+        <h2><span class="step">2</span><span id="pickTitle">請點選項目</span></h2>
+        <div id="grid" class="grid"></div>
+        <div id="proposalWrap" style="display:none; margin-top:16px; border-top:1px solid var(--line); padding-top:14px">
+          <h2 style="font-size:15px">💡 名單上沒有你想選的？提個案</h2>
+          <div class="field"><label for="propTitle">名稱</label><input type="text" id="propTitle" placeholder="例如：清水斷崖"></div>
+          <div class="field"><label for="propDesc">說明（選填）</label><input type="text" id="propDesc" placeholder="為什麼推薦"></div>
+          <div class="field"><label for="propLink">連結（選填）</label><input type="text" id="propLink" placeholder="Google Map 或介紹網址"></div>
+          <div class="btns"><button id="propBtn" class="btn secondary">送出提案（待管理員審核）</button></div>
+        </div>
+      </section>
+    </div>
+
+    <section class="card" id="resultCard">
+      <h2>📊 投票結果</h2>
+      <div id="resultHint" class="muted small" style="margin-bottom:10px"></div>
+      <div id="results" class="results"></div>
+    </section>
+
+    <section class="card">
+      <h2>👥 投票狀況</h2>
+      <div id="voteStat" class="muted small" style="margin-bottom:8px"></div>
+      <div id="nonVoters"></div>
+    </section>
+  </div>
+</div>
+
+<footer id="footerNote"></footer>
+
+<div class="lightbox" id="lightbox">
+  <button class="close" onclick="closeLightbox()">×</button>
+  <button class="nav prev" onclick="stepLightbox(-1)">‹</button>
+  <img id="lightboxImg" src="" alt="">
+  <button class="nav next" onclick="stepLightbox(1)">›</button>
+  <div class="lbcap" id="lightboxCap"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js';
+import { getFirestore, collection, doc, getDoc, getDocs, setDoc, deleteDoc, addDoc, query, where, limit, onSnapshot, serverTimestamp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js';
+
+const firebaseConfig = { apiKey:"AIzaSyBf0sHTsndFCksNlh46G_2mw9rk5zmPdc0", authDomain:"my-teaching-tools-2b36c.firebaseapp.com", projectId:"my-teaching-tools-2b36c", storageBucket:"my-teaching-tools-2b36c.firebasestorage.app", messagingSenderId:"82693897353", appId:"1:82693897353:web:f667501aad05c536c09a58" };
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+const $ = (s) => document.querySelector(s);
+const params = new URLSearchParams(location.search);
+
+let pollId = '';
+let poll = null;
+let votes = new Map();      // person -> {picks, comment}
+let currentPerson = '';
+let currentSel = [];        // 保持選取順序
+let unsub = null;
+
+// 前台記住上次選的人（同一台電腦連續投票時省事，但不當成身分驗證）
+const LS_KEY = 'vote_last_person';
+
+init();
+
+async function init(){
+  try {
+    await resolvePoll();
+  } catch (e) {
+    console.error(e);
+    $('#loading').innerHTML = '載入失敗：' + escapeHtml(e.message || String(e));
+    return;
+  }
+  if (!poll) return;
+  renderAll();
+  $('#loading').style.display = 'none';
+  $('#main').style.display = '';
+  listenVotes();
+  bindEvents();
+}
+
+async function resolvePoll(){
+  const wanted = params.get('poll');
+  if (wanted) {
+    const snap = await getDoc(doc(db, 'polls', wanted));
+    if (!snap.exists()) { $('#loading').innerHTML = '找不到這場投票（' + escapeHtml(wanted) + '）。'; return; }
+    pollId = snap.id; poll = snap.data();
+  } else {
+    const qs = await getDocs(query(collection(db, 'polls'), where('isCurrent', '==', true), limit(1)));
+    if (qs.empty) {
+      $('#loading').innerHTML = '目前沒有進行中的投票。<br><span class="small">（管理員可到後台開一場並設為進行中）</span>';
+      return;
+    }
+    pollId = qs.docs[0].id; poll = qs.docs[0].data();
+  }
+  poll.options = (poll.options || []).slice().sort((a,b) => (a.sort ?? 0) - (b.sort ?? 0));
+  poll.voters = poll.voters || [];
+}
+
+// ── 開放狀態判斷 ───────────────────────────────
+function phase(){
+  if (poll.status === 'draft') return { open:false, code:'draft', msg:'這場投票尚未開放。' };
+  if (poll.status === 'closed') return { open:false, code:'closed', msg:'這場投票已結束，感謝參與。' };
+  const now = Date.now();
+  const s = poll.startAt ? new Date(poll.startAt).getTime() : null;
+  const e = poll.endAt ? new Date(poll.endAt).getTime() : null;
+  if (s && now < s) return { open:false, code:'early', msg:'投票尚未開始，開放時間：' + fmtTime(poll.startAt) };
+  if (e && now > e) return { open:false, code:'closed', msg:'投票已於 ' + fmtTime(poll.endAt) + ' 截止。' };
+  return { open:true, code:'open', msg:e ? ('投票截止時間：' + fmtTime(poll.endAt)) : '' };
+}
+
+function canSeeResults(){
+  const p = phase();
+  if (poll.showResults === 'never') return false;
+  if (poll.showResults === 'afterClose') return !p.open && (p.code === 'closed');
+  return true; // always
+}
+
+// ── 畫面 ───────────────────────────────────────
+function renderAll(){
+  document.title = (poll.title || '投票') + ' — 投票系統';
+  $('#pollTitle').textContent = poll.title || '投票';
+  $('#pollDesc').textContent = poll.description || '';
+  $('#perPerson').textContent = poll.votesPerPerson || 1;
+  $('#pickTitle').textContent = '請點選 ' + (poll.votesPerPerson || 1) + ' 個項目' + (poll.pickHint ? '（' + poll.pickHint + '）' : '');
+  $('#ruleTip').textContent = '每人限投 ' + (poll.votesPerPerson || 1) + ' 票，同一人不可重複投票。';
+  $('#commentField').style.display = poll.allowComment ? '' : 'none';
+  $('#proposalWrap').style.display = (poll.allowProposal && phase().open) ? '' : 'none';
+  $('#revokeBtn').style.display = poll.allowRevoke ? '' : 'none';
+  $('#footerNote').textContent = '場次代號：' + pollId;
+
+  renderBanner();
+  renderVoterPick();
+  renderGrid();
+}
+
+function renderBanner(){
+  const p = phase();
+  const box = $('#banner');
+  if (p.open) {
+    box.innerHTML = p.msg ? '<div class="banner info">🗓️ ' + escapeHtml(p.msg) + '</div>' : '';
+  } else {
+    const cls = p.code === 'closed' ? 'done' : 'warn';
+    box.innerHTML = '<div class="banner ' + cls + '">' + (p.code === 'closed' ? '✅ ' : '⏳ ') + escapeHtml(p.msg) + '</div>';
+  }
+}
+
+function renderVoterPick(){
+  const box = $('#voterPick');
+  box.innerHTML = '';
+  if (poll.voters.length > 0) {
+    const sel = document.createElement('select');
+    sel.id = 'personSelect';
+    sel.innerHTML = '<option value="">— 請選擇投票人 —</option>';
+    poll.voters.forEach(n => {
+      const o = document.createElement('option');
+      o.value = n; o.textContent = n;
+      sel.appendChild(o);
+    });
+    box.appendChild(sel);
+    sel.addEventListener('change', () => setPerson(sel.value));
+    const last = localStorage.getItem(LS_KEY);
+    if (last && poll.voters.includes(last)) { sel.value = last; setPerson(last); }
+  } else {
+    const inp = document.createElement('input');
+    inp.type = 'text'; inp.id = 'personInput'; inp.placeholder = '請輸入你的姓名';
+    inp.value = localStorage.getItem(LS_KEY) || '';
+    box.appendChild(inp);
+    inp.addEventListener('input', () => setPerson(inp.value.trim()));
+    if (inp.value) setPerson(inp.value.trim());
+  }
+}
+
+function renderGrid(){
+  const grid = $('#grid');
+  grid.innerHTML = '';
+  if (!poll.options.length) {
+    grid.innerHTML = '<p class="muted small">這場投票還沒有設定選項。</p>';
+    return;
+  }
+  poll.options.forEach((opt, idx) => {
+    const card = document.createElement('div');
+    card.className = 'opt';
+    card.dataset.id = opt.id;
+    card.addEventListener('click', () => toggleSelect(opt.id));
+
+    const check = document.createElement('div');
+    check.className = 'check';
+    check.textContent = '✓';
+    card.appendChild(check);
+
+    if (opt.img) {
+      const box = document.createElement('div');
+      box.className = 'imgbox';
+      const img = document.createElement('img');
+      img.src = opt.img; img.alt = opt.title || ('選項 ' + (idx+1)); img.loading = 'lazy';
+      box.appendChild(img);
+      const zb = document.createElement('button');
+      zb.className = 'zoom'; zb.title = '放大看'; zb.textContent = '🔍';
+      zb.addEventListener('click', (ev) => { ev.stopPropagation(); openLightbox(idx); });
+      box.appendChild(zb);
+      card.appendChild(box);
+    } else {
+      const nb = document.createElement('div');
+      nb.className = 'noimg';
+      nb.textContent = '（無圖片）';
+      card.appendChild(nb);
+    }
+
+    const cap = document.createElement('div');
+    cap.className = 'cap';
+    const t = document.createElement('div');
+    t.className = 't';
+    t.textContent = opt.title || ('選項 ' + (idx + 1));
+    cap.appendChild(t);
+    if (opt.desc) { const d = document.createElement('div'); d.className = 'd'; d.textContent = opt.desc; cap.appendChild(d); }
+    if (opt.link) {
+      const a = document.createElement('a');
+      a.href = opt.link; a.target = '_blank'; a.rel = 'noopener noreferrer';
+      a.textContent = '🔗 看詳細';
+      a.addEventListener('click', ev => ev.stopPropagation());
+      cap.appendChild(a);
+    }
+    card.appendChild(cap);
+    grid.appendChild(card);
+  });
+  refreshGridState();
+}
+
+function refreshGridState(){
+  const p = phase();
+  const hasVoted = currentPerson && votes.has(currentPerson);
+  const locked = !p.open || !currentPerson || hasVoted;
+  document.querySelectorAll('.opt').forEach(el => {
+    el.classList.toggle('locked', locked);
+    el.classList.toggle('selected', currentSel.includes(el.dataset.id));
+  });
+  $('#remain').textContent = String(Math.max(0, (poll.votesPerPerson || 1) - currentSel.length));
+  $('#submitBtn').disabled = !(p.open && currentPerson && !hasVoted && currentSel.length === (poll.votesPerPerson || 1));
+  $('#revokeBtn').disabled = !(p.open && hasVoted);
+
+  let tip = '';
+  if (currentPerson && hasVoted) {
+    const names = (votes.get(currentPerson).picks || []).map(id => optName(id)).join('、');
+    tip = '✅ 已投：' + names;
+  } else if (currentPerson) {
+    tip = '尚未投票';
+  }
+  $('#votedTip').textContent = tip;
+}
+
+function optName(id){
+  const i = poll.options.findIndex(o => o.id === id);
+  if (i < 0) return id;
+  return poll.options[i].title || ('選項 ' + (i + 1));
+}
+
+function setPerson(name){
+  currentPerson = name || '';
+  currentSel = [];
+  if (currentPerson) localStorage.setItem(LS_KEY, currentPerson);
+  const v = votes.get(currentPerson);
+  $('#commentInput').value = v ? (v.comment || '') : '';
+  refreshGridState();
+}
+
+function toggleSelect(id){
+  const p = phase();
+  if (!p.open) return toast('目前不開放投票');
+  if (!currentPerson) return toast('請先選擇投票人');
+  if (votes.has(currentPerson)) return toast('你已經投過票了');
+  const max = poll.votesPerPerson || 1;
+  const i = currentSel.indexOf(id);
+  if (i >= 0) currentSel.splice(i, 1);
+  else {
+    if (currentSel.length >= max) {
+      if (max === 1) currentSel = [id];       // 單選直接換
+      else return toast('最多只能選 ' + max + ' 個，請先取消一個');
+    } else currentSel.push(id);
+  }
+  refreshGridState();
+}
+
+// ── 即時同步票數 ───────────────────────────────
+function listenVotes(){
+  if (unsub) unsub();
+  unsub = onSnapshot(collection(db, 'polls', pollId, 'votes'), (snap) => {
+    votes.clear();
+    snap.forEach(d => votes.set(d.id, d.data()));
+    renderResults();
+    renderVoterStat();
+    refreshGridState();
+  }, (err) => {
+    console.error(err);
+    toast('讀取投票資料失敗：' + err.code);
+  });
+}
+
+function tally(){
+  const counts = {};
+  poll.options.forEach(o => counts[o.id] = 0);
+  votes.forEach(v => (v.picks || []).forEach(id => { if (counts[id] != null) counts[id]++; }));
+  return counts;
+}
+
+function renderResults(){
+  const box = $('#results');
+  const hint = $('#resultHint');
+  if (!canSeeResults()) {
+    box.innerHTML = '';
+    hint.innerHTML = '🔒 為避免影響大家的判斷，投票期間不公布票數，' +
+      (poll.showResults === 'afterClose' ? '截止後就會顯示。' : '結果由管理員另行公布。');
+    return;
+  }
+  hint.textContent = '';
+  const counts = tally();
+  const max = Math.max(1, ...Object.values(counts));
+  const ranked = poll.options.slice().sort((a,b) => (counts[b.id]||0) - (counts[a.id]||0));
+  box.innerHTML = '';
+  ranked.forEach((o, i) => {
+    const c = counts[o.id] || 0;
+    const wrap = document.createElement('div');
+    wrap.className = 'meter' + (i === 0 && c > 0 ? ' rank1' : '');
+    const nm = (i === 0 && c > 0 ? '🏆 ' : '') + (o.title || ('選項 ' + (poll.options.indexOf(o) + 1)));
+    wrap.innerHTML =
+      '<div class="flex"><div class="nm">' + escapeHtml(nm) + '</div><div class="ct"><b>' + c + '</b> 票</div></div>' +
+      '<div class="bar"><span style="width:' + (c / max * 100).toFixed(1) + '%"></span></div>';
+    box.appendChild(wrap);
+  });
+}
+
+function renderVoterStat(){
+  const stat = $('#voteStat');
+  const box = $('#nonVoters');
+  if (poll.voters.length === 0) {
+    stat.textContent = '目前已有 ' + votes.size + ' 人投票。';
+    const names = Array.from(votes.keys());
+    box.innerHTML = names.map(n => '<span class="tag done">' + escapeHtml(n) + '</span>').join('') || '<span class="muted small">還沒有人投票</span>';
+    return;
+  }
+  const voted = new Set(votes.keys());
+  const none = poll.voters.filter(p => !voted.has(p));
+  stat.innerHTML = none.length === 0
+    ? '<span style="color:var(--ok);font-weight:600">✔ 全員已完成投票（' + poll.voters.length + ' 人）</span>'
+    : '已投 <b>' + voted.size + '</b> / ' + poll.voters.length + ' 人，尚未投票 <b style="color:var(--danger)">' + none.length + '</b> 人：';
+  box.innerHTML = none.map(n => '<span class="tag">' + escapeHtml(n) + '</span>').join('');
+}
+
+// ── 動作 ───────────────────────────────────────
+function bindEvents(){
+  $('#submitBtn').addEventListener('click', onSubmit);
+  $('#clearSelBtn').addEventListener('click', () => { currentSel = []; refreshGridState(); });
+  $('#revokeBtn').addEventListener('click', onRevoke);
+  $('#propBtn').addEventListener('click', onProposal);
+  document.addEventListener('keydown', (e) => {
+    if (!$('#lightbox').classList.contains('open')) return;
+    if (e.key === 'Escape') closeLightbox();
+    if (e.key === 'ArrowLeft') stepLightbox(-1);
+    if (e.key === 'ArrowRight') stepLightbox(1);
+  });
+  $('#lightbox').addEventListener('click', (e) => { if (e.target.id === 'lightbox') closeLightbox(); });
+}
+
+async function onSubmit(){
+  const p = phase();
+  if (!p.open) return toast('目前不開放投票');
+  if (!currentPerson) return toast('請先選擇投票人');
+  if (currentSel.length !== (poll.votesPerPerson || 1)) return;
+
+  const btn = $('#submitBtn');
+  btn.disabled = true; btn.textContent = '送出中…';
+  try {
+    const ref = doc(db, 'polls', pollId, 'votes', currentPerson);
+    const exists = await getDoc(ref);
+    if (exists.exists()) { toast('這個名字已經投過票了'); return; }
+    await setDoc(ref, {
+      person: currentPerson,
+      picks: currentSel.slice(),
+      comment: poll.allowComment ? ($('#commentInput').value || '').trim() : '',
+      createdAt: serverTimestamp()
+    });
+    currentSel = [];
+    toast('✅ 投票完成，感謝你的參與');
+  } catch (e) {
+    console.error(e);
+    toast('送出失敗：' + (e.code || e.message));
+  } finally {
+    btn.textContent = '送出投票';
+    refreshGridState();
+  }
+}
+
+async function onRevoke(){
+  if (!currentPerson || !votes.has(currentPerson)) return;
+  if (!confirm('確定撤銷「' + currentPerson + '」的投票並重新投一次？')) return;
+  try {
+    await deleteDoc(doc(db, 'polls', pollId, 'votes', currentPerson));
+    currentSel = [];
+    toast('已撤銷，可以重新投票');
+  } catch (e) { toast('撤銷失敗：' + (e.code || e.message)); }
+}
+
+async function onProposal(){
+  const title = ($('#propTitle').value || '').trim();
+  if (!title) return toast('請至少填名稱');
+  const btn = $('#propBtn');
+  btn.disabled = true;
+  try {
+    await addDoc(collection(db, 'polls', pollId, 'proposals'), {
+      title,
+      desc: ($('#propDesc').value || '').trim(),
+      link: ($('#propLink').value || '').trim(),
+      by: currentPerson || '匿名',
+      status: 'pending',
+      createdAt: serverTimestamp()
+    });
+    $('#propTitle').value = ''; $('#propDesc').value = ''; $('#propLink').value = '';
+    toast('已送出提案，管理員審核通過後會出現在選項中');
+  } catch (e) { toast('送出失敗：' + (e.code || e.message)); }
+  finally { btn.disabled = false; }
+}
+
+// ── 燈箱 ───────────────────────────────────────
+let lbIndex = 0;
+function imgOptions(){ return poll.options.filter(o => o.img); }
+window.openLightbox = function(optIndex){
+  const list = imgOptions();
+  const target = poll.options[optIndex];
+  lbIndex = Math.max(0, list.findIndex(o => o.id === target.id));
+  showLightbox();
+};
+function showLightbox(){
+  const list = imgOptions();
+  if (!list.length) return;
+  const o = list[lbIndex];
+  $('#lightboxImg').src = o.img;
+  $('#lightboxCap').textContent = (o.title || '') + (o.desc ? '　' + o.desc : '') + '　（' + (lbIndex+1) + '/' + list.length + '）';
+  $('#lightbox').classList.add('open');
+}
+window.stepLightbox = function(d){
+  const list = imgOptions();
+  if (!list.length) return;
+  lbIndex = (lbIndex + d + list.length) % list.length;
+  showLightbox();
+};
+window.closeLightbox = function(){ $('#lightbox').classList.remove('open'); };
+
+// ── 小工具 ─────────────────────────────────────
+let toastTimer = null;
+function toast(msg){
+  const t = $('#toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2600);
+}
+function fmtTime(iso){
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d)) return iso;
+  const p = n => String(n).padStart(2,'0');
+  return d.getFullYear() + '/' + p(d.getMonth()+1) + '/' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+}
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+</script>
+</body>
+</html>

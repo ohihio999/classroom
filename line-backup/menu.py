@@ -1,3 +1,7 @@
+# v0.3.0 | 2026-05-20
+# 變更：新增 [6] Serve 模式（含即時重新命名），原 [6] 開啟 HTML 移至 [7]
+# v0.2.0 | 2026-05-20
+# 變更：新增 [8] 提取加密金鑰（需系統管理員），[9] 離開
 # v0.1.0 | 2026-05-20
 # LINE 備份工具 — 互動式選單
 
@@ -60,9 +64,11 @@ MENU = """
   [3] 刪除群組備份  （互動式選擇要刪哪個）
   [4] 搜尋訊息      （互動式全文搜尋）
   [5] 產生 HTML     （把聊天轉成網頁）
-  [6] 開啟 HTML     （用瀏覽器瀏覽聊天記錄）
-  [7] 設定定時排程  （每天 03:00 自動備份）
-  [8] 離開
+  [6] Serve 模式    （啟動本地伺服器，支援即時重新命名）
+  [7] 開啟 HTML     （用瀏覽器瀏覽聊天記錄）
+  [8] 設定定時排程  （每天 03:00 自動備份）
+  [9] 提取加密金鑰  （需系統管理員，掃 LINE 記憶體取得 DB 金鑰）
+  [0] 離開
 """
 
 ACTIONS = {
@@ -71,8 +77,10 @@ ACTIONS = {
     "3": lambda: run(["backup.py", "--delete"]),
     "4": lambda: run(["search.py"]),
     "5": lambda: run(["html_viewer.py"]),
-    "6": open_html,
-    "7": setup_schedule,
+    "6": lambda: run(["html_viewer.py", "--serve"]),
+    "7": open_html,
+    "8": setup_schedule,
+    "9": lambda: run(["key_extractor.py"]),
 }
 
 def main():
@@ -80,11 +88,11 @@ def main():
         os.system("cls")
         print(MENU)
         try:
-            choice = input("請選擇 [1-8]：").strip()
+            choice = input("請選擇 [0-9]：").strip()
         except (KeyboardInterrupt, EOFError):
             break
 
-        if choice == "8":
+        if choice == "0":
             break
 
         action = ACTIONS.get(choice)
@@ -92,7 +100,7 @@ def main():
             print()
             action()
         else:
-            print("請輸入 1 到 8。")
+            print("請輸入 0 到 9。")
             input("按 Enter 繼續...")
 
 if __name__ == "__main__":

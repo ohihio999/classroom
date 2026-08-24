@@ -1,11 +1,13 @@
-# v0.1.0 | 2026-05-19
-# 全文搜尋工具 — 搜尋所有 LINE 聊天室的訊息
+# v0.2.0 | 2026-05-20
+# 變更：使用 name_resolver 顯示群組名稱
 
 import io
 import json
 import pathlib
 import sys
 from datetime import datetime
+
+from name_resolver import NameResolver
 
 
 def ts_to_str(ts_ms: int) -> str:
@@ -72,24 +74,36 @@ def highlight(text: str, query: str, case_sensitive: bool = False) -> str:
     return snippet.replace(kw, f">>{kw}<<")
 
 
-def print_results(results: list[dict], query: str, name_map: dict | None = None):
+def print_results(results: list[dict], query: str, resolver: "NameResolver | None" = None,
+                  chats: list[dict] | None = None):
     if not results:
         print(f'找不到包含「{query}」的訊息。')
         return
 
+    # 建立 chat_mid -> messages 的快速查表（用於 composite 命名）
+    chat_msgs: dict[str, list] = {}
+    if chats:
+        for c in chats:
+            chat_msgs[c.get("chat_mid", "")] = c.get("messages", [])
+
     print(f'\n找到 {len(results)} 筆結果：\n{"─"*60}')
     for r in results:
-        chat = (name_map or {}).get(r["chat_mid"], r["chat_mid"][:20])
-        sender = (name_map or {}).get(r["fromMid"], r["fromMid"][-8:])
+        if resolver:
+            msgs = chat_msgs.get(r["chat_mid"], [])
+            chat_name, _ = resolver.resolve_chat(r["chat_mid"], msgs)
+            sender = resolver.resolve_sender(r["fromMid"])
+        else:
+            chat_name = r["chat_mid"][:20]
+            sender = r["fromMid"][-8:]
         snippet = highlight(r["text"], query)
-        print(f'[{r["time_str"]}] {chat}')
+        print(f'[{r["time_str"]}] {chat_name}')
         print(f'  {sender}: {snippet}')
         print()
 
 
-def interactive_search(chats_dir: pathlib.Path, name_map: dict | None = None):
+def interactive_search(chats_dir: pathlib.Path, resolver: "NameResolver | None" = None):
     """互動式搜尋介面。"""
-    print(f"載入聊天室...")
+    print("載入聊天室...")
     chats = load_chats(chats_dir)
     total_msgs = sum(len(c.get("messages", [])) for c in chats)
     print(f"已載入 {len(chats)} 個聊天室，共 {total_msgs:,} 則訊息")
@@ -116,33 +130,41 @@ def interactive_search(chats_dir: pathlib.Path, name_map: dict | None = None):
                 pass
 
         results = search(chats, query, limit=limit)
-        print_results(results, query, name_map)
+        print_results(results, query, resolver, chats)
 
 
 if __name__ == "__main__":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
     sys.stdin = io.TextIOWrapper(sys.stdin.buffer, encoding="utf-8", errors="replace")
 
-    # 找最新備份
     backup_root = pathlib.Path("D:/LINE自製備份")
-    backups = sorted(backup_root.glob("*/47234ddb9e79bc22b3074b31cb876d"), reverse=True)
-    if not backups:
-        # 也接受命令列參數
-        if len(sys.argv) > 1:
-            chats_dir = pathlib.Path(sys.argv[1])
-        else:
-            print("[!] 找不到備份目錄，請先執行 backup.py")
-            sys.exit(1)
+    timestamped = sorted(
+        [p for p in backup_root.glob("*/47234ddb9e79bc22b3074b31cb876d")
+         if p.parent.name.startswith("2")],
+        reverse=True,
+    )
+    if timestamped:
+        acct_dir = timestamped[0]
+    elif len(sys.argv) > 1:
+        acct_dir = pathlib.Path(sys.argv[1])
     else:
-        chats_dir = backups[0] / "chats"
+        print("[!] 找不到備份目錄，請先執行 backup.py")
+        sys.exit(1)
+    chats_dir = acct_dir / "chats"
+
+    # notes 優先用 LINE桌面備份
+    notes_src = pathlib.Path("D:/LINE桌面備份/47234ddb9e79bc22b3074b31cb876d")
+    if not notes_src.exists():
+        notes_src = acct_dir
 
     print(f"來源：{chats_dir}")
+    resolver = NameResolver(notes_src)
+    print(f"名稱庫：群組 {len(resolver.group_names)}  用戶 {len(resolver.user_names)}  自訂 {len(resolver.custom_names)}")
 
-    # 命令列搜尋模式：python search.py "關鍵字"
     if len(sys.argv) >= 2 and not pathlib.Path(sys.argv[1]).exists():
         query = sys.argv[1]
         chats = load_chats(chats_dir)
         results = search(chats, query, limit=100)
-        print_results(results, query)
+        print_results(results, query, resolver, chats)
     else:
-        interactive_search(chats_dir)
+        interactive_search(chats_dir, resolver)

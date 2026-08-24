@@ -37,3 +37,6 @@ line-backup/test_output2/
 
 # 暫存腳本
 tmp_*.ps1
+
+# 根目錄這份是 tools/影片進度表/ 的重複，且自帶 .git（巢狀 repo），不追蹤
+/影片進度表/

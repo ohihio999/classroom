@@ -1,0 +1,195 @@
+<!--
+  版本：v1.1
+  版更記錄：
+  v1.1 (2026-08-21) - 移除左上角「← 投票管理」返回連結（三頁一致）
+  v1.0 (2026-08-20) - 一次性工具：把舊桌曆投票（Firebase 專案 order-d8fb1 的 pollVotes 集合，
+                      掛在 menu-order-api.web.app/desk/vote_firebase.html）匯入新的通用投票系統，
+                      存成 polls/desk2025 這場歷史活動。舊集合不會被刪除或修改，純讀取。
+                      照片沿用複製到本站的 /vote/legacy2025/1~8.jpg。跑完一次就可以不用再開。
+-->
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>匯入 2025 桌曆投票</title>
+<style>
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans TC','Microsoft JhengHei',sans-serif; background:#f5f5f5; color:#111827; }
+  .header { background:#1976D2; color:#fff; padding:18px 20px; text-align:center; position:relative; }
+  .header h1 { font-size:20px; font-weight:600; }
+  .wrap { width:min(100%,860px); margin:0 auto; padding:20px 16px 60px; }
+  .card { background:#fff; border-radius:14px; padding:18px; box-shadow:0 4px 12px rgba(0,0,0,.07); margin-bottom:16px; }
+  h2 { font-size:16px; margin-bottom:10px; }
+  .btn { border:0; border-radius:9px; padding:10px 16px; cursor:pointer; font-weight:600; font-size:14px; font-family:inherit; }
+  .btn.primary { background:#1976D2; color:#fff; }
+  .btn.ghost { background:#f3f4f6; color:#374151; }
+  .btn:disabled { opacity:.45; cursor:not-allowed; }
+  .banner { border-radius:10px; padding:12px 14px; font-size:14px; line-height:1.6; margin-bottom:14px; }
+  .banner.info { background:#eff6ff; border:1px solid #bfdbfe; color:#1e40af; }
+  .banner.done { background:#ecfdf5; border:1px solid #a7f3d0; color:#065f46; }
+  .banner.warn { background:#fffbeb; border:1px solid #fde68a; color:#92400e; }
+  pre { background:#111827; color:#e5e7eb; padding:12px; border-radius:9px; font-size:12px; line-height:1.6; overflow:auto; max-height:340px; white-space:pre-wrap; }
+  table { width:100%; border-collapse:collapse; font-size:13px; margin-top:10px; }
+  th, td { text-align:left; padding:7px 9px; border-bottom:1px solid #e5e7eb; }
+  th { background:#f9fafb; }
+  .muted { color:#6b7280; font-size:13px; }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>匯入 2025 桌曆投票</h1>
+</div>
+<div class="wrap">
+  <div id="gate" class="card">驗證中…</div>
+  <div id="app" style="display:none">
+    <div class="card">
+      <div class="banner info">
+        這支頁面把舊系統（<b>order-d8fb1</b> 專案的 <code>pollVotes</code> 集合）的票讀出來，存成新系統的一場歷史活動
+        <b>desk2025</b>。舊資料<b>只讀不刪</b>，原本的頁面照樣能用。<br>
+        照片沿用已複製到本站的 <code>/vote/legacy2025/1~8.jpg</code>。跑過一次就不用再跑。
+      </div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap">
+        <button class="btn ghost" id="readBtn">① 讀取舊資料（不會寫入任何東西）</button>
+        <button class="btn primary" id="importBtn" disabled>② 確認匯入</button>
+      </div>
+      <p class="muted" style="margin-top:10px">先按①看清楚讀到什麼，確認沒問題再按②。</p>
+    </div>
+    <div class="card" id="previewCard" style="display:none">
+      <h2>讀到的舊投票</h2>
+      <div id="preview"></div>
+    </div>
+    <div class="card" id="logCard" style="display:none">
+      <h2>執行紀錄</h2>
+      <pre id="log"></pre>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js';
+import { getAuth, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js';
+import { getFirestore, collection, doc, getDoc, getDocs, setDoc } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js';
+
+// 新家：classroom 的 Firebase
+const newApp = initializeApp({ apiKey:"AIzaSyBf0sHTsndFCksNlh46G_2mw9rk5zmPdc0", authDomain:"my-teaching-tools-2b36c.firebaseapp.com", projectId:"my-teaching-tools-2b36c", storageBucket:"my-teaching-tools-2b36c.firebasestorage.app", messagingSenderId:"82693897353", appId:"1:82693897353:web:f667501aad05c536c09a58" });
+// 舊家：訂購系統的 Firebase（唯讀）
+const oldApp = initializeApp({ apiKey:"AIzaSyC-kl57WGkKvucg16yQ9qJbvhp9uw6PKZ8", authDomain:"order-d8fb1.firebaseapp.com", projectId:"order-d8fb1", storageBucket:"order-d8fb1.firebasestorage.app", messagingSenderId:"677660401739", appId:"1:677660401739:web:c1e8aeafb6b4fce242adce" }, 'legacy');
+
+const auth = getAuth(newApp);
+const db = getFirestore(newApp);
+const oldDb = getFirestore(oldApp);
+const ALLOWED_EMAIL = 'ohihio@gmail.com';
+const POLL_ID = 'desk2025';
+
+// 舊系統寫死的名單與 8 個選項
+const LEGACY_VOTERS = ["王儷蓉","吳翊平","林玉鈴","林宥燁","林逸昇","林毓婷","許世佑","陳佳興","陳姵存","曾書彥","黃志堅","黃義正","鍾文綺","蘇彦霖","石博仁","潘怡穎"];
+const LEGACY_OPTIONS = Array.from({ length:8 }, (_, i) => ({
+  id: String(i + 1),
+  title: '第 ' + (i + 1) + ' 款',
+  desc: '', link: '',
+  img: '/vote/legacy2025/' + (i + 1) + '.jpg',
+  path: '',
+  sort: i
+}));
+
+const $ = (s) => document.querySelector(s);
+let legacyVotes = [];
+
+onAuthStateChanged(auth, (user) => {
+  if (!user) { location.href = '/login.html'; return; }
+  if (user.email !== ALLOWED_EMAIL) { signOut(auth).then(() => location.href = '/login.html'); return; }
+  $('#gate').style.display = 'none';
+  $('#app').style.display = '';
+});
+
+function log(msg){
+  $('#logCard').style.display = '';
+  $('#log').textContent += msg + '\n';
+}
+
+$('#readBtn').addEventListener('click', async () => {
+  const btn = $('#readBtn');
+  btn.disabled = true; btn.textContent = '讀取中…';
+  try {
+    const snap = await getDocs(collection(oldDb, 'pollVotes'));
+    legacyVotes = snap.docs.map(d => ({ person:d.id, ...d.data() }));
+    renderPreview();
+    $('#importBtn').disabled = legacyVotes.length === 0;
+    log('讀取成功，共 ' + legacyVotes.length + ' 筆舊投票。');
+  } catch (e) {
+    console.error(e);
+    log('讀取失敗：' + (e.code || e.message) + '（舊專案的安全規則可能不允許從這個網域讀取）');
+  } finally {
+    btn.disabled = false; btn.textContent = '① 重新讀取舊資料';
+  }
+});
+
+function renderPreview(){
+  $('#previewCard').style.display = '';
+  if (!legacyVotes.length) {
+    $('#preview').innerHTML = '<div class="banner warn">舊集合裡沒有任何票，沒有東西可以匯入。</div>';
+    return;
+  }
+  const counts = {};
+  LEGACY_OPTIONS.forEach(o => counts[o.id] = 0);
+  legacyVotes.forEach(v => (v.picks || []).forEach(p => { const k = String(p); if (counts[k] != null) counts[k]++; }));
+  let html = '<p class="muted">共 ' + legacyVotes.length + ' 人投票，' +
+    legacyVotes.reduce((a,v) => a + (v.picks||[]).length, 0) + ' 票。</p><table><tr><th>投票人</th><th>選擇</th></tr>';
+  legacyVotes.forEach(v => {
+    html += '<tr><td>' + esc(v.person) + '</td><td>第 ' + (v.picks || []).join(' 款、第 ') + ' 款</td></tr>';
+  });
+  html += '</table><p class="muted" style="margin-top:12px">各款票數：' +
+    Object.entries(counts).map(([k,c]) => '第' + k + '款 ' + c + '票').join('　') + '</p>';
+  $('#preview').innerHTML = html;
+}
+
+$('#importBtn').addEventListener('click', async () => {
+  if (!confirm('確定把這 ' + legacyVotes.length + ' 筆舊票匯入成新系統的「2025 年度桌曆票選」？')) return;
+  const btn = $('#importBtn');
+  btn.disabled = true; btn.textContent = '匯入中…';
+  try {
+    const exist = await getDoc(doc(db, 'polls', POLL_ID));
+    if (exist.exists() && !confirm('新系統已經有 ' + POLL_ID + ' 這場活動了，要覆蓋設定並重新寫入票嗎？')) {
+      btn.disabled = false; btn.textContent = '② 確認匯入'; return;
+    }
+    await setDoc(doc(db, 'polls', POLL_ID), {
+      title: '2025 年度桌曆票選',
+      description: '（由舊系統匯入的歷史紀錄）',
+      votesPerPerson: 2,
+      voters: LEGACY_VOTERS,
+      options: LEGACY_OPTIONS,
+      status: 'closed',
+      isCurrent: false,
+      showResults: 'always',
+      startAt: null, endAt: null,
+      allowComment: false, allowProposal: false, allowRevoke: false,
+      createdAt: '2025-08-28T00:00:00+08:00',
+      updatedAt: new Date().toISOString(),
+      importedFrom: 'order-d8fb1/pollVotes'
+    });
+    log('已建立活動 ' + POLL_ID + '。');
+    let n = 0;
+    for (const v of legacyVotes) {
+      await setDoc(doc(db, 'polls', POLL_ID, 'votes', v.person), {
+        person: v.person,
+        picks: (v.picks || []).map(String),
+        comment: '',
+        createdAt: v.createdAt || null
+      });
+      n++;
+      log('  匯入 ' + v.person + '（' + (v.picks || []).join('、') + '）');
+    }
+    log('✅ 完成，共匯入 ' + n + ' 筆。可以到 /admin/vote/ 或 /vote/?poll=' + POLL_ID + ' 查看。');
+    btn.textContent = '✅ 匯入完成';
+  } catch (e) {
+    console.error(e);
+    log('❌ 匯入失敗：' + (e.code || e.message));
+    btn.disabled = false; btn.textContent = '② 確認匯入';
+  }
+});
+
+function esc(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+</script>
+</body>
+</html>

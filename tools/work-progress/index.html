@@ -4,10 +4,19 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>工作進度表</title>
-  <!-- v1.2.0 | 2026-05-11
+  <!-- v1.3.0 | 2026-06-10
     v1.0.0 — 初版工作進度表列表頁
     v1.1.0 — 狀態改為進行中/完成兩選項；移除待處理/待確認 tab 與統計；統計改為進行中/完成/全部
     v1.2.0 — 動態類別管理（admin 可新增/移除，存 Firestore）；工作項目 ↑↓ 手動排序（admin）
+    v1.3.0 — 移除封存區：封存任務一律轉為「完成」（admin 首次開啟自動搬移）；「全部」分頁不再顯示已完成項目
+    v1.4.0 — 移除「已完成」分類（與「完成」狀態重複）：該分類任務轉為完成狀態＋分類改「其他」，並從分類清單刪除
+    v1.5.0 — 篩選重新設計：移除上排狀態分頁（消除重複的「全部」），只留一排分類；完成與否改為右側〔已完成〕開關，預設只顯示進行中
+    v1.6.0 — 類別管理新增「改名」：改名時同步更新所有掛該類別的任務（不會變孤兒）
+    v1.7.0 — 篩選列改顯示「已註冊類別＋任務實際用到的類別」聯集：凡清單有分組標題上面就有對應按鈕；分類篩選與分組統一用 (category || '其他')
+    v1.8.0 — admin 開頁時自動把任務用到、但未登記的類別補成類別文件，讓「類別管理」視窗能改名／移除全部類別（含 行政/庶務、其他、技術/資訊…）
+    v1.9.0 — 類別管理視窗加 ↑↓ 排序：可調整類別順序，同步反映到篩選列與清單分組
+    v1.10.0 — 完成的任務改顯示「✅ 完成時間」且不再跑逾期判斷；轉成完成時記錄 completedAt（舊資料退回 updatedAt，搬移時用 archivedAt/updatedAt 回填）
+    v1.11.0 — 「編輯任務」分類下拉改為動態帶入目前實際分類（與篩選列一致），不再寫死舊選項
   -->
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -30,9 +39,10 @@
     .stat-done .stat-num { color: #2E7D32; }
     .stat-total .stat-num { color: #555; }
 
-    .tabs { background: white; display: flex; border-bottom: 2px solid #e0e0e0; overflow-x: auto; }
-    .tab { flex-shrink: 0; padding: 13px 14px; text-align: center; font-size: 13px; cursor: pointer; border-bottom: 3px solid transparent; color: #888; transition: all 0.2s; }
-    .tab.active { color: #1976D2; border-bottom-color: #1976D2; font-weight: 600; }
+    .filter-row { display: flex; align-items: center; gap: 8px; background: white; padding-right: 12px; border-bottom: 2px solid #e0e0e0; }
+    .filter-row .chip-bar { flex: 1; min-width: 0; border-bottom: none; }
+    .done-toggle { flex-shrink: 0; padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 600; cursor: pointer; border: 1px solid #c8e6c9; color: #2E7D32; background: #E8F5E9; white-space: nowrap; transition: all 0.15s; }
+    .done-toggle.active { background: #2E7D32; color: white; border-color: #2E7D32; }
 
     .chip-bar { display: flex; gap: 8px; padding-top: 10px; padding-bottom: 10px; overflow-x: auto; background: white; }
     .chip { flex-shrink: 0; padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 500; cursor: pointer; border: 1px solid #ddd; color: #666; background: white; transition: all 0.15s; }
@@ -52,7 +62,6 @@
     .badge-inprogress { background: #E3F2FD; color: #1565C0; }
     .badge-review { background: #F3E5F5; color: #6A1B9A; }
     .badge-done { background: #E8F5E9; color: #2E7D32; }
-    .archive-note { font-size: 11px; color: #8e24aa; background: #f3e5f5; border-radius: 999px; padding: 3px 8px; }
     .btn-icon { background: none; border: none; font-size: 17px; cursor: pointer; color: #ccc; padding: 2px; line-height: 1; }
     .btn-icon:hover { color: #1976D2; }
     .btn-icon.del:hover { color: #e53935; }
@@ -110,7 +119,6 @@
     <h1>📋 工作進度表</h1>
     <div class="header-actions">
       <button class="hbtn" id="btnMemberEmail" style="display:none" onclick="openMemberModal()">⚙️ 成員</button>
-      <button class="hbtn" onclick="location.href='archive.html'">🗃️ 封存區</button>
       <button class="hbtn" onclick="doSignOut()">登出</button>
       <button class="hbtn" onclick="location.href='/'">🏠</button>
     </div>
@@ -122,15 +130,10 @@
 </div>
 
 <div class="page-section">
-  <div class="tabs">
-    <div class="tab active" onclick="filterTab('all',this)">全部</div>
-    <div class="tab" onclick="filterTab('in_progress',this)">進行中</div>
-    <div class="tab" onclick="filterTab('done',this)">完成</div>
+  <div class="filter-row">
+    <div class="chip-bar" id="chipBar"></div>
+    <button class="done-toggle" id="doneToggle" onclick="toggleDoneView()">✓ 已完成</button>
   </div>
-</div>
-
-<div class="page-section">
-  <div class="chip-bar" id="chipBar"></div>
 </div>
 
 <div class="page-section">
@@ -172,13 +175,7 @@
     </select>
     <label>分類</label>
     <div class="modal-classify-row">
-      <select id="editCategory">
-        <option value="">未分類</option>
-        <option value="技術/資訊">技術/資訊</option>
-        <option value="行政/庶務">行政/庶務</option>
-        <option value="業務/對外">業務/對外</option>
-        <option value="其他">其他</option>
-      </select>
+      <select id="editCategory"></select>
       <button class="btn-classify-sm" id="editClassifyBtn" onclick="autoClassifyEdit()">✨</button>
     </div>
     <div class="modal-classify-hint" id="editClassifyHint"></div>
@@ -268,7 +265,7 @@ const STATUS_LABEL = { in_progress:'進行中', done:'完成' };
 const STATUS_BADGE = { in_progress:'badge-inprogress', done:'badge-done' };
 
 let allTasks = [], currentUser = null, isAdmin = false, categories = [], catDocs = [];
-let tabFilter = 'all', catFilter = 'all', editingId = null;
+let viewMode = 'active', catFilter = 'all', editingId = null; // viewMode: 'active'(進行中) | 'done'(已完成)
 let currentMemberKeys = [];
 
 onAuthStateChanged(auth, async (user) => {
@@ -295,7 +292,11 @@ async function loadCategories() {
 function renderChipBar() {
   const bar = document.getElementById('chipBar');
   if (!bar) return;
-  const items = [{ name: '全部', val: 'all' }, ...categories.map(c => ({ name: c, val: c }))];
+  // 顯示「已註冊類別 ＋ 任務實際用到的類別」聯集，避免有分組標題卻沒對應按鈕
+  const used = [...new Set(allTasks.map(t => t.category || '其他'))];
+  const extra = used.filter(c => !categories.includes(c));
+  const allCats = [...categories, ...extra];
+  const items = [{ name: '全部', val: 'all' }, ...allCats.map(c => ({ name: c, val: c }))];
   let html = items.map(({ name, val }) =>
     `<div class="chip${catFilter === val ? ' active' : ''}" onclick="filterCat('${escAttr(val)}')">${escHtml(name)}</div>`
   ).join('');
@@ -346,12 +347,97 @@ async function loadVisibleTasks() {
 
 async function loadTasks() {
   try {
-    allTasks = (await loadVisibleTasks()).filter((task) => task.archived !== true);
+    let tasks = await loadVisibleTasks();
+    if (isAdmin) {
+      const catsChanged = await runMigrations(tasks);
+      if (catsChanged) await loadCategories();
+    }
+    allTasks = tasks;
     renderStats();
+    renderChipBar();
     renderList();
   } catch (e) {
     document.getElementById('list').innerHTML = `<div class="empty"><div class="empty-icon">⚠️</div><p>${e.message}</p></div>`;
   }
+}
+
+// 一次性資料搬移（admin 開頁時跑，跑完一次後等於 no-op）：
+//  1) 舊封存任務 → 狀態「完成」並清掉封存標記
+//  2)「已完成」分類的任務 →（與「完成」狀態重複）轉為完成狀態、分類改「其他」
+//  3) 從分類清單刪除「已完成」這個分類
+//  4) 把任務用到、但尚未登記的類別補成類別文件（讓管理視窗能改名／移除）
+// 回傳：分類是否有變動（需要重新載入 chip 列）。
+async function runMigrations(tasks) {
+  const DONE_CAT = '已完成';
+  const archivedTasks = tasks.filter((t) => t.archived === true);
+  const doneCatTasks = tasks.filter((t) => t.category === DONE_CAT);
+
+  if (archivedTasks.length || doneCatTasks.length) {
+    try {
+      const batch = writeBatch(db);
+      archivedTasks.forEach((t) => {
+        batch.update(doc(db, 'work_progress', t.id), {
+          status: 'done',
+          archived: false,
+          archivedAt: null,
+          archivedBy: null,
+          archivedByEmail: null,
+          completedAt: t.completedAt || t.archivedAt || t.updatedAt || serverTimestamp(),
+          updatedAt: serverTimestamp()
+        });
+      });
+      doneCatTasks.forEach((t) => {
+        batch.update(doc(db, 'work_progress', t.id), {
+          status: 'done',
+          category: '其他',
+          completedAt: t.completedAt || t.updatedAt || serverTimestamp(),
+          updatedAt: serverTimestamp()
+        });
+      });
+      await batch.commit();
+      archivedTasks.forEach((t) => { t.status = 'done'; t.archived = false; });
+      doneCatTasks.forEach((t) => { t.status = 'done'; t.category = '其他'; });
+    } catch (e) {
+      console.warn('任務搬移失敗，稍後重試：', e);
+    }
+  }
+
+  let catsChanged = false;
+
+  // 刪除「已完成」分類本身
+  try {
+    const snap = await getDocs(query(collection(db, 'work_progress_categories'), where('name', '==', DONE_CAT)));
+    if (!snap.empty) {
+      const batch = writeBatch(db);
+      snap.forEach((d) => batch.delete(doc(db, 'work_progress_categories', d.id)));
+      await batch.commit();
+      catsChanged = true;
+    }
+  } catch (e) {
+    console.warn('移除「已完成」分類失敗，稍後重試：', e);
+  }
+
+  // 把任務用到、但尚未登記的類別補成類別文件，讓管理視窗能改名／移除
+  try {
+    const snap = await getDocs(collection(db, 'work_progress_categories'));
+    const registered = snap.docs.map((d) => d.data().name).filter(Boolean);
+    let maxOrder = snap.docs.reduce((m, d) => Math.max(m, d.data().order || 0), 0);
+    const missing = [...new Set(tasks.map((t) => t.category || '其他'))]
+      .filter((c) => c && c !== DONE_CAT && !registered.includes(c));
+    if (missing.length) {
+      const batch = writeBatch(db);
+      missing.forEach((name) => {
+        maxOrder += 1;
+        batch.set(doc(collection(db, 'work_progress_categories')), { name, order: maxOrder, createdAt: serverTimestamp() });
+      });
+      await batch.commit();
+      catsChanged = true;
+    }
+  } catch (e) {
+    console.warn('補登記類別失敗，稍後重試：', e);
+  }
+
+  return catsChanged;
 }
 
 function renderStats() {
@@ -375,18 +461,23 @@ function getSortedTasks(taskList) {
 function renderList() {
   const list = document.getElementById('list');
   let tasks = getSortedTasks(allTasks);
-  if (tabFilter !== 'all') tasks = tasks.filter((t) => t.status === tabFilter);
-  if (catFilter !== 'all') tasks = tasks.filter((t) => t.category === catFilter);
+  // 預設只顯示進行中；按〔已完成〕開關才看完成的
+  if (viewMode === 'done') tasks = tasks.filter((t) => t.status === 'done');
+  else tasks = tasks.filter((t) => t.status !== 'done');
+  if (catFilter !== 'all') tasks = tasks.filter((t) => (t.category || '其他') === catFilter);
 
   if (!tasks.length) {
-    list.innerHTML = `<div class="empty"><div class="empty-icon">📋</div><p>暫無符合任務</p></div>`;
+    const emptyMsg = viewMode === 'done' ? '目前沒有已完成的任務' : '目前沒有進行中的任務';
+    list.innerHTML = `<div class="empty"><div class="empty-icon">📋</div><p>${emptyMsg}</p></div>`;
     return;
   }
 
   function renderCard(t, idx) {
     const canEdit = t.createdBy === currentUser.uid || isAdmin;
-    const dColor = dueDateColor(t.dueDate);
-    const dLabel = dueDateLabel(t.dueDate);
+    // 完成的任務：秀「✅ 完成時間」、不跑逾期判斷；進行中：秀截止日（含逾期提醒）
+    const metaRight = t.status === 'done'
+      ? `<span class="due-text" style="color:#2E7D32">✅ ${escHtml(completedLabel(t))}</span>`
+      : `<span class="due-text" style="color:${dueDateColor(t.dueDate)}">📅 ${escHtml(dueDateLabel(t.dueDate))}</span>`;
     const sortBtns = isAdmin
       ? `<button class="btn-icon" onclick="event.stopPropagation();moveTask('${t.id}',-1)" title="上移">↑</button><button class="btn-icon" onclick="event.stopPropagation();moveTask('${t.id}',1)" title="下移">↓</button>`
       : '';
@@ -399,7 +490,7 @@ function renderList() {
         <span class="card-title">${idx + 1}. ${escHtml(t.title || '—')}</span>
       </div>
       <div class="card-right">
-        <span class="card-meta">👤 ${escHtml(t.assignee || '—')} · <span class="due-text" style="color:${dColor}">📅 ${escHtml(dLabel)}</span></span>
+        <span class="card-meta">👤 ${escHtml(t.assignee || '—')} · ${metaRight}</span>
         ${sortBtns}${editBtns}
         <span class="badge ${STATUS_BADGE[t.status] || 'badge-pending'}">${STATUS_LABEL[t.status] || t.status}</span>
       </div>
@@ -426,6 +517,21 @@ function renderList() {
       ${grouped[cat].map((t, idx) => renderCard(t, idx)).join('')}
     </div>`
   ).join('');
+}
+
+function tsToDate(ts) {
+  if (!ts) return null;
+  if (typeof ts.toDate === 'function') return ts.toDate();
+  if (ts.seconds != null) return new Date(ts.seconds * 1000);
+  return null;
+}
+
+// 完成時間：優先用 completedAt，舊資料沒有就退回 updatedAt
+function completedLabel(t) {
+  const d = tsToDate(t.completedAt) || tsToDate(t.updatedAt);
+  if (!d) return '完成';
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())} 完成`;
 }
 
 function dueDateColor(d) {
@@ -455,10 +561,9 @@ function escAttr(s) {
   return String(s).replace(/'/g, "\\'").replace(/"/g, '&quot;');
 }
 
-window.filterTab = function(f, el) {
-  tabFilter = f;
-  document.querySelectorAll('.tab').forEach((t) => t.classList.remove('active'));
-  el.classList.add('active');
+window.toggleDoneView = function() {
+  viewMode = viewMode === 'done' ? 'active' : 'done';
+  document.getElementById('doneToggle').classList.toggle('active', viewMode === 'done');
   renderList();
 };
 
@@ -480,6 +585,15 @@ window.deleteRecord = async function(id, label) {
   }
 };
 
+// 用目前實際的分類填滿「編輯任務」的分類下拉，與篩選列一致
+function populateCategorySelect(selected) {
+  const sel = document.getElementById('editCategory');
+  const cats = categories.length ? [...categories] : ['其他'];
+  if (selected && !cats.includes(selected)) cats.unshift(selected); // 任務舊分類不在清單也保留
+  sel.innerHTML = cats.map((c) => `<option value="${escHtml(c)}">${escHtml(c)}</option>`).join('');
+  sel.value = selected || (cats.includes('其他') ? '其他' : cats[0] || '');
+}
+
 window.editRecord = function(id) {
   const t = allTasks.find((x) => x.id === id);
   if (!t) return;
@@ -488,7 +602,7 @@ window.editRecord = function(id) {
   document.getElementById('editAssignee').value = t.assigneeKey || '';
   document.getElementById('editDueDate').value = t.dueDate || '';
   document.getElementById('editStatus').value = t.status || 'in_progress';
-  document.getElementById('editCategory').value = t.category || '';
+  populateCategorySelect(t.category);
   document.getElementById('editDescription').value = t.description || '';
   document.getElementById('editVisibility').value = t.visibility || 'public';
   document.getElementById('editClassifyHint').textContent = '';
@@ -507,17 +621,22 @@ window.saveEdit = async function() {
   btn.textContent = '儲存中…';
   const assigneeKey = document.getElementById('editAssignee').value;
   try {
+    const newStatus = document.getElementById('editStatus').value;
+    const prevStatus = allTasks.find((t) => t.id === editingId)?.status;
     const data = {
       title: document.getElementById('editTitle').value.trim(),
       assignee: ASSIGNEE_MAP[assigneeKey] || assigneeKey,
       assigneeKey,
       dueDate: document.getElementById('editDueDate').value,
-      status: document.getElementById('editStatus').value,
+      status: newStatus,
       category: document.getElementById('editCategory').value || '其他',
       description: document.getElementById('editDescription').value.trim(),
       visibility: document.getElementById('editVisibility').value,
       updatedAt: serverTimestamp()
     };
+    // 剛轉成完成 → 記下完成時間；轉回進行中 → 清掉
+    if (newStatus === 'done' && prevStatus !== 'done') data.completedAt = serverTimestamp();
+    else if (newStatus !== 'done') data.completedAt = null;
     await updateDoc(doc(db, 'work_progress', editingId), data);
     const idx = allTasks.findIndex((t) => t.id === editingId);
     if (idx !== -1) allTasks[idx] = { ...allTasks[idx], ...data };
@@ -544,7 +663,7 @@ window.autoClassifyEdit = async function() {
   try {
     const desc = document.getElementById('editDescription').value.trim();
     const result = await classifyTaskFn({ title, description: desc });
-    document.getElementById('editCategory').value = result.data.category;
+    populateCategorySelect(result.data.category);
     hint.textContent = `✅ 已分類為「${result.data.category}」`;
   } catch (e) {
     hint.textContent = `⚠️ 失敗：${e.message}`;
@@ -556,8 +675,8 @@ window.moveTask = async function(id, dir) {
   if (!isAdmin) return;
   const getVisible = (list) => {
     let v = getSortedTasks(list);
-    if (tabFilter !== 'all') v = v.filter(t => t.status === tabFilter);
-    if (catFilter !== 'all') v = v.filter(t => t.category === catFilter);
+    v = (viewMode === 'done') ? v.filter(t => t.status === 'done') : v.filter(t => t.status !== 'done');
+    if (catFilter !== 'all') v = v.filter(t => (t.category || '其他') === catFilter);
     return v;
   };
 
@@ -608,9 +727,12 @@ async function renderCatList() {
     const snap = await getDocs(query(collection(db, 'work_progress_categories'), orderBy('order', 'asc')));
     catDocs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     listEl.innerHTML = catDocs.length
-      ? catDocs.map(c => `
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+      ? catDocs.map((c, i) => `
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+            <button class="btn-icon" style="font-size:15px" onclick="moveCat('${escAttr(c.id)}',-1)" title="上移" ${i === 0 ? 'disabled style="visibility:hidden;font-size:15px"' : ''}>↑</button>
+            <button class="btn-icon" style="font-size:15px" onclick="moveCat('${escAttr(c.id)}',1)" title="下移" ${i === catDocs.length - 1 ? 'disabled style="visibility:hidden;font-size:15px"' : ''}>↓</button>
             <span style="flex:1;font-size:14px">${escHtml(c.name)}</span>
+            <button class="btn btn-secondary" style="padding:6px 12px;font-size:12px" onclick="renameCat('${escAttr(c.id)}','${escAttr(c.name)}')">改名</button>
             <button class="btn btn-secondary" style="padding:6px 12px;font-size:12px" onclick="deleteCat('${escAttr(c.id)}','${escAttr(c.name)}')">移除</button>
           </div>`).join('')
       : '<p style="color:#bbb;font-size:13px">尚無自訂類別（使用系統預設）</p>';
@@ -632,6 +754,50 @@ window.addCategory = async function() {
     await renderCatList();
   } catch(e) {
     alert(`新增失敗：${e.message}`);
+  }
+};
+
+window.moveCat = async function(id, dir) {
+  const idx = catDocs.findIndex((c) => c.id === id);
+  if (idx === -1) return;
+  const swapIdx = idx + dir;
+  if (swapIdx < 0 || swapIdx >= catDocs.length) return;
+  const arr = [...catDocs];
+  [arr[idx], arr[swapIdx]] = [arr[swapIdx], arr[idx]];
+  try {
+    const batch = writeBatch(db);
+    arr.forEach((c, i) => batch.update(doc(db, 'work_progress_categories', c.id), { order: i + 1 }));
+    await batch.commit();
+    catDocs = arr.map((c, i) => ({ ...c, order: i + 1 }));
+    await loadCategories();   // 同步篩選列順序
+    renderList();             // 同步清單分組順序
+    await renderCatList();    // 同步管理視窗
+  } catch (e) {
+    alert(`排序失敗：${e.message}`);
+  }
+};
+
+window.renameCat = async function(id, oldName) {
+  const input = prompt(`將「${oldName}」改名為：`, oldName);
+  if (input === null) return;
+  const newName = input.trim();
+  if (!newName || newName === oldName) return;
+  if (categories.includes(newName)) { alert('已有同名類別'); return; }
+  try {
+    // 1) 改類別本身
+    await updateDoc(doc(db, 'work_progress_categories', id), { name: newName, updatedAt: serverTimestamp() });
+    // 2) 同步更新所有掛舊名的任務，避免變孤兒
+    const snap = await getDocs(query(collection(db, 'work_progress'), where('category', '==', oldName)));
+    if (!snap.empty) {
+      const batch = writeBatch(db);
+      snap.forEach((d) => batch.update(doc(db, 'work_progress', d.id), { category: newName, updatedAt: serverTimestamp() }));
+      await batch.commit();
+    }
+    await loadCategories();
+    await renderCatList();
+    await loadTasks();
+  } catch(e) {
+    alert(`改名失敗：${e.message}`);
   }
 };
 

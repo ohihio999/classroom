@@ -1,7 +1,16 @@
 <#
   collect.ps1 — AI 額度收集腳本（AI 額度儀表板後端）
-  版號：v1.4.0
+  版號：v2.1.0
   版更記錄：
+  - v2.1.0 (2026-07-29) 接入 Antigravity 本機 Language Server 的
+    `RetrieveUserQuotaSummary`：只掃描 `language_server`／`agy` 程序，只連
+    127.0.0.1，解析 Session、Weekly、Claude、Claude Weekly 四個真實額度池。
+    CSRF token 僅保留於記憶體，不寫入 log、Firestore、檔案或命令列；服務不可用時
+    只回報不含憑證內容的錯誤分類。
+  - v2.0.0 (2026-07-29) 每輪除更新 `ai_usage/current`，另新增不可覆寫的
+    `ai_usage/sample_yyyyMMddTHHmmssfffZ` 歷史樣本，供前端繪製 6 小時／24 小時／7 天趨勢。
+    新增 agy 狀態欄位；目前 agy CLI 沒有 quota 指令或可靠的本機額度來源，因此明確回報 unavailable，
+    不把同 Google 帳號的 Gemini CLI retrieveUserQuota 冒充 Antigravity 專屬額度。
   - v1.4.0 (2026-07-28) Codex 改成即時查詢，不必等使用者實際跑過 Codex：走 Codex CLI 官方 app-server
     JSON-RPC `account/rateLimits/read`（token 由 Codex CLI 自己換發，本腳本不碰 refresh token、
     公開 repo 也不必放 OAuth client）。查不到才回退舊的 session jsonl 解析，並在 `source` 欄位標明
@@ -22,6 +31,10 @@
     OAuth client 為 Gemini CLI 內建的公開 installed-app client，v1.3.0 起改讀 ~\.ai-usage-collector\gemini-oauth-client.json，
     首次或設定檔遺失時回退抽 npm bundle 補寫；額度用完時 API 會省略 remainingFraction，視為 100% 用完）
 
+  - agy／Antigravity：掃描本機 `language_server`／`agy` 程序及其 loopback
+    監聽埠，呼叫 `RetrieveUserQuotaSummary`。HTTPS 自簽憑證只允許在硬編碼
+    127.0.0.1 端點略過驗證；不向遠端主機傳送 CSRF token。
+
   排程：Windows 工作排程器每 5 分鐘執行一次（工作名稱 AI-Usage-Collector）
 #>
 
@@ -34,10 +47,12 @@ function Write-Log($msg) {
 }
 
 $result = [ordered]@{
+    schemaVersion = 2
     collectedAt = (Get-Date).ToString("yyyy-MM-ddTHH:mm:sszzz")
     claude      = $null
     codex       = $null
     gemini      = $null
+    agy         = $null
 }
 
 # ---------- Claude ----------
@@ -264,7 +279,162 @@ try {
     Write-Log "Gemini 失敗: $($_.Exception.Message)"
 }
 
-# ---------- 寫入 Firestore ----------
+# ---------- agy／Antigravity ----------
+function Get-ProcessFlagValue([string]$commandLine, [string]$flag) {
+    if (-not $commandLine -or -not $flag) { return $null }
+    $escaped = [regex]::Escape($flag)
+    $match = [regex]::Match($commandLine, "(?:^|\s)$escaped(?:=|\s+)(?:`"([^`"]+)`"|(\S+))")
+    if (-not $match.Success) { return $null }
+    if ($match.Groups[1].Success) { return $match.Groups[1].Value }
+    return $match.Groups[2].Value
+}
+
+function Get-AntigravityLanguageServers {
+    $processes = @(
+        Get-Process -Name "language_server", "agy" -ErrorAction SilentlyContinue |
+            Sort-Object @{ Expression = { if ($_.ProcessName -eq "language_server") { 0 } else { 1 } } }, Id
+    )
+
+    foreach ($process in $processes) {
+        $details = Get-CimInstance Win32_Process -Filter "ProcessId=$($process.Id)" -ErrorAction SilentlyContinue
+        if (-not $details) { continue }
+        $commandLine = [string]$details.CommandLine
+        $isLanguageServer = $process.ProcessName -eq "language_server"
+        if ($isLanguageServer) {
+            $isAntigravity = ([string]$details.ExecutablePath -match "(?i)antigravity") -or
+                ($commandLine -match "(?i)(?:--(?:app_data_dir|ide_name|override_ide_name)(?:=|\s+))antigravity(?:-ide)?(?:\s|$)")
+            if (-not $isAntigravity) { continue }
+        }
+
+        $csrf = if ($isLanguageServer) { Get-ProcessFlagValue $commandLine "--csrf_token" } else { "" }
+        if ($isLanguageServer -and -not $csrf) { continue }
+
+        $ports = @(
+            Get-NetTCPConnection -State Listen -OwningProcess $process.Id -ErrorAction SilentlyContinue |
+                Where-Object { $_.LocalAddress -in @("127.0.0.1", "::1", "0.0.0.0", "::") } |
+                Select-Object -ExpandProperty LocalPort -Unique |
+                Sort-Object
+        )
+        $extensionPortText = Get-ProcessFlagValue $commandLine "--extension_server_port"
+        $extensionPort = if ($extensionPortText -match "^\d+$") { [int]$extensionPortText } else { $null }
+        if (-not $ports -and -not $extensionPort) { continue }
+
+        [pscustomobject]@{
+            ProcessName  = $process.ProcessName
+            Csrf          = $csrf
+            Ports         = $ports
+            ExtensionPort = $extensionPort
+        }
+    }
+}
+
+function ConvertTo-AntigravityMeter($bucket, [string]$source, [string]$collectedAt) {
+    if ($null -eq $bucket.remainingFraction) { return $null }
+    $remainingRaw = [double]$bucket.remainingFraction
+    if ([double]::IsNaN($remainingRaw) -or [double]::IsInfinity($remainingRaw)) { return $null }
+    $remaining = [math]::Max([double]0, [math]::Min([double]1, $remainingRaw))
+    $resetTime = if ($bucket.resetTime -is [datetime]) {
+        $bucket.resetTime.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss'Z'")
+    } elseif ($bucket.resetTime) {
+        "$($bucket.resetTime)"
+    } else {
+        $null
+    }
+    return [ordered]@{
+        remainingFraction = [math]::Round($remaining, 7)
+        usedPercent       = [math]::Round((1 - $remaining) * 100, 1)
+        resetTime         = $resetTime
+        source            = $source
+        collectedAt       = $collectedAt
+    }
+}
+
+function Get-AntigravityQuota {
+    $collectedAt = (Get-Date).ToString("yyyy-MM-ddTHH:mm:sszzz")
+    $servers = @(Get-AntigravityLanguageServers)
+    if (-not $servers) {
+        return [ordered]@{
+            status = "unavailable"; source = "antigravity-language-server"; checkedAt = $collectedAt
+            errorClass = "local_service_not_found"; reason = "找不到本機 Antigravity / agy 額度服務"
+            action = "請啟動 Antigravity 或 agy 後等待下一輪更新"
+        }
+    }
+
+    $path = "/exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary"
+    $body = @{ metadata = @{
+        ideName = "antigravity"; extensionName = "antigravity"; ideVersion = "unknown"; locale = "en"
+    } } | ConvertTo-Json -Compress
+
+    foreach ($server in $servers) {
+        $endpoints = @()
+        foreach ($port in $server.Ports) {
+            $endpoints += [pscustomobject]@{ Scheme = "https"; Port = [int]$port }
+            $endpoints += [pscustomobject]@{ Scheme = "http"; Port = [int]$port }
+        }
+        if ($server.ExtensionPort -and $server.ExtensionPort -notin $server.Ports) {
+            $endpoints += [pscustomobject]@{ Scheme = "http"; Port = [int]$server.ExtensionPort }
+        }
+
+        foreach ($endpoint in $endpoints) {
+            try {
+                # Host 固定為 127.0.0.1；CSRF token 只存在此程序記憶體與 HTTP header。
+                $params = @{
+                    Method = "Post"
+                    Uri = "$($endpoint.Scheme)://127.0.0.1:$($endpoint.Port)$path"
+                    Headers = @{
+                        "Connect-Protocol-Version" = "1"
+                        "x-codeium-csrf-token" = $server.Csrf
+                    }
+                    ContentType = "application/json"
+                    Body = $body
+                    TimeoutSec = 10
+                    ErrorAction = "Stop"
+                }
+                if ($endpoint.Scheme -eq "https") { $params.SkipCertificateCheck = $true }
+                $response = Invoke-WebRequest @params
+                $payload = $response.Content | ConvertFrom-Json
+                $groups = if ($payload.response) { @($payload.response.groups) } else { @($payload.groups) }
+                if (-not $groups) { continue }
+
+                $knownIds = @("gemini-5h", "gemini-weekly", "3p-5h", "3p-weekly")
+                $buckets = @($groups | ForEach-Object { $_.buckets } | Where-Object { $_.bucketId -in $knownIds })
+                $byId = @{}
+                foreach ($bucket in $buckets) {
+                    if (-not $byId.ContainsKey("$($bucket.bucketId)")) { $byId["$($bucket.bucketId)"] = $bucket }
+                }
+                $source = "antigravity-language-server"
+                $agy = [ordered]@{
+                    status      = "ok"
+                    source      = $source
+                    collectedAt = $collectedAt
+                    checkedAt   = $collectedAt
+                    session     = ConvertTo-AntigravityMeter $byId["gemini-5h"] $source $collectedAt
+                    weekly      = ConvertTo-AntigravityMeter $byId["gemini-weekly"] $source $collectedAt
+                    claude      = ConvertTo-AntigravityMeter $byId["3p-5h"] $source $collectedAt
+                    claudeWeekly = ConvertTo-AntigravityMeter $byId["3p-weekly"] $source $collectedAt
+                }
+                $availableMeters = @($agy.session, $agy.weekly, $agy.claude, $agy.claudeWeekly) |
+                    Where-Object { $null -ne $_ }
+                if ($availableMeters.Count -gt 0) {
+                    return $agy
+                }
+            } catch {
+                # 不記錄 Exception.Message，避免 HTTP/解析器未來把敏感 header 帶進錯誤文字。
+                continue
+            }
+        }
+    }
+
+    return [ordered]@{
+        status = "unavailable"; source = "antigravity-language-server"; checkedAt = $collectedAt
+        errorClass = "local_rpc_unavailable"; reason = "本機服務暫時無法回傳額度"
+        action = "將於下一輪重試"
+    }
+}
+
+$result.agy = Get-AntigravityQuota
+
+# ---------- 寫入 Firestore（current + 不覆寫的時間序列） ----------
 try {
     $dataJson = $result | ConvertTo-Json -Depth 8 -Compress
     $body = @{
@@ -278,8 +448,17 @@ try {
            "&updateMask.fieldPaths=data&updateMask.fieldPaths=updatedAt"
     Invoke-RestMethod -Method Patch -Uri $uri -ContentType "application/json; charset=utf-8" `
         -Body ([System.Text.Encoding]::UTF8.GetBytes($body)) -TimeoutSec 30 | Out-Null
+
+    # 歷史樣本放在既有 ai_usage collection，以沿用目前已部署的 Firestore 規則。
+    # 毫秒級 UTC ID 可排序且每輪唯一；Patch 指定完整文件路徑，不會覆寫其他時間點。
+    $sampleId = "sample_" + (Get-Date).ToUniversalTime().ToString("yyyyMMdd'T'HHmmssfff'Z'")
+    $historyUri = "https://firestore.googleapis.com/v1/projects/my-teaching-tools-2b36c/databases/(default)/documents/ai_usage/$sampleId" +
+                  "?key=AIzaSyBf0sHTsndFCksNlh46G_2mw9rk5zmPdc0"
+    Invoke-RestMethod -Method Patch -Uri $historyUri -ContentType "application/json; charset=utf-8" `
+        -Body ([System.Text.Encoding]::UTF8.GetBytes($body)) -TimeoutSec 30 | Out-Null
+
     $codexTag = if ($result.codex.source) { "$($result.codex.status)/$($result.codex.source)" } else { "$($result.codex.status)" }
-    Write-Log "OK claude=$($result.claude.status) codex=$codexTag gemini=$($result.gemini.status)"
+    Write-Log "OK sample=$sampleId claude=$($result.claude.status) codex=$codexTag gemini=$($result.gemini.status) agy=$($result.agy.status)"
 } catch {
     Write-Log "Firestore 寫入失敗: $($_.Exception.Message)"
     exit 1
