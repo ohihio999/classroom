@@ -1,6 +1,7 @@
 <!--
-  版本：v5.3
+  版本：v5.4
   版更記錄：
+  v5.4 (2026-08-25) - 新增「待辦總表儀表板（本機）」卡片（✅ → 127.0.0.1:8771，🚀 走 todoboard:// 一鍵啟動）：九分類分欄看板，直接讀寫 D:\本機MD檔\10_日記\自己手工日記\待辦總表.md，可勾選完成（自動加 ✅ 日期）與新增待辦。程式在 C:\Code\todo_dashboard\（不在 classroom repo 內，因為待辦是私人內容而本 repo 公開）。協定註冊在 HKCU\Software\Classes\todoboard → start.bat v2.0：先探 8771 有沒有人在聽，有就只開瀏覽器不重複起服務，沒有才用 pythonw 背景啟動（不留黑視窗）。這是純本機服務：資料在 D 槽、server 在本機，卡片只是入口，離開這台電腦點了不會有反應
   v5.3 (2026-08-24) - 「圖片合併 PDF」的名稱欄改成選填：留空就由本機服務認第一張圖的封面書名（Groq 視覺模型，認不出來往後看最多 5 張），再拿去博客來搜尋校正成正式書名，直接用它建資料夾與 PDF，中途不再詢問。網頁把登入後拿到的 Groq key（window._groqKey）跟著 /api/start 一起送給 8767；認不出書名就整個中止，圖檔不會被動過。命名成「主書名 - 作者」，冒號後的副標不帶進檔名（幾百張圖的深路徑會撞 Windows 長度上限）。網頁 key 失效時本機服務會退回環境變數 GROQ_API_KEY。搭配 server.py v1.6
   v5.2 (2026-08-21) - 新增「OpenSlideX 簡報（本機）」卡片（🖼️ → modal 說明書）：本機 MDX 簡報編輯器，repo clone 在 D:\2026_簡報工具、簡報庫 open-slidex-workspace\，Workspace 網頁在 127.0.0.1:4172/workspace。modal 內含啟動指令一鍵複製、開啟編輯器連結、MCP 用法。沒做自訂協定啟動（Node 服務要常駐，跟 8767 那種一按就起的 bat 不同），服務要自己下指令起
   v5.1 (2026-08-20) - 新增「投票管理」卡片（🗳️ → /admin/vote/）：通用投票系統後台，可開多場活動、上傳照片、改名單、看即時結果；前台在 /vote/
@@ -734,7 +735,8 @@ const DEFAULT_TOOLS = [
   { id: 'auto-screenshot', title: '自動翻頁截圖（本機）', description: 'F9 開始／暫停，自動翻頁存 PNG；按 🚀 啟動工具', icon: '📸', actionType: 'modal', modalFn: 'openAutoShot', launchHref: 'autoshot://start', order: 13, createdAt: '2026-08-08T00:00:00+08:00' },
   { id: 'image-to-pdf', title: '圖片合併 PDF（本機）', description: '整夾圖片合成 PDF 並依序編號歸檔；需啟動 8767', icon: '📄', actionType: 'modal', modalFn: 'openImgPdf', launchHref: 'mediatools://open', order: 14, createdAt: '2026-08-08T00:00:00+08:00' },
   { id: 'vote-admin', title: '投票管理', description: '開投票活動、換照片、改名單，看即時結果與明細', icon: '🗳️', actionType: 'link', href: '/admin/vote/', order: 15, createdAt: '2026-08-20T00:00:00+08:00' },
-  { id: 'open-slidex', title: 'OpenSlideX 簡報（本機）', description: '本機 MDX 簡報編輯器＋MCP，可叫 AI 直接改投影片；需啟動 4172', icon: '🖼️', actionType: 'modal', modalFn: 'openSlideX', order: 16, createdAt: '2026-08-21T00:00:00+08:00' }
+  { id: 'open-slidex', title: 'OpenSlideX 簡報（本機）', description: '本機 MDX 簡報編輯器＋MCP，可叫 AI 直接改投影片；需啟動 4172', icon: '🖼️', actionType: 'modal', modalFn: 'openSlideX', order: 16, createdAt: '2026-08-21T00:00:00+08:00' },
+  { id: 'todo-dashboard-local', title: '待辦總表儀表板（本機）', description: '九分類看板讀寫 Obsidian 待辦總表，可勾選與新增；沒開按 🚀 啟動 8771', icon: '✅', actionType: 'link', href: 'http://127.0.0.1:8771/', launchHref: 'todoboard://open', order: 17, createdAt: '2026-08-25T00:00:00+08:00' }
 ];
 
 let toolsState = DEFAULT_TOOLS.map(tool => ({ ...tool }));
