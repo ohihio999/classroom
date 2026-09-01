@@ -102,13 +102,17 @@ service cloud.firestore {
       allow write: if isAdmin();
 
       // 票：doc id = 投票人姓名，天然擋掉同一人重複投票
+      // 2026-09-01（投票系統 v2.0 多題問卷）：新增 answers / schemaVersion 兩個欄位；
+      // 每題的最少最多幾個改由題目自己的 min/max 控制，規則層不再用 votesPerPerson 卡票數
+      // （新問卷文件已經沒有這個欄位，繼續比較會讓所有填答被拒），只留基本的欄位白名單與上限。
       match /votes/{person} {
         allow read: if true;
-        allow create: if isAdmin() || (request.resource.data.keys().hasOnly(['person', 'picks', 'comment', 'createdAt'])
+        allow create: if isAdmin() || (request.resource.data.keys().hasOnly(['person', 'picks', 'answers', 'comment', 'schemaVersion', 'createdAt'])
           && request.resource.data.person == person
+          && person is string
+          && person.size() > 0
           && request.resource.data.picks is list
-          && request.resource.data.picks.size() > 0
-          && request.resource.data.picks.size() <= pollOf(pollId).votesPerPerson
+          && request.resource.data.picks.size() <= 50
           && pollOf(pollId).status == 'open');
         allow update: if isAdmin();
         // 投票人自行撤銷重投，僅限該場活動有開這個開關時

@@ -1,6 +1,22 @@
 <!--
-  版本：v1.1
+  版本：v2.0
   版更記錄：
+  v2.0 (2026-09-01) - 【多題問卷引擎】改造重點：
+                      1. 資料結構由「一場活動＝一題照片複選」升級為 poll.questions[] 多題陣列
+                         （schemaVersion:2）。舊活動沒有 questions 時自動遷移成一題
+                         （id 固定 q_main、type multi、layout grid、min=max=原本每人票數），
+                         舊票的 picks 仍可正確統計，Edenred / 桌曆等既有場次不受影響。
+                      2. 分頁「選項與照片」改為「題目設計」：可新增／複製／上下移動／刪除題目。
+                      3. 新增六種題型：單選、複選、下拉、簡答、問答（多行）、線性量表。
+                      4. 每題可設定：必填、選項可加圖也可不加圖、呈現方式（清單／圖卡格狀）、
+                         最少最多選幾個、選項亂序、允許「其他____」自填、
+                         簡答字數上限與格式驗證（Email／數字）、量表分數範圍與兩端文字。
+                      5. 結果頁改為逐題統計：選擇題長條圖、量表平均分與分佈、文字題逐筆列出。
+                      6. 明細表與 CSV 改為一題一欄（複選以「、」串接，「其他」另存一欄）。
+                      7. 基本設定移除「每人可投幾票」（改由每題自己的最少／最多選幾個控制）。
+                      8. 提案審核可指定要加進哪一題的選項。
+  v1.2 (2026-08-31) - 「說明文字」欄位由單行 input 改為多行 textarea（可換行、可自己排 1./2./3.），
+                      前台以 white-space:pre-wrap 原樣保留換行；提示文字同步更新。
   v1.1 (2026-08-21) - 移除左上角「← 管理首頁」返回連結（三頁一致）
   v1.0 (2026-08-20) - 投票系統後台。沿用 /admin 既有 Google 登入（限 ohihio@gmail.com）。
                       功能：多場活動管理（新增／複製／刪除／設為進行中）、投票人名單編輯、
@@ -59,35 +75,51 @@
   .tab { border:0; background:none; padding:10px 14px; font-size:14px; font-weight:600; color:var(--muted); cursor:pointer; border-bottom:3px solid transparent; margin-bottom:-2px; white-space:nowrap; font-family:inherit; }
   .tab.on { color:var(--brand); border-bottom-color:var(--brand); }
   .pane { display:none; } .pane.on { display:block; }
-  /* 選項編輯 */
-  .optlist { display:grid; grid-template-columns:1fr; gap:12px; }
-  @media (min-width:700px){ .optlist { grid-template-columns:1fr 1fr; } }
-  @media (min-width:1050px){ .optlist { grid-template-columns:1fr 1fr 1fr; } }
-  .optcard { border:1px solid var(--line); border-radius:11px; overflow:hidden; background:#fff; display:flex; flex-direction:column; }
-  .optcard .thumb { position:relative; background:#eef0f2; aspect-ratio:4/3; display:flex; align-items:center; justify-content:center; }
-  .optcard .thumb img { width:100%; height:100%; object-fit:contain; }
-  .optcard .thumb .ph { color:#9ca3af; font-size:13px; }
-  .optcard .body { padding:10px; display:flex; flex-direction:column; gap:7px; }
-  .optcard .no { position:absolute; left:8px; top:8px; background:rgba(17,24,39,.75); color:#fff; font-size:12px; padding:3px 9px; border-radius:999px; }
-  .optcard input { font-size:13px; padding:7px 9px; }
-  .optcard .ops { display:flex; gap:6px; flex-wrap:wrap; }
-  .upbar { height:4px; background:var(--line); border-radius:999px; overflow:hidden; display:none; }
+  /* 題目編輯 */
+  .qcard { border:1px solid var(--line); border-left:4px solid var(--brand); border-radius:12px; padding:14px; background:#fff; margin-bottom:14px; }
+  .qhead { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:12px; }
+  .qno { background:#111827; color:#fff; font-size:12px; padding:4px 10px; border-radius:999px; flex-shrink:0; }
+  .qhead .qtype { width:auto; min-width:130px; }
+  .qhead .qops { margin-left:auto; display:flex; gap:6px; }
+  .qgrid { display:grid; grid-template-columns:1fr; gap:12px; }
+  @media (min-width:760px){ .qgrid.c2 { grid-template-columns:1fr 1fr; } .qgrid.c3 { grid-template-columns:1fr 1fr 1fr; } .qgrid.c4 { grid-template-columns:1fr 1fr 1fr 1fr; } }
+  .qsub { border-top:1px dashed var(--line); margin-top:12px; padding-top:12px; }
+  .qsub > h4 { font-size:13px; font-weight:600; color:#374151; margin-bottom:8px; }
+  .switch { display:flex; align-items:center; gap:9px; padding:9px 0; font-size:14px; }
+  .switch input { width:18px; height:18px; flex-shrink:0; }
+  .switch.inline { padding:0; }
+  /* 選項列 */
+  .optrow { display:flex; gap:8px; align-items:flex-start; padding:8px; border:1px solid var(--line); border-radius:10px; margin-bottom:8px; background:#fcfcfd; }
+  .optrow .thumb { width:64px; height:48px; flex-shrink:0; border-radius:7px; background:#eef0f2; display:flex; align-items:center; justify-content:center; overflow:hidden; cursor:pointer; }
+  .optrow .thumb img { width:100%; height:100%; object-fit:cover; }
+  .optrow .thumb span { font-size:10px; color:#9ca3af; text-align:center; line-height:1.2; }
+  .optrow .fields { flex:1; display:grid; grid-template-columns:1fr; gap:6px; min-width:0; }
+  @media (min-width:820px){ .optrow .fields { grid-template-columns:1.2fr 1.4fr 1.4fr; } }
+  .optrow input { font-size:13px; padding:7px 9px; }
+  .optrow .ops { display:flex; gap:5px; flex-shrink:0; flex-wrap:wrap; width:112px; }
+  .upbar { height:4px; background:var(--line); border-radius:999px; overflow:hidden; display:none; margin-top:4px; }
   .upbar > span { display:block; height:4px; background:var(--brand); width:0; transition:width .2s; }
   /* 表格 */
   table { width:100%; border-collapse:collapse; font-size:13px; }
   th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
-  th { background:#f9fafb; font-weight:600; color:#374151; position:sticky; top:0; }
+  th { background:#f9fafb; font-weight:600; color:#374151; position:sticky; top:0; white-space:nowrap; }
   .tablewrap { max-height:460px; overflow:auto; border:1px solid var(--line); border-radius:10px; }
   .meter { background:#f7f8fa; border-radius:10px; padding:10px 12px; border:1px solid #f0f1f4; margin-bottom:8px; }
   .meter .flex { display:flex; justify-content:space-between; align-items:baseline; gap:10px; margin-bottom:6px; }
   .bar { height:9px; background:#e5e7eb; border-radius:999px; overflow:hidden; }
   .bar > span { display:block; height:9px; background:var(--brand); width:0; transition:width .25s; }
-  .switch { display:flex; align-items:center; gap:9px; padding:9px 0; font-size:14px; }
-  .switch input { width:18px; height:18px; flex-shrink:0; }
+  .qresult { border:1px solid var(--line); border-radius:12px; padding:14px; margin-bottom:14px; }
+  .qresult > h3 { font-size:15px; font-weight:600; margin-bottom:4px; }
+  .qresult > .qmeta { font-size:12px; color:var(--muted); margin-bottom:10px; }
+  .textans { border-left:3px solid var(--line); padding:6px 10px; margin-bottom:7px; font-size:13px; line-height:1.6; white-space:pre-wrap; word-break:break-word; }
+  .textans b { color:#374151; }
   .modal { position:fixed; inset:0; background:rgba(0,0,0,.5); display:none; align-items:center; justify-content:center; z-index:70; padding:16px; }
   .modal.open { display:flex; }
   .modal .box { background:#fff; border-radius:14px; padding:20px; width:min(100%,460px); max-height:90vh; overflow:auto; }
   .modal h3 { font-size:17px; margin-bottom:14px; }
+  .lightbox { position:fixed; inset:0; background:rgba(0,0,0,.9); display:none; align-items:center; justify-content:center; z-index:95; padding:20px; }
+  .lightbox.open { display:flex; }
+  .lightbox img { max-width:100%; max-height:90vh; object-fit:contain; border-radius:6px; }
   .toast { position:fixed; left:50%; bottom:26px; transform:translateX(-50%) translateY(20px); background:#111827; color:#fff; padding:12px 20px; border-radius:10px; font-size:14px; opacity:0; pointer-events:none; transition:.25s; z-index:90; max-width:90vw; text-align:center; }
   .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
   .loading { text-align:center; padding:60px; color:var(--muted); }
@@ -119,7 +151,7 @@
       <h2 id="editorTitle">編輯活動</h2>
       <div class="tabs">
         <button class="tab on" data-pane="setting">基本設定</button>
-        <button class="tab" data-pane="options">選項與照片</button>
+        <button class="tab" data-pane="questions">題目設計</button>
         <button class="tab" data-pane="voters">投票人名單</button>
         <button class="tab" data-pane="result">結果與明細</button>
         <button class="tab" data-pane="proposal">提案審核 <span id="propCount"></span></button>
@@ -131,19 +163,18 @@
           <div class="field"><label class="f">活動名稱</label><input type="text" id="fTitle" placeholder="例如：2027 年度桌曆票選"></div>
           <div class="field"><label class="f">場次代號（網址用，建立後不可改）</label><input type="text" id="fId" disabled></div>
         </div>
-        <div class="field"><label class="f">說明文字（顯示在標題下方）</label><input type="text" id="fDesc" placeholder="例如：實體桌曆請到人事總務部翻閱"></div>
-        <div class="row3">
-          <div class="field"><label class="f">每人可投幾票</label><input type="number" id="fPer" min="1" max="20" value="2"></div>
+        <div class="field"><label class="f">說明文字（前台顯示為「📢 活動說明」卡片；留白則前台不顯示這張卡）</label><textarea id="fDesc" rows="6" style="min-height:130px" placeholder="例如：實體桌曆請到人事總務部翻閱&#10;&#10;可直接換行分段，例如：&#10;1. 最滿意的地方&#10;2. 最需要改善的地方"></textarea></div>
+        <div class="row2">
           <div class="field"><label class="f">狀態</label>
             <select id="fStatus">
               <option value="draft">草稿（前台看不到）</option>
-              <option value="open">開放投票</option>
+              <option value="open">開放填答</option>
               <option value="closed">已結束</option>
             </select>
           </div>
-          <div class="field"><label class="f">票數公開時機</label>
+          <div class="field"><label class="f">結果公開時機</label>
             <select id="fShow">
-              <option value="always">隨時顯示票數</option>
+              <option value="always">隨時顯示結果</option>
               <option value="afterClose">截止後才公布</option>
               <option value="never">前台永不顯示（只有後台看得到）</option>
             </select>
@@ -153,11 +184,11 @@
           <div class="field"><label class="f">開始時間（選填）</label><input type="datetime-local" id="fStart"></div>
           <div class="field"><label class="f">截止時間（選填）</label><input type="datetime-local" id="fEnd"></div>
         </div>
-        <p class="hint" style="margin-top:-6px">留白表示不限制。設了截止時間後，時間一到前台會自動鎖住不能再投。</p>
+        <p class="hint" style="margin-top:-6px">留白表示不限制。設了截止時間後，時間一到前台會自動鎖住不能再填。<br>每題可以選幾個、要不要必填，都在「題目設計」分頁裡各題自己設定。</p>
         <div style="margin-top:10px">
-          <div class="switch"><input type="checkbox" id="fComment"><label for="fComment">開放投票人填寫留言／理由</label></div>
-          <div class="switch"><input type="checkbox" id="fProposal"><label for="fProposal">開放投票人自由提案（新增選項，需你審核通過才會上架）</label></div>
-          <div class="switch"><input type="checkbox" id="fRevoke"><label for="fRevoke">允許投票人自行撤銷重投</label></div>
+          <div class="switch"><input type="checkbox" id="fComment"><label for="fComment">最後多一個「留言／其他建議」欄（不列入統計）</label></div>
+          <div class="switch"><input type="checkbox" id="fProposal"><label for="fProposal">開放填答人自由提案（新增選項，需你審核通過才會上架）</label></div>
+          <div class="switch"><input type="checkbox" id="fRevoke"><label for="fRevoke">允許填答人自行撤銷重填</label></div>
           <div class="switch"><input type="checkbox" id="fCurrent"><label for="fCurrent">設為「進行中」（前台 /vote/ 不帶參數時顯示這場，同時只會有一場）</label></div>
         </div>
         <div class="btns" style="margin-top:16px">
@@ -168,24 +199,27 @@
         </div>
       </div>
 
-      <!-- 選項 -->
-      <div class="pane" id="pane-options">
-        <div class="btns" style="margin-bottom:14px">
-          <button class="btn primary" onclick="addOption()">＋ 新增選項</button>
-          <button class="btn secondary" onclick="document.getElementById('bulkFiles').click()">📁 一次上傳多張照片</button>
-          <input type="file" id="bulkFiles" accept="image/*" multiple style="display:none">
-          <button class="btn ghost" onclick="saveOptions()">儲存選項</button>
+      <!-- 題目設計 -->
+      <div class="pane" id="pane-questions">
+        <div class="btns" style="margin-bottom:12px">
+          <button class="btn primary" onclick="addQuestion()">＋ 新增題目</button>
+          <button class="btn ghost" onclick="saveQuestions()">儲存題目</button>
+          <button class="btn secondary" style="margin-left:auto" onclick="window.open('/vote/?poll=' + encodeURIComponent(currentId), '_blank')">預覽前台</button>
         </div>
-        <p class="hint" style="margin-bottom:12px">照片會自動壓縮後上傳，不用先處理尺寸。標題、說明、連結都可以留白 — 純照片投票（桌曆）留白即可；旅遊景點投票就填景點名稱與 Google Map 連結。改完記得按「儲存選項」。</p>
-        <div id="optList" class="optlist"></div>
+        <p class="hint" style="margin-bottom:14px">
+          題型：單選／複選／下拉／簡答／問答／線性量表。每題都能設「必填」；選項可以加圖也可以不加圖，
+          照片會自動壓縮後上傳，不用先處理尺寸。純照片投票（桌曆）把呈現方式設成「圖卡格狀」、標題留白即可；
+          滿意度問卷用「線性量表」；想收文字意見用「簡答／問答」。<b>改完一定要按「儲存題目」。</b>
+        </p>
+        <div id="qList"></div>
       </div>
 
       <!-- 名單 -->
       <div class="pane" id="pane-voters">
         <div class="field">
-          <label class="f">投票人名單（一行一個名字）</label>
+          <label class="f">填答人名單（一行一個名字）</label>
           <textarea id="fVoters" style="min-height:280px" placeholder="王小明&#10;陳大華"></textarea>
-          <p class="hint">整份留白 = 不限名單，前台改成讓投票人自己輸入姓名（適合對外或人數不固定的投票）。<br>有名單時前台是下拉選單，同一個名字只能投一次。</p>
+          <p class="hint">整份留白 = 不限名單，前台改成讓填答人自己輸入姓名（適合對外或人數不固定的問卷）。<br>有名單時前台是下拉選單，同一個名字只能填一次。</p>
         </div>
         <div class="btns">
           <button class="btn primary" onclick="saveVoters()">儲存名單</button>
@@ -198,16 +232,20 @@
         <div class="btns" style="margin-bottom:14px">
           <button class="btn secondary" onclick="exportSummary()">匯出結果 CSV</button>
           <button class="btn secondary" onclick="exportDetail()">匯出明細 CSV</button>
-          <button class="btn danger" style="margin-left:auto" onclick="clearVotes()">清空這場所有投票</button>
+          <button class="btn danger" style="margin-left:auto" onclick="clearVotes()">清空這場所有填答</button>
         </div>
         <div id="resultBox"></div>
-        <h2 style="font-size:15px; margin:18px 0 10px">投票明細</h2>
+        <h2 style="font-size:15px; margin:18px 0 10px">填答明細</h2>
         <div class="tablewrap"><table id="detailTable"></table></div>
       </div>
 
       <!-- 提案 -->
       <div class="pane" id="pane-proposal">
-        <p class="hint" style="margin-bottom:12px">投票人送出的新選項提案。按「通過」會直接加進選項清單（無照片，可再自行補上）。</p>
+        <p class="hint" style="margin-bottom:12px">填答人送出的新選項提案。按「通過」會加進你指定那一題的選項清單（無照片，可再自行補上）。</p>
+        <div class="field" style="max-width:420px">
+          <label class="f">通過後要加進哪一題</label>
+          <select id="propTarget"></select>
+        </div>
         <div id="propList"></div>
       </div>
     </section>
@@ -224,7 +262,7 @@
     </div>
     <div class="field"><label class="f">複製既有活動的設定</label>
       <select id="nCopy"><option value="">不複製，建立空白活動</option></select>
-      <p class="hint">複製會帶入名單、選項（含照片）與各項開關，但不會複製任何票。每年開新一屆用這個最快。</p>
+      <p class="hint">複製會帶入名單、題目與選項（含照片）與各項開關，但不會複製任何填答。每年開新一屆用這個最快。</p>
     </div>
     <div class="btns" style="justify-content:flex-end">
       <button class="btn ghost" onclick="closeNewPoll()">取消</button>
@@ -233,6 +271,7 @@
   </div>
 </div>
 
+<div class="lightbox" id="lightbox" onclick="closeLightbox()"><img id="lightboxImg" src="" alt=""></div>
 <div class="toast" id="toast"></div>
 
 <script type="module">
@@ -252,12 +291,23 @@ const $ = (s) => document.querySelector(s);
 let polls = [];          // [{id, ...data}]
 let currentId = '';
 let current = null;      // 編輯中的活動資料
-let editOptions = [];    // 編輯中的選項（尚未儲存）
+let editQuestions = [];  // 編輯中的題目（尚未儲存）
 let votes = [];          // [{id, ...}]
 let proposals = [];
 let unsubVotes = null, unsubProps = null;
 
 window.currentId = '';
+
+// ── 題型定義 ───────────────────────────────────
+const TYPES = {
+  single:   { label:'單選',        choice:true  },
+  multi:    { label:'複選',        choice:true  },
+  dropdown: { label:'下拉選單',    choice:true  },
+  short:    { label:'簡答（單行）', choice:false },
+  para:     { label:'問答（多行）', choice:false },
+  scale:    { label:'線性量表',    choice:false }
+};
+const isChoice = (q) => !!(TYPES[q.type] && TYPES[q.type].choice);
 
 onAuthStateChanged(auth, (user) => {
   if (!user) { location.href = '/login.html'; return; }
@@ -276,7 +326,6 @@ async function boot(){
     t.classList.add('on');
     $('#pane-' + t.dataset.pane).classList.add('on');
   }));
-  $('#bulkFiles').addEventListener('change', onBulkUpload);
   $('#nId').addEventListener('input', () => { $('#nIdPreview').textContent = $('#nId').value.trim() || 'desk2027'; });
 }
 
@@ -296,13 +345,14 @@ function renderPollList(){
     div.className = 'poll' + (p.id === currentId ? ' active' : '');
     const st = p.status || 'draft';
     const stTxt = { draft:'草稿', open:'開放中', closed:'已結束' }[st];
+    const qs = questionsOf(p);
     div.innerHTML =
       '<div class="ttl">' + escapeHtml(p.title || p.id) +
         '<span class="badge ' + st + '">' + stTxt + '</span>' +
         (p.isCurrent ? '<span class="badge cur">前台進行中</span>' : '') +
       '</div>' +
-      '<div class="muted small">代號 ' + escapeHtml(p.id) + '　·　每人 ' + (p.votesPerPerson || 1) + ' 票　·　' +
-        (p.options || []).length + ' 個選項　·　名單 ' + ((p.voters || []).length || '不限') + ' 人</div>';
+      '<div class="muted small">代號 ' + escapeHtml(p.id) + '　·　' + qs.length + ' 題　·　' +
+        qs.reduce((a,q) => a + (q.options || []).length, 0) + ' 個選項　·　名單 ' + ((p.voters || []).length || '不限') + ' 人</div>';
     const ops = document.createElement('div');
     ops.className = 'btns';
     ops.innerHTML =
@@ -317,17 +367,71 @@ function renderPollList(){
   });
 }
 
+// ── 題目正規化與舊資料遷移 ─────────────────────
+function normQuestion(q){
+  const t = TYPES[q.type] ? q.type : 'single';
+  const out = {
+    id: q.id || newId('q'),
+    type: t,
+    title: q.title || '',
+    desc: q.desc || '',
+    required: q.required !== false,
+    sort: q.sort ?? 0,
+    options: (q.options || []).slice().sort((a,b) => (a.sort ?? 0) - (b.sort ?? 0)).map((o, i) => ({
+      id: o.id || newId('o'), title:o.title || '', desc:o.desc || '', link:o.link || '',
+      img:o.img || '', path:o.path || '', sort:i
+    })),
+    layout: q.layout === 'grid' ? 'grid' : 'list',
+    shuffle: !!q.shuffle,
+    allowOther: !!q.allowOther,
+    min: Number.isFinite(q.min) ? q.min : 1,
+    max: Number.isFinite(q.max) ? q.max : 1,
+    placeholder: q.placeholder || '',
+    maxLen: Number.isFinite(q.maxLen) ? q.maxLen : 0,
+    validate: ['none','email','number'].includes(q.validate) ? q.validate : 'none',
+    scaleMin: Number.isFinite(q.scaleMin) ? q.scaleMin : 1,
+    scaleMax: Number.isFinite(q.scaleMax) ? q.scaleMax : 5,
+    scaleMinLabel: q.scaleMinLabel || '',
+    scaleMaxLabel: q.scaleMaxLabel || ''
+  };
+  if (t === 'single' || t === 'dropdown') { out.min = out.required ? 1 : 0; out.max = 1; }
+  return out;
+}
+
+// 從 poll 資料取出題目；舊格式（只有 options + votesPerPerson）自動遷移成一題 q_main
+function questionsOf(data){
+  if (Array.isArray(data.questions) && data.questions.length) {
+    return data.questions.slice().sort((a,b) => (a.sort ?? 0) - (b.sort ?? 0)).map(normQuestion);
+  }
+  const opts = (data.options || []);
+  if (!opts.length) return [];
+  const per = Math.max(1, parseInt(data.votesPerPerson || 1, 10));
+  return [normQuestion({
+    id: 'q_main',
+    type: per > 1 ? 'multi' : 'single',
+    title: data.pickHint || '請選擇',
+    desc: '',
+    required: true,
+    // 舊資料只要有照片就當圖卡投票；全是純文字選項（例如滿意度）就用清單
+    layout: opts.some(o => o.img) ? 'grid' : 'list',
+    min: per, max: per,
+    options: opts,
+    sort: 0
+  })];
+}
+
 // ── 開啟活動 ───────────────────────────────────
 window.openPoll = async function(id){
   const snap = await getDoc(doc(db, 'polls', id));
   if (!snap.exists()) return toast('找不到這場活動');
   currentId = id; window.currentId = id;
   current = snap.data();
-  editOptions = (current.options || []).slice().sort((a,b) => (a.sort ?? 0) - (b.sort ?? 0));
+  current.questions = questionsOf(current);
+  editQuestions = current.questions.map(q => normQuestion(q));
   $('#editor').style.display = '';
   $('#editorTitle').textContent = '編輯：' + (current.title || id);
   fillSetting();
-  renderOptions();
+  renderQuestions();
   $('#fVoters').value = (current.voters || []).join('\n');
   updateVoterCount();
   listenVotes();
@@ -340,7 +444,6 @@ function fillSetting(){
   $('#fTitle').value = current.title || '';
   $('#fId').value = currentId;
   $('#fDesc').value = current.description || '';
-  $('#fPer').value = current.votesPerPerson || 1;
   $('#fStatus').value = current.status || 'draft';
   $('#fShow').value = current.showResults || 'always';
   $('#fStart').value = toLocalInput(current.startAt);
@@ -352,11 +455,9 @@ function fillSetting(){
 }
 
 window.saveSetting = async function(){
-  const per = Math.max(1, parseInt($('#fPer').value || '1', 10));
   const data = {
     title: $('#fTitle').value.trim(),
     description: $('#fDesc').value.trim(),
-    votesPerPerson: per,
     status: $('#fStatus').value,
     showResults: $('#fShow').value,
     startAt: fromLocalInput($('#fStart').value),
@@ -397,7 +498,7 @@ window.copyLink = function(){
 };
 
 window.deletePoll = async function(){
-  if (!confirm('確定刪除整場「' + (current.title || currentId) + '」？\n所有票、留言、提案都會一起消失，且無法復原。')) return;
+  if (!confirm('確定刪除整場「' + (current.title || currentId) + '」？\n所有填答、留言、提案都會一起消失，且無法復原。')) return;
   if (!confirm('再確認一次：真的要刪除嗎？')) return;
   try {
     const vs = await getDocs(collection(db, 'polls', currentId, 'votes'));
@@ -412,102 +513,278 @@ window.deletePoll = async function(){
   } catch (e) { toast('刪除失敗：' + (e.code || e.message)); }
 };
 
-// ── 選項 ───────────────────────────────────────
-function renderOptions(){
-  const box = $('#optList');
+// ── 題目編輯 ───────────────────────────────────
+function renderQuestions(){
+  const box = $('#qList');
   box.innerHTML = '';
-  if (!editOptions.length) { box.innerHTML = '<p class="muted small">還沒有選項。按「新增選項」或「一次上傳多張照片」。</p>'; return; }
-  editOptions.forEach((o, i) => {
-    const c = document.createElement('div');
-    c.className = 'optcard';
-    c.innerHTML =
-      '<div class="thumb">' + (o.img ? '<img src="' + o.img + '" alt="">' : '<span class="ph">（尚未上傳照片）</span>') +
-        '<span class="no">#' + (i+1) + '</span></div>' +
-      '<div class="body">' +
-        '<input type="text" class="oTitle" placeholder="標題（選填）" value="' + attr(o.title) + '">' +
+  if (!editQuestions.length) {
+    box.innerHTML = '<p class="muted small">還沒有題目。按「＋ 新增題目」開始，一場活動可以放很多題。</p>';
+    refreshPropTarget();
+    return;
+  }
+  editQuestions.forEach((q, i) => box.appendChild(buildQCard(q, i)));
+  refreshPropTarget();
+}
+
+function buildQCard(q, i){
+  const c = document.createElement('div');
+  c.className = 'qcard';
+
+  const typeOpts = Object.keys(TYPES).map(k =>
+    '<option value="' + k + '"' + (q.type === k ? ' selected' : '') + '>' + TYPES[k].label + '</option>').join('');
+
+  c.innerHTML =
+    '<div class="qhead">' +
+      '<span class="qno">第 ' + (i+1) + ' 題</span>' +
+      '<select class="qtype">' + typeOpts + '</select>' +
+      '<label class="switch inline"><input type="checkbox" class="qReq"' + (q.required ? ' checked' : '') + '> 必填</label>' +
+      '<span class="qops">' +
+        '<button class="btn tiny ghost" title="上移">▲</button>' +
+        '<button class="btn tiny ghost" title="下移">▼</button>' +
+        '<button class="btn tiny secondary">複製</button>' +
+        '<button class="btn tiny danger">刪除</button>' +
+      '</span>' +
+    '</div>' +
+    '<div class="qgrid">' +
+      '<div><label class="f">題目</label><input type="text" class="qTitle" placeholder="例如：您對本次福利即享券的整體滿意度？" value="' + attr(q.title) + '"></div>' +
+      '<div><label class="f">題目說明（選填，顯示在題目下方）</label><textarea class="qDesc" rows="2" style="min-height:56px" placeholder="補充說明、填答方式提醒">' + escapeHtml(q.desc) + '</textarea></div>' +
+    '</div>' +
+    '<div class="qsub qExtra"></div>';
+
+  const sel = c.querySelector('.qtype');
+  sel.onchange = () => {
+    q.type = sel.value;
+    if (q.type === 'single' || q.type === 'dropdown') { q.min = q.required ? 1 : 0; q.max = 1; }
+    if (q.type === 'multi' && q.max < 1) q.max = Math.max(1, (q.options || []).length || 1);
+    if (isChoice(q) && !(q.options || []).length) q.options = [blankOption(0), blankOption(1)];
+    renderQuestions();
+  };
+  const req = c.querySelector('.qReq');
+  req.onchange = () => {
+    q.required = req.checked;
+    if (q.type === 'single' || q.type === 'dropdown') q.min = q.required ? 1 : 0;
+  };
+  c.querySelector('.qTitle').oninput = (e) => q.title = e.target.value;
+  c.querySelector('.qDesc').oninput = (e) => q.desc = e.target.value;
+
+  const ops = c.querySelectorAll('.qops button');
+  ops[0].onclick = () => moveQuestion(i, -1);
+  ops[1].onclick = () => moveQuestion(i, 1);
+  ops[2].onclick = () => copyQuestion(i);
+  ops[3].onclick = () => removeQuestion(i);
+
+  buildQExtra(c.querySelector('.qExtra'), q, i);
+  return c;
+}
+
+function buildQExtra(box, q, qi){
+  if (isChoice(q)) {
+    const showMinMax = q.type === 'multi';
+    box.innerHTML =
+      '<h4>選項設定</h4>' +
+      '<div class="qgrid ' + (showMinMax ? 'c4' : 'c2') + '" style="margin-bottom:12px">' +
+        '<div><label class="f">呈現方式</label><select class="qLayout">' +
+          '<option value="list"' + (q.layout === 'list' ? ' selected' : '') + '>清單（文字為主，可配小圖）</option>' +
+          '<option value="grid"' + (q.layout === 'grid' ? ' selected' : '') + '>圖卡格狀（照片投票用）</option>' +
+        '</select></div>' +
+        (showMinMax
+          ? '<div><label class="f">最少要選幾個</label><input type="number" class="qMin" min="0" max="50" value="' + (q.min ?? 0) + '"></div>' +
+            '<div><label class="f">最多可選幾個</label><input type="number" class="qMax" min="1" max="50" value="' + (q.max ?? 1) + '"></div>'
+          : '') +
+        '<div><label class="f">其他設定</label>' +
+          '<label class="switch inline" style="margin-bottom:6px"><input type="checkbox" class="qShuffle"' + (q.shuffle ? ' checked' : '') + '> 選項隨機排序</label><br>' +
+          '<label class="switch inline"><input type="checkbox" class="qOther"' + (q.allowOther ? ' checked' : '') + '> 允許「其他____」自填</label>' +
+        '</div>' +
+      '</div>' +
+      '<div class="btns" style="margin-bottom:10px">' +
+        '<button class="btn tiny primary qAddOpt">＋ 新增選項</button>' +
+        '<button class="btn tiny secondary qBulk">📁 一次上傳多張照片</button>' +
+      '</div>' +
+      '<div class="qOpts"></div>';
+
+    const lay = box.querySelector('.qLayout');
+    lay.onchange = () => q.layout = lay.value;
+    if (showMinMax) {
+      const mn = box.querySelector('.qMin'), mx = box.querySelector('.qMax');
+      mn.oninput = () => q.min = Math.max(0, parseInt(mn.value || '0', 10));
+      mx.oninput = () => q.max = Math.max(1, parseInt(mx.value || '1', 10));
+    }
+    box.querySelector('.qShuffle').onchange = (e) => q.shuffle = e.target.checked;
+    box.querySelector('.qOther').onchange = (e) => q.allowOther = e.target.checked;
+    box.querySelector('.qAddOpt').onclick = () => { q.options.push(blankOption(q.options.length)); renderQuestions(); };
+    box.querySelector('.qBulk').onclick = () => bulkUpload(qi);
+    renderOptionRows(box.querySelector('.qOpts'), q, qi);
+
+  } else if (q.type === 'scale') {
+    box.innerHTML =
+      '<h4>量表設定</h4>' +
+      '<div class="qgrid c4">' +
+        '<div><label class="f">最小分</label><select class="qsMin">' +
+          '<option value="0"' + (q.scaleMin === 0 ? ' selected' : '') + '>0</option>' +
+          '<option value="1"' + (q.scaleMin !== 0 ? ' selected' : '') + '>1</option>' +
+        '</select></div>' +
+        '<div><label class="f">最大分</label><input type="number" class="qsMax" min="2" max="10" value="' + q.scaleMax + '"></div>' +
+        '<div><label class="f">最小分的文字（選填）</label><input type="text" class="qsMinL" placeholder="很不滿意" value="' + attr(q.scaleMinLabel) + '"></div>' +
+        '<div><label class="f">最大分的文字（選填）</label><input type="text" class="qsMaxL" placeholder="非常滿意" value="' + attr(q.scaleMaxLabel) + '"></div>' +
+      '</div>' +
+      '<p class="hint">前台會排成一列可點的數字，例如 1 2 3 4 5，兩端顯示你填的文字。統計時後台會算平均分與各分數人數。</p>';
+    box.querySelector('.qsMin').onchange = (e) => q.scaleMin = parseInt(e.target.value, 10);
+    box.querySelector('.qsMax').oninput = (e) => q.scaleMax = Math.min(10, Math.max(2, parseInt(e.target.value || '5', 10)));
+    box.querySelector('.qsMinL').oninput = (e) => q.scaleMinLabel = e.target.value;
+    box.querySelector('.qsMaxL').oninput = (e) => q.scaleMaxLabel = e.target.value;
+
+  } else {
+    box.innerHTML =
+      '<h4>文字題設定</h4>' +
+      '<div class="qgrid c3">' +
+        '<div><label class="f">輸入框提示字（選填）</label><input type="text" class="qPh" placeholder="例如：請簡述原因" value="' + attr(q.placeholder) + '"></div>' +
+        '<div><label class="f">字數上限（0＝不限）</label><input type="number" class="qLen" min="0" max="5000" value="' + (q.maxLen || 0) + '"></div>' +
+        '<div><label class="f">格式檢查</label><select class="qVal">' +
+          '<option value="none"' + (q.validate === 'none' ? ' selected' : '') + '>不檢查</option>' +
+          '<option value="email"' + (q.validate === 'email' ? ' selected' : '') + '>必須是 Email</option>' +
+          '<option value="number"' + (q.validate === 'number' ? ' selected' : '') + '>必須是數字</option>' +
+        '</select></div>' +
+      '</div>';
+    box.querySelector('.qPh').oninput = (e) => q.placeholder = e.target.value;
+    box.querySelector('.qLen').oninput = (e) => q.maxLen = Math.max(0, parseInt(e.target.value || '0', 10));
+    box.querySelector('.qVal').onchange = (e) => q.validate = e.target.value;
+  }
+}
+
+function renderOptionRows(box, q, qi){
+  box.innerHTML = '';
+  if (!q.options.length) { box.innerHTML = '<p class="muted small">還沒有選項。</p>'; return; }
+  q.options.forEach((o, i) => {
+    const r = document.createElement('div');
+    r.className = 'optrow';
+    r.innerHTML =
+      '<div class="thumb">' + (o.img ? '<img src="' + attr(o.img) + '" alt="">' : '<span>#' + (i+1) + '<br>無圖</span>') + '</div>' +
+      '<div class="fields">' +
+        '<input type="text" class="oTitle" placeholder="選項文字（選填）" value="' + attr(o.title) + '">' +
         '<input type="text" class="oDesc" placeholder="說明（選填）" value="' + attr(o.desc) + '">' +
         '<input type="text" class="oLink" placeholder="連結（選填，例如 Google Map）" value="' + attr(o.link) + '">' +
         '<div class="upbar"><span></span></div>' +
-        '<div class="ops">' +
-          '<button class="btn tiny secondary">' + (o.img ? '換照片' : '上傳照片') + '</button>' +
-          '<button class="btn tiny ghost">◀</button>' +
-          '<button class="btn tiny ghost">▶</button>' +
-          '<button class="btn tiny danger" style="margin-left:auto">刪除</button>' +
-        '</div>' +
+      '</div>' +
+      '<div class="ops">' +
+        '<button class="btn tiny secondary">' + (o.img ? '換圖' : '加圖') + '</button>' +
+        '<button class="btn tiny ghost">▲</button>' +
+        '<button class="btn tiny ghost">▼</button>' +
+        '<button class="btn tiny danger">刪</button>' +
       '</div>';
-    const [tI, dI, lI] = [c.querySelector('.oTitle'), c.querySelector('.oDesc'), c.querySelector('.oLink')];
-    tI.oninput = () => o.title = tI.value;
-    dI.oninput = () => o.desc = dI.value;
-    lI.oninput = () => o.link = lI.value;
-    const ops = c.querySelectorAll('.ops button');
-    ops[0].onclick = () => pickImage(i, c);
-    ops[1].onclick = () => moveOption(i, -1);
-    ops[2].onclick = () => moveOption(i, 1);
-    ops[3].onclick = () => removeOption(i);
-    box.appendChild(c);
+    r.querySelector('.oTitle').oninput = (e) => o.title = e.target.value;
+    r.querySelector('.oDesc').oninput = (e) => o.desc = e.target.value;
+    r.querySelector('.oLink').oninput = (e) => o.link = e.target.value;
+    if (o.img) r.querySelector('.thumb').onclick = () => openLightbox(o.img);
+    const ops = r.querySelectorAll('.ops button');
+    ops[0].onclick = () => pickImage(qi, i, r);
+    ops[1].onclick = () => moveOption(qi, i, -1);
+    ops[2].onclick = () => moveOption(qi, i, 1);
+    ops[3].onclick = () => removeOption(qi, i);
+    box.appendChild(r);
   });
 }
 
-window.addOption = function(){
-  editOptions.push({ id: newId(), title:'', desc:'', link:'', img:'', path:'', sort: editOptions.length });
-  renderOptions();
+function blankOption(sort){ return { id:newId('o'), title:'', desc:'', link:'', img:'', path:'', sort }; }
+
+window.addQuestion = function(){
+  editQuestions.push(normQuestion({
+    id: newId('q'), type:'single', title:'', desc:'', required:true,
+    options:[blankOption(0), blankOption(1)], sort: editQuestions.length
+  }));
+  renderQuestions();
 };
 
-function moveOption(i, d){
+function moveQuestion(i, d){
   const j = i + d;
-  if (j < 0 || j >= editOptions.length) return;
-  [editOptions[i], editOptions[j]] = [editOptions[j], editOptions[i]];
-  renderOptions();
+  if (j < 0 || j >= editQuestions.length) return;
+  [editQuestions[i], editQuestions[j]] = [editQuestions[j], editQuestions[i]];
+  renderQuestions();
 }
 
-async function removeOption(i){
-  const o = editOptions[i];
-  if (!confirm('刪除這個選項？' + (o.img ? '（照片也會一併刪除）' : ''))) return;
+function copyQuestion(i){
+  const src = editQuestions[i];
+  const copy = normQuestion({
+    ...src,
+    id: newId('q'),
+    title: src.title ? src.title + '（複本）' : '',
+    // 照片沿用同一個網址，但不共用 path，避免刪這題時把原圖刪掉
+    options: (src.options || []).map(o => ({ ...o, id:newId('o'), path:'' }))
+  });
+  editQuestions.splice(i + 1, 0, copy);
+  renderQuestions();
+  toast('已複製第 ' + (i+1) + ' 題，記得按「儲存題目」');
+}
+
+function removeQuestion(i){
+  const q = editQuestions[i];
+  if (!confirm('刪除第 ' + (i+1) + ' 題「' + (q.title || '未命名') + '」？\n（這題已收到的答案在明細裡會變成空白）')) return;
+  editQuestions.splice(i, 1);
+  renderQuestions();
+  toast('已從清單移除，記得按「儲存題目」');
+}
+
+function moveOption(qi, i, d){
+  const list = editQuestions[qi].options;
+  const j = i + d;
+  if (j < 0 || j >= list.length) return;
+  [list[i], list[j]] = [list[j], list[i]];
+  renderQuestions();
+}
+
+async function removeOption(qi, i){
+  const list = editQuestions[qi].options;
+  const o = list[i];
+  if (!confirm('刪除這個選項？' + (o.img && o.path ? '（照片也會一併刪除）' : ''))) return;
   if (o.path) { try { await deleteObject(sref(storage, o.path)); } catch(e) { console.warn('刪圖失敗', e); } }
-  editOptions.splice(i, 1);
-  renderOptions();
-  toast('已從清單移除，記得按「儲存選項」');
+  list.splice(i, 1);
+  renderQuestions();
+  toast('已從清單移除，記得按「儲存題目」');
 }
 
-function pickImage(i, card){
+function pickImage(qi, i, row){
   const inp = document.createElement('input');
   inp.type = 'file'; inp.accept = 'image/*';
   inp.onchange = async () => {
     const f = inp.files[0];
     if (!f) return;
-    const bar = card.querySelector('.upbar');
+    const bar = row.querySelector('.upbar');
     bar.style.display = 'block'; bar.firstElementChild.style.width = '30%';
     try {
-      const o = editOptions[i];
+      const o = editQuestions[qi].options[i];
       if (o.path) { try { await deleteObject(sref(storage, o.path)); } catch(e){} }
       const { url, path } = await uploadImage(f);
       o.img = url; o.path = path;
       bar.firstElementChild.style.width = '100%';
-      renderOptions();
-      toast('照片已上傳，記得按「儲存選項」');
+      renderQuestions();
+      toast('照片已上傳，記得按「儲存題目」');
     } catch (e) { console.error(e); toast('上傳失敗：' + (e.code || e.message)); }
   };
   inp.click();
 }
 
-async function onBulkUpload(ev){
-  const files = Array.from(ev.target.files || []);
-  ev.target.value = '';
-  if (!files.length) return;
-  toast('開始上傳 ' + files.length + ' 張照片…');
-  for (const f of files) {
-    try {
-      const { url, path } = await uploadImage(f);
-      editOptions.push({ id:newId(), title:'', desc:'', link:'', img:url, path, sort:editOptions.length });
-      renderOptions();
-    } catch (e) { console.error(e); toast(f.name + ' 上傳失敗'); }
-  }
-  toast('✅ 上傳完成，記得按「儲存選項」');
+function bulkUpload(qi){
+  const inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = 'image/*'; inp.multiple = true;
+  inp.onchange = async () => {
+    const files = Array.from(inp.files || []);
+    if (!files.length) return;
+    toast('開始上傳 ' + files.length + ' 張照片…');
+    const q = editQuestions[qi];
+    for (const f of files) {
+      try {
+        const { url, path } = await uploadImage(f);
+        q.options.push({ id:newId('o'), title:'', desc:'', link:'', img:url, path, sort:q.options.length });
+        renderQuestions();
+      } catch (e) { console.error(e); toast(f.name + ' 上傳失敗'); }
+    }
+    toast('✅ 上傳完成，記得按「儲存題目」');
+  };
+  inp.click();
 }
 
 async function uploadImage(file){
   const blob = await compressImage(file, 1600, 0.85);
-  const path = 'polls/' + currentId + '/' + newId() + '.jpg';
+  const path = 'polls/' + currentId + '/' + newId('o') + '.jpg';
   const r = sref(storage, path);
   await uploadBytes(r, blob, { contentType:'image/jpeg' });
   const url = await getDownloadURL(r);
@@ -535,20 +812,33 @@ function compressImage(file, maxSide, quality){
   });
 }
 
-window.saveOptions = async function(){
-  editOptions.forEach((o, i) => o.sort = i);
+window.saveQuestions = async function(){
+  // 檢查：選擇題至少要有一個選項；複選的最少不能大於最多
+  for (let i = 0; i < editQuestions.length; i++) {
+    const q = editQuestions[i];
+    if (isChoice(q) && !q.options.length) return toast('第 ' + (i+1) + ' 題還沒有任何選項');
+    if (q.type === 'multi' && q.min > q.max) return toast('第 ' + (i+1) + ' 題的「最少」不能大於「最多」');
+    if (q.type === 'multi' && q.max > q.options.length) q.max = q.options.length;
+  }
+  editQuestions.forEach((q, i) => { q.sort = i; q.options.forEach((o, j) => o.sort = j); });
   try {
-    await updateDoc(doc(db, 'polls', currentId), { options: editOptions, updatedAt:new Date().toISOString() });
-    current.options = editOptions.slice();
+    await updateDoc(doc(db, 'polls', currentId), {
+      questions: editQuestions,
+      schemaVersion: 2,
+      updatedAt: new Date().toISOString()
+    });
+    current.questions = editQuestions.map(q => normQuestion(q));
     await loadPolls();
-    toast('✅ 選項已儲存');
-  } catch (e) { toast('儲存失敗：' + (e.code || e.message)); }
+    renderResult();
+    renderDetail();
+    toast('✅ 題目已儲存（共 ' + editQuestions.length + ' 題）');
+  } catch (e) { console.error(e); toast('儲存失敗：' + (e.code || e.message)); }
 };
 
 // ── 名單 ───────────────────────────────────────
 function updateVoterCount(){
   const n = parseVoters().length;
-  $('#voterCount').textContent = n ? ('目前 ' + n + ' 人') : '未設名單（前台由投票人自行輸入姓名）';
+  $('#voterCount').textContent = n ? ('目前 ' + n + ' 人') : '未設名單（前台由填答人自行輸入姓名）';
 }
 function parseVoters(){
   return $('#fVoters').value.split('\n').map(s => s.trim()).filter(Boolean);
@@ -567,6 +857,36 @@ window.saveVoters = async function(){
   } catch (e) { toast('儲存失敗：' + (e.code || e.message)); }
 };
 
+// ── 答案讀取 ───────────────────────────────────
+// 一筆填答對某題的答案，統一回 { picks:[], other:'', text:'', value:null }
+function answerOf(v, q){
+  const a = (v.answers || {})[q.id] || {};
+  const out = {
+    picks: Array.isArray(a.picks) ? a.picks : [],
+    other: a.other || '',
+    text: typeof a.text === 'string' ? a.text : '',
+    value: Number.isFinite(a.value) ? a.value : null
+  };
+  // 舊資料相容：v1 的票只有 picks，對應遷移出來的 q_main
+  if (!out.picks.length && q.id === 'q_main' && Array.isArray(v.picks)) out.picks = v.picks;
+  return out;
+}
+function optTitle(q, id){
+  const i = (q.options || []).findIndex(o => o.id === id);
+  if (i < 0) return '（已刪除的選項）';
+  return q.options[i].title || ('選項 ' + (i+1));
+}
+function answerText(v, q){
+  const a = answerOf(v, q);
+  if (isChoice(q)) {
+    const names = a.picks.map(id => optTitle(q, id));
+    if (a.other) names.push('其他：' + a.other);
+    return names.join('、');
+  }
+  if (q.type === 'scale') return a.value == null ? '' : String(a.value);
+  return a.text;
+}
+
 // ── 結果 ───────────────────────────────────────
 function listenVotes(){
   if (unsubVotes) unsubVotes();
@@ -577,95 +897,162 @@ function listenVotes(){
   });
 }
 
-function optOf(id){
-  const i = (current.options || []).findIndex(o => o.id === id);
-  if (i < 0) return { name:'（已刪除的選項）', i:-1 };
-  return { name: current.options[i].title || ('選項 ' + (i+1)), i };
-}
-
 function renderResult(){
-  const counts = {};
-  (current.options || []).forEach(o => counts[o.id] = 0);
-  votes.forEach(v => (v.picks || []).forEach(id => { if (counts[id] != null) counts[id]++; }));
-  const max = Math.max(1, ...Object.values(counts));
-  const ranked = (current.options || []).slice().sort((a,b) => (counts[b.id]||0) - (counts[a.id]||0));
+  if (!current) return;
+  const qs = current.questions || [];
   const total = votes.length;
   const voterTotal = (current.voters || []).length;
-  let html = '<p class="muted small" style="margin-bottom:10px">已投票 <b>' + total + '</b>' +
-    (voterTotal ? ' / ' + voterTotal + ' 人' : ' 人') + '　·　共 ' +
-    votes.reduce((a,v) => a + (v.picks||[]).length, 0) + ' 票</p>';
-  ranked.forEach((o, i) => {
-    const c = counts[o.id] || 0;
-    const nm = (i === 0 && c > 0 ? '🏆 ' : '') + (o.title || ('選項 ' + ((current.options||[]).indexOf(o) + 1)));
-    html += '<div class="meter"><div class="flex"><div><b>' + escapeHtml(nm) + '</b></div><div class="muted">' + c + ' 票　' +
-      (total ? Math.round(c / Math.max(1,total) * 100) + '%' : '') + '</div></div>' +
-      '<div class="bar"><span style="width:' + (c/max*100).toFixed(1) + '%"></span></div></div>';
+  let html = '<p class="muted small" style="margin-bottom:14px">已填答 <b>' + total + '</b>' +
+    (voterTotal ? ' / ' + voterTotal + ' 人' : ' 人') + '　·　共 ' + qs.length + ' 題</p>';
+
+  qs.forEach((q, qi) => {
+    html += '<div class="qresult"><h3>第 ' + (qi+1) + ' 題　' + escapeHtml(q.title || '（未命名）') + '</h3>' +
+            '<div class="qmeta">' + TYPES[q.type].label + (q.required ? '　·　必填' : '') + '</div>';
+    if (isChoice(q)) {
+      const counts = {};
+      q.options.forEach(o => counts[o.id] = 0);
+      let otherList = [];
+      votes.forEach(v => {
+        const a = answerOf(v, q);
+        a.picks.forEach(id => { if (counts[id] != null) counts[id]++; });
+        if (a.other) otherList.push({ person:v.id, text:a.other });
+      });
+      const max = Math.max(1, ...Object.values(counts), otherList.length);
+      const ranked = q.options.slice().sort((a,b) => (counts[b.id]||0) - (counts[a.id]||0));
+      ranked.forEach((o, i) => {
+        const c = counts[o.id] || 0;
+        const nm = (i === 0 && c > 0 ? '🏆 ' : '') + (o.title || ('選項 ' + (q.options.indexOf(o) + 1)));
+        html += '<div class="meter"><div class="flex"><div><b>' + escapeHtml(nm) + '</b></div><div class="muted">' + c + ' 票　' +
+          (total ? Math.round(c / Math.max(1,total) * 100) + '%' : '') + '</div></div>' +
+          '<div class="bar"><span style="width:' + (c/max*100).toFixed(1) + '%"></span></div></div>';
+      });
+      if (otherList.length) {
+        html += '<div class="meter"><div class="flex"><div><b>其他（自填）</b></div><div class="muted">' + otherList.length + ' 票</div></div>' +
+          '<div class="bar"><span style="width:' + (otherList.length/max*100).toFixed(1) + '%"></span></div></div>';
+        otherList.forEach(o => html += '<div class="textans"><b>' + escapeHtml(o.person) + '：</b>' + escapeHtml(o.text) + '</div>');
+      }
+    } else if (q.type === 'scale') {
+      const vals = votes.map(v => answerOf(v, q).value).filter(n => n != null);
+      const avg = vals.length ? (vals.reduce((a,b) => a+b, 0) / vals.length) : 0;
+      html += '<p class="small" style="margin-bottom:8px">平均 <b style="font-size:18px;color:var(--brand)">' + avg.toFixed(2) + '</b> 分' +
+              '（' + q.scaleMin + '～' + q.scaleMax + ' 分，' + vals.length + ' 人作答）</p>';
+      const maxCount = Math.max(1, ...range(q.scaleMin, q.scaleMax).map(n => vals.filter(x => x === n).length));
+      range(q.scaleMin, q.scaleMax).forEach(n => {
+        const c = vals.filter(x => x === n).length;
+        const lbl = n + ' 分' + (n === q.scaleMin && q.scaleMinLabel ? '（' + q.scaleMinLabel + '）' : '') +
+                    (n === q.scaleMax && q.scaleMaxLabel ? '（' + q.scaleMaxLabel + '）' : '');
+        html += '<div class="meter"><div class="flex"><div><b>' + escapeHtml(lbl) + '</b></div><div class="muted">' + c + ' 人</div></div>' +
+          '<div class="bar"><span style="width:' + (c/maxCount*100).toFixed(1) + '%"></span></div></div>';
+      });
+    } else {
+      const list = votes.map(v => ({ person:v.id, text:answerOf(v, q).text })).filter(x => x.text);
+      html += '<p class="small muted" style="margin-bottom:8px">' + list.length + ' 筆文字回答</p>';
+      if (!list.length) html += '<p class="muted small">還沒有人填。</p>';
+      list.forEach(x => html += '<div class="textans"><b>' + escapeHtml(x.person) + '：</b>' + escapeHtml(x.text) + '</div>');
+    }
+    html += '</div>';
   });
+
+  if (current.allowComment) {
+    const list = votes.map(v => ({ person:v.id, text:(v.comment || '') })).filter(x => x.text);
+    html += '<div class="qresult"><h3>💬 留言／其他建議</h3><div class="qmeta">不列入統計，' + list.length + ' 筆</div>';
+    if (!list.length) html += '<p class="muted small">還沒有人留言。</p>';
+    list.forEach(x => html += '<div class="textans"><b>' + escapeHtml(x.person) + '：</b>' + escapeHtml(x.text) + '</div>');
+    html += '</div>';
+  }
   $('#resultBox').innerHTML = html;
 }
 
 function renderDetail(){
-  const per = current.votesPerPerson || 1;
+  if (!current) return;
+  const qs = current.questions || [];
   const named = (current.voters || []).length > 0;
   const rows = named
     ? current.voters.map(n => ({ person:n, v: votes.find(x => x.id === n) }))
     : votes.map(v => ({ person:v.id, v }));
-  let head = '<tr><th>投票人</th>';
-  for (let i = 0; i < per; i++) head += '<th>選擇 ' + (i+1) + '</th>';
+  let head = '<tr><th>填答人</th>';
+  qs.forEach((q, i) => head += '<th>Q' + (i+1) + '　' + escapeHtml(q.title || TYPES[q.type].label) + '</th>');
   if (current.allowComment) head += '<th>留言</th>';
   head += '<th>時間</th><th></th></tr>';
   let body = '';
   rows.forEach(r => {
-    const picks = r.v ? (r.v.picks || []) : [];
     body += '<tr><td><b>' + escapeHtml(r.person) + '</b></td>';
-    for (let i = 0; i < per; i++) body += '<td>' + (picks[i] ? escapeHtml(optOf(picks[i]).name) : '<span class="muted">—</span>') + '</td>';
+    qs.forEach(q => {
+      const t = r.v ? answerText(r.v, q) : '';
+      body += '<td>' + (t ? escapeHtml(t) : '<span class="muted">—</span>') + '</td>';
+    });
     if (current.allowComment) body += '<td>' + escapeHtml(r.v ? (r.v.comment || '') : '') + '</td>';
-    body += '<td class="muted small">' + (r.v ? fmtTs(r.v.createdAt) : '<span style="color:#dc2626">未投票</span>') + '</td>';
+    body += '<td class="muted small">' + (r.v ? fmtTs(r.v.createdAt) : '<span style="color:#dc2626">未填答</span>') + '</td>';
     body += '<td>' + (r.v ? '<button class="btn tiny danger" onclick="revoke(\'' + escapeHtml(r.person).replace(/'/g, "\\'") + '\')">撤銷</button>' : '') + '</td></tr>';
   });
   $('#detailTable').innerHTML = head + body;
 }
 
 window.revoke = async function(person){
-  if (!confirm('撤銷「' + person + '」的投票？他可以重新投一次。')) return;
-  try { await deleteDoc(doc(db, 'polls', currentId, 'votes', person)); toast('已撤銷 ' + person + ' 的投票'); }
+  if (!confirm('撤銷「' + person + '」的填答？他可以重新填一次。')) return;
+  try { await deleteDoc(doc(db, 'polls', currentId, 'votes', person)); toast('已撤銷 ' + person + ' 的填答'); }
   catch (e) { toast('撤銷失敗：' + (e.code || e.message)); }
 };
 
 window.clearVotes = async function(){
-  if (!confirm('⚠️ 清空「' + (current.title || currentId) + '」的所有投票？無法復原。')) return;
-  if (!confirm('再確認一次：真的要清空全部 ' + votes.length + ' 筆投票嗎？')) return;
+  if (!confirm('⚠️ 清空「' + (current.title || currentId) + '」的所有填答？無法復原。')) return;
+  if (!confirm('再確認一次：真的要清空全部 ' + votes.length + ' 筆填答嗎？')) return;
   try {
     const snap = await getDocs(collection(db, 'polls', currentId, 'votes'));
     for (const d of snap.docs) await deleteDoc(d.ref);
-    toast('已清空所有投票');
+    toast('已清空所有填答');
   } catch (e) { toast('清空失敗：' + (e.code || e.message)); }
 };
 
 window.exportSummary = function(){
-  const counts = {};
-  (current.options || []).forEach(o => counts[o.id] = 0);
-  votes.forEach(v => (v.picks || []).forEach(id => { if (counts[id] != null) counts[id]++; }));
-  const rows = [['名次','選項','說明','票數']];
-  (current.options || []).slice()
-    .sort((a,b) => (counts[b.id]||0) - (counts[a.id]||0))
-    .forEach((o, i) => rows.push([i+1, o.title || ('選項 ' + ((current.options).indexOf(o)+1)), o.desc || '', counts[o.id] || 0]));
+  const qs = current.questions || [];
+  const rows = [['題號','題目','題型','項目','數量／平均','佔比']];
+  const total = votes.length;
+  qs.forEach((q, qi) => {
+    if (isChoice(q)) {
+      const counts = {};
+      q.options.forEach(o => counts[o.id] = 0);
+      let others = 0;
+      votes.forEach(v => {
+        const a = answerOf(v, q);
+        a.picks.forEach(id => { if (counts[id] != null) counts[id]++; });
+        if (a.other) others++;
+      });
+      q.options.slice().sort((a,b) => (counts[b.id]||0) - (counts[a.id]||0)).forEach(o => {
+        const c = counts[o.id] || 0;
+        rows.push(['Q' + (qi+1), q.title || '', TYPES[q.type].label, o.title || '（無標題）', c, total ? Math.round(c/total*100) + '%' : '']);
+      });
+      if (others) rows.push(['Q' + (qi+1), q.title || '', TYPES[q.type].label, '其他（自填）', others, total ? Math.round(others/total*100) + '%' : '']);
+    } else if (q.type === 'scale') {
+      const vals = votes.map(v => answerOf(v, q).value).filter(n => n != null);
+      const avg = vals.length ? vals.reduce((a,b) => a+b, 0) / vals.length : 0;
+      rows.push(['Q' + (qi+1), q.title || '', TYPES[q.type].label, '平均分', avg.toFixed(2), vals.length + ' 人作答']);
+      range(q.scaleMin, q.scaleMax).forEach(n => {
+        const c = vals.filter(x => x === n).length;
+        rows.push(['Q' + (qi+1), q.title || '', TYPES[q.type].label, n + ' 分', c, vals.length ? Math.round(c/vals.length*100) + '%' : '']);
+      });
+    } else {
+      const list = votes.map(v => answerOf(v, q).text).filter(Boolean);
+      rows.push(['Q' + (qi+1), q.title || '', TYPES[q.type].label, '文字回答筆數', list.length, '']);
+    }
+  });
   downloadCSV((current.title || currentId) + '_結果.csv', rows);
 };
 
 window.exportDetail = function(){
-  const per = current.votesPerPerson || 1;
+  const qs = current.questions || [];
   const named = (current.voters || []).length > 0;
-  const head = ['投票人'];
-  for (let i = 0; i < per; i++) head.push('選擇 ' + (i+1));
-  head.push('留言', '投票時間');
+  const head = ['填答人'];
+  qs.forEach((q, i) => head.push('Q' + (i+1) + ' ' + (q.title || TYPES[q.type].label)));
+  if (current.allowComment) head.push('留言');
+  head.push('填答時間');
   const rows = [head];
   const list = named ? current.voters.map(n => ({ person:n, v:votes.find(x => x.id === n) })) : votes.map(v => ({ person:v.id, v }));
   list.forEach(r => {
-    const picks = r.v ? (r.v.picks || []) : [];
     const line = [r.person];
-    for (let i = 0; i < per; i++) line.push(picks[i] ? optOf(picks[i]).name : '');
-    line.push(r.v ? (r.v.comment || '') : '', r.v ? fmtTs(r.v.createdAt) : '未投票');
+    qs.forEach(q => line.push(r.v ? answerText(r.v, q) : ''));
+    if (current.allowComment) line.push(r.v ? (r.v.comment || '') : '');
+    line.push(r.v ? fmtTs(r.v.createdAt) : '未填答');
     rows.push(line);
   });
   downloadCSV((current.title || currentId) + '_明細.csv', rows);
@@ -685,6 +1072,20 @@ function downloadCSV(filename, rows){
 }
 
 // ── 提案 ───────────────────────────────────────
+function refreshPropTarget(){
+  const sel = $('#propTarget');
+  const keep = sel.value;
+  sel.innerHTML = '';
+  const choices = editQuestions.map((q, i) => ({ q, i })).filter(x => isChoice(x.q));
+  if (!choices.length) { sel.innerHTML = '<option value="">（目前沒有選擇題可加入）</option>'; return; }
+  choices.forEach(({ q, i }) => {
+    const o = document.createElement('option');
+    o.value = q.id; o.textContent = '第 ' + (i+1) + ' 題　' + (q.title || '（未命名）');
+    sel.appendChild(o);
+  });
+  if (keep && choices.some(x => x.q.id === keep)) sel.value = keep;
+}
+
 function listenProposals(){
   if (unsubProps) unsubProps();
   unsubProps = onSnapshot(collection(db, 'polls', currentId, 'proposals'), snap => {
@@ -722,13 +1123,17 @@ function renderProposals(){
 }
 
 async function approveProposal(p){
-  editOptions.push({ id:newId(), title:p.title, desc:p.desc || '', link:p.link || '', img:'', path:'', sort:editOptions.length });
+  const qid = $('#propTarget').value;
+  const q = editQuestions.find(x => x.id === qid);
+  if (!q) return toast('請先在上方選一題選擇題（或先到「題目設計」建一題）');
+  q.options.push({ id:newId('o'), title:p.title, desc:p.desc || '', link:p.link || '', img:'', path:'', sort:q.options.length });
   try {
-    await updateDoc(doc(db, 'polls', currentId), { options:editOptions, updatedAt:new Date().toISOString() });
+    editQuestions.forEach((x, i) => { x.sort = i; x.options.forEach((o, j) => o.sort = j); });
+    await updateDoc(doc(db, 'polls', currentId), { questions:editQuestions, schemaVersion:2, updatedAt:new Date().toISOString() });
     await updateDoc(doc(db, 'polls', currentId, 'proposals', p.id), { status:'approved' });
-    current.options = editOptions.slice();
-    renderOptions();
-    toast('已加入選項清單');
+    current.questions = editQuestions.map(x => normQuestion(x));
+    renderQuestions();
+    toast('已加入「' + (q.title || '該題') + '」的選項');
   } catch (e) { toast('失敗：' + (e.code || e.message)); }
 }
 
@@ -763,7 +1168,7 @@ window.createPoll = async function(){
   if (polls.some(p => p.id === id)) return toast('這個代號已經用過了');
   const from = $('#nCopy').value;
   let base = {
-    title, description:'', votesPerPerson:2, voters:[], options:[],
+    title, description:'', voters:[], questions:[], options:[], schemaVersion:2,
     status:'draft', isCurrent:false, showResults:'always',
     startAt:null, endAt:null, allowComment:false, allowProposal:false, allowRevoke:false
   };
@@ -773,9 +1178,11 @@ window.createPoll = async function(){
       base = {
         ...base,
         description: src.description || '',
-        votesPerPerson: src.votesPerPerson || 2,
         voters: (src.voters || []).slice(),
-        options: (src.options || []).map(o => ({ ...o, id:newId() })),
+        questions: questionsOf(src).map(q => normQuestion({
+          ...q, id:newId('q'),
+          options: (q.options || []).map(o => ({ ...o, id:newId('o'), path:'' }))
+        })),
         showResults: src.showResults || 'always',
         allowComment: !!src.allowComment,
         allowProposal: !!src.allowProposal,
@@ -790,14 +1197,17 @@ window.createPoll = async function(){
     closeNewPoll();
     await loadPolls();
     openPoll(id);
-    toast('✅ 已建立「' + title + '」，記得設定完成後改成「開放投票」並設為進行中');
+    toast('✅ 已建立「' + title + '」，到「題目設計」加題目，設定完再改成「開放填答」並設為進行中');
   } catch (e) { toast('建立失敗：' + (e.code || e.message)); }
 };
 
 // ── 小工具 ─────────────────────────────────────
-function newId(){ return 'o' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+function range(a, b){ const out = []; for (let i = a; i <= b; i++) out.push(i); return out; }
+function newId(prefix){ return (prefix || 'o') + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 function escapeHtml(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function attr(s){ return escapeHtml(s ?? ''); }
+window.openLightbox = function(url){ $('#lightboxImg').src = url; $('#lightbox').classList.add('open'); };
+window.closeLightbox = function(){ $('#lightbox').classList.remove('open'); };
 function toLocalInput(iso){
   if (!iso) return '';
   const d = new Date(iso);

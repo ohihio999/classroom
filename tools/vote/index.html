@@ -1,6 +1,22 @@
 <!--
-  版本：v1.1
+  版本：v2.0
   版更記錄：
+  v2.0 (2026-09-01) - 【多題問卷引擎】配合後台 v2.0 改造：
+                      1. 由「一頁一題照片投票」改成 Google 表單式的多題問卷：依 poll.questions[]
+                         逐題渲染，每題一張白卡，卡上有題號、題目、說明與必填紅星。
+                      2. 支援六種題型：單選、複選、下拉、簡答（單行）、問答（多行）、線性量表。
+                      3. 選項可有圖也可沒圖；呈現方式分「清單」與「圖卡格狀」（照片投票用，
+                         點圖可放大看，燈箱只在該題的照片之間切換）。
+                      4. 送出前逐題檢查：必填、複選最少／最多幾個、字數上限、Email／數字格式，
+                         沒過的題目會標紅並自動捲到該題。
+                      5. 支援選項隨機排序與「其他____」自填。
+                      6. 答案寫入 votes/{person}.answers = { 題目id: {picks/other/text/value} }；
+                         第一個選擇題同時寫回舊欄位 picks，舊活動（Edenred、桌曆）與既有票不受影響。
+                      7. 結果區改逐題呈現：選擇題長條圖、量表平均分與分佈；文字題基於隱私
+                         只顯示回答筆數，內容僅後台可見。
+  v1.2 (2026-08-31) - 說明區重新設計：說明文字從藍色 header 移出，改成內容區第一張白卡
+                      「📢 活動說明」（左對齊、行高放寬、保留換行 pre-wrap、限寬好讀）；
+                      後台沒填說明時整張卡不渲染，前台完全看不見。
   v1.1 (2026-08-21) - 移除左上角「← 首頁」返回連結（三頁一致）
   v1.0 (2026-08-20) - 通用投票系統前台。取代 menu-order-api /desk/vote_firebase.html 的寫死版本：
                       名單、選項、票數、時間全部改讀 Firestore polls/{pollId}；不帶參數時自動顯示
@@ -21,14 +37,12 @@
   .header { background:var(--brand); color:#fff; padding:18px 20px; text-align:center; box-shadow:0 2px 8px rgba(0,0,0,.2); position:relative; }
   .header h1 { font-size:21px; font-weight:600; line-height:1.3; }
   .header p { font-size:13px; opacity:.85; margin-top:5px; }
-  .wrap { width:min(100%,1180px); margin:0 auto; padding:18px 16px 40px; }
+  .wrap { width:min(100%,860px); margin:0 auto; padding:18px 16px 40px; }
   .card { background:#fff; border-radius:14px; padding:16px; box-shadow:0 4px 12px rgba(0,0,0,.07); margin-bottom:16px; }
   .card h2 { font-size:16px; font-weight:600; margin-bottom:12px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
   .step { background:var(--brand); color:#fff; width:22px; height:22px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-size:13px; flex-shrink:0; }
-  .top { display:grid; grid-template-columns:1fr; gap:16px; }
-  @media (min-width:900px){ .top { grid-template-columns:340px 1fr; align-items:start; } .sticky { position:sticky; top:16px; } }
-  select, input[type=text], textarea { width:100%; font-size:16px; padding:10px 12px; border-radius:10px; border:1px solid var(--line); font-family:inherit; background:#fff; }
-  textarea { resize:vertical; min-height:70px; }
+  select, input[type=text], input[type=email], input[type=number], textarea { width:100%; font-size:16px; padding:10px 12px; border-radius:10px; border:1px solid var(--line); font-family:inherit; background:#fff; }
+  textarea { resize:vertical; min-height:96px; line-height:1.6; }
   .pill { display:inline-flex; align-items:center; gap:6px; background:#e8f1fd; border:1px solid #cfe1fb; color:#1558a8; padding:6px 12px; border-radius:999px; font-size:14px; font-weight:600; }
   .status { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:12px; }
   .btns { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
@@ -38,13 +52,41 @@
   .btn.ghost { background:#f3f4f6; color:#374151; }
   .btn.danger { background:#fee2e2; color:#b91c1c; }
   .btn:disabled { opacity:.45; cursor:not-allowed; }
+  /* 題目卡 */
+  .qcard { background:#fff; border-radius:14px; padding:16px; box-shadow:0 4px 12px rgba(0,0,0,.07); margin-bottom:16px; border-left:4px solid var(--brand); }
+  .qcard.err { border-left-color:var(--danger); box-shadow:0 0 0 3px rgba(220,38,38,.12); }
+  .qcard .qno { font-size:12px; color:var(--muted); font-weight:600; margin-bottom:4px; }
+  .qcard .qt { font-size:16px; font-weight:600; line-height:1.5; margin-bottom:4px; }
+  .qcard .qt .req { color:var(--danger); margin-left:3px; }
+  .qcard .qd { font-size:13px; color:var(--muted); line-height:1.7; white-space:pre-wrap; margin-bottom:10px; }
+  .qcard .qrule { font-size:12px; color:var(--muted); margin-bottom:10px; }
+  .qcard .qerr { font-size:13px; color:var(--danger); font-weight:600; margin-top:8px; display:none; }
+  .qcard.err .qerr { display:block; }
+  .qcard.locked { opacity:.92; }
+  /* 清單型選項 */
+  .choices { display:flex; flex-direction:column; gap:8px; }
+  .choice { display:flex; gap:10px; align-items:flex-start; border:1px solid var(--line); border-radius:11px; padding:11px 12px; cursor:pointer; background:#fcfcfd; transition:border-color .12s, box-shadow .12s, background .12s; }
+  .choice:hover { background:#f7faff; }
+  .choice.on { border-color:var(--brand); background:#f2f7fe; box-shadow:0 0 0 2px rgba(25,118,210,.14); }
+  .choice .box { width:20px; height:20px; flex-shrink:0; border:2px solid #c4c9d2; background:#fff; display:flex; align-items:center; justify-content:center; font-size:13px; color:transparent; margin-top:1px; }
+  .choice .box.radio { border-radius:50%; }
+  .choice .box.check { border-radius:5px; }
+  .choice.on .box { background:var(--brand); border-color:var(--brand); color:#fff; }
+  .choice .thumb { width:64px; height:48px; flex-shrink:0; border-radius:7px; overflow:hidden; background:#eef0f2; }
+  .choice .thumb img { width:100%; height:100%; object-fit:cover; display:block; }
+  .choice .txt { flex:1; min-width:0; }
+  .choice .txt .t { font-size:15px; line-height:1.45; }
+  .choice .txt .d { font-size:12.5px; color:var(--muted); line-height:1.5; margin-top:2px; }
+  .choice .txt a { font-size:12.5px; color:var(--brand); text-decoration:none; }
+  .choice .txt a:hover { text-decoration:underline; }
+  .otherrow { display:flex; gap:10px; align-items:center; margin-top:2px; }
+  .otherrow input { flex:1; }
+  /* 圖卡格狀 */
   .grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
   @media (min-width:700px){ .grid { grid-template-columns:repeat(3,minmax(0,1fr)); } }
-  @media (min-width:1000px){ .grid { grid-template-columns:repeat(4,minmax(0,1fr)); } }
   .opt { border:2px solid transparent; border-radius:14px; overflow:hidden; background:#fafafa; cursor:pointer; transition:transform .12s,box-shadow .12s,border-color .12s; position:relative; display:flex; flex-direction:column; }
   .opt:hover { transform:translateY(-2px); box-shadow:0 10px 20px rgba(0,0,0,.08); }
   .opt.selected { border-color:var(--brand); box-shadow:0 0 0 4px rgba(25,118,210,.15); }
-  .opt.locked { opacity:.5; pointer-events:none; }
   .opt .imgbox { position:relative; background:#e9eaec; }
   .opt img { display:block; width:100%; aspect-ratio:4/3; object-fit:contain; }
   .opt .noimg { display:flex; align-items:center; justify-content:center; aspect-ratio:16/6; color:#9ca3af; font-size:13px; }
@@ -54,12 +96,22 @@
   .opt .cap .t { font-size:15px; font-weight:600; line-height:1.3; }
   .opt .cap .d { font-size:12px; color:var(--muted); line-height:1.4; }
   .opt .cap a { font-size:12px; color:var(--brand); text-decoration:none; }
-  .opt .cap a:hover { text-decoration:underline; }
   .check { position:absolute; left:8px; top:8px; width:28px; height:28px; border-radius:50%; background:#fff; border:2px solid var(--line); display:flex; align-items:center; justify-content:center; font-size:15px; color:transparent; }
   .opt.selected .check { background:var(--brand); border-color:var(--brand); color:#fff; }
+  .opt.locked, .choice.locked { cursor:default; }
+  .qcard.locked .choice:not(.on), .qcard.locked .opt:not(.selected) { opacity:.55; }
+  /* 量表 */
+  .scale { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .scale .lbl { font-size:13px; color:var(--muted); }
+  .scale .nums { display:flex; gap:8px; flex-wrap:wrap; }
+  .scale button { width:46px; height:46px; border-radius:50%; border:1.5px solid var(--line); background:#fff; font-size:16px; font-weight:600; cursor:pointer; font-family:inherit; color:#374151; }
+  .scale button.on { background:var(--brand); border-color:var(--brand); color:#fff; }
+  .counter { font-size:12px; color:var(--muted); text-align:right; margin-top:4px; }
+  /* 結果 */
   .results { display:grid; grid-template-columns:repeat(1,minmax(0,1fr)); gap:10px; }
-  @media (min-width:700px){ .results { grid-template-columns:repeat(2,minmax(0,1fr)); } }
-  .meter { background:#f7f8fa; border-radius:10px; padding:10px 12px; border:1px solid #f0f1f4; }
+  .qres { border:1px solid var(--line); border-radius:12px; padding:13px; margin-bottom:12px; }
+  .qres > h3 { font-size:14.5px; font-weight:600; margin-bottom:8px; }
+  .meter { background:#f7f8fa; border-radius:10px; padding:10px 12px; border:1px solid #f0f1f4; margin-bottom:8px; }
   .meter .flex { display:flex; justify-content:space-between; align-items:baseline; gap:10px; margin-bottom:6px; }
   .meter .nm { font-size:14px; font-weight:600; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .meter .ct { font-size:13px; color:var(--muted); flex-shrink:0; }
@@ -85,63 +137,71 @@
   .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
   .loading { text-align:center; padding:60px 20px; color:var(--muted); }
   footer { text-align:center; color:#9ca3af; font-size:12px; padding:10px 0 30px; }
+  .card.desc { border-left:4px solid var(--brand); }
+  .card.desc h2 { margin-bottom:10px; }
+  .desc-body { font-size:15px; line-height:1.9; color:#374151; white-space:pre-wrap; word-break:break-word; max-width:68ch; }
+  .desc-body a { color:var(--brand); }
   .field { margin-top:12px; }
   .field label { display:block; font-size:13px; font-weight:600; margin-bottom:6px; color:#374151; }
+  .submitbar { position:sticky; bottom:0; background:linear-gradient(to top, #f5f5f5 62%, rgba(245,245,245,0)); padding:14px 0 10px; }
 </style>
 </head>
 <body>
 <div class="header">
   <h1 id="pollTitle">投票系統</h1>
-  <p id="pollDesc"></p>
 </div>
 
 <div class="wrap">
   <div id="loading" class="loading">載入中…</div>
 
   <div id="main" style="display:none">
+    <section id="descCard" class="card desc" style="display:none">
+      <h2>📢 活動說明</h2>
+      <div id="pollDesc" class="desc-body"></div>
+    </section>
+
     <div id="banner"></div>
 
-    <div class="top">
-      <section class="card sticky">
-        <h2><span class="step">1</span>選擇投票人</h2>
-        <div id="voterPick"></div>
-        <div class="status">
-          <span class="pill">剩餘票數：<span id="remain">0</span> / <span id="perPerson">0</span></span>
-          <span id="votedTip" class="muted small"></span>
-        </div>
-        <div id="commentField" class="field" style="display:none">
-          <label for="commentInput">留言／理由（選填）</label>
-          <textarea id="commentInput" placeholder="想補充的話寫在這裡"></textarea>
-        </div>
-        <div class="btns">
-          <button id="submitBtn" class="btn primary" disabled>送出投票</button>
-          <button id="clearSelBtn" class="btn ghost">清除選擇</button>
-          <button id="revokeBtn" class="btn danger" style="display:none" disabled>撤銷我的投票重投</button>
-        </div>
-        <p class="muted small" style="margin-top:10px" id="ruleTip"></p>
-      </section>
+    <section class="card">
+      <h2><span class="step">1</span>請先選擇你是誰</h2>
+      <div id="voterPick"></div>
+      <div class="status">
+        <span id="votedTip" class="muted small"></span>
+      </div>
+    </section>
 
-      <section class="card">
-        <h2><span class="step">2</span><span id="pickTitle">請點選項目</span></h2>
-        <div id="grid" class="grid"></div>
-        <div id="proposalWrap" style="display:none; margin-top:16px; border-top:1px solid var(--line); padding-top:14px">
-          <h2 style="font-size:15px">💡 名單上沒有你想選的？提個案</h2>
-          <div class="field"><label for="propTitle">名稱</label><input type="text" id="propTitle" placeholder="例如：清水斷崖"></div>
-          <div class="field"><label for="propDesc">說明（選填）</label><input type="text" id="propDesc" placeholder="為什麼推薦"></div>
-          <div class="field"><label for="propLink">連結（選填）</label><input type="text" id="propLink" placeholder="Google Map 或介紹網址"></div>
-          <div class="btns"><button id="propBtn" class="btn secondary">送出提案（待管理員審核）</button></div>
-        </div>
-      </section>
+    <div id="qForm"></div>
+
+    <section class="card" id="commentCard" style="display:none">
+      <h2>💬 留言／其他建議</h2>
+      <textarea id="commentInput" placeholder="想補充的話寫在這裡（選填）"></textarea>
+    </section>
+
+    <section class="card" id="proposalWrap" style="display:none">
+      <h2>💡 名單上沒有你想選的？提個案</h2>
+      <div class="field"><label for="propTitle">名稱</label><input type="text" id="propTitle" placeholder="例如：清水斷崖"></div>
+      <div class="field"><label for="propDesc">說明（選填）</label><input type="text" id="propDesc" placeholder="為什麼推薦"></div>
+      <div class="field"><label for="propLink">連結（選填）</label><input type="text" id="propLink" placeholder="Google Map 或介紹網址"></div>
+      <div class="btns"><button id="propBtn" class="btn secondary">送出提案（待管理員審核）</button></div>
+    </section>
+
+    <div class="submitbar">
+      <div class="btns">
+        <button id="submitBtn" class="btn primary" disabled>送出</button>
+        <button id="clearSelBtn" class="btn ghost">全部清空重填</button>
+        <button id="revokeBtn" class="btn danger" style="display:none" disabled>撤銷我的填答重填</button>
+      </div>
+      <p class="muted small" style="margin-top:8px" id="ruleTip"></p>
     </div>
 
     <section class="card" id="resultCard">
-      <h2>📊 投票結果</h2>
+      <h2>📊 目前結果</h2>
       <div id="resultHint" class="muted small" style="margin-bottom:10px"></div>
       <div id="results" class="results"></div>
     </section>
 
     <section class="card">
-      <h2>👥 投票狀況</h2>
+      <h2>👥 填答狀況</h2>
       <div id="voteStat" class="muted small" style="margin-bottom:8px"></div>
       <div id="nonVoters"></div>
     </section>
@@ -171,14 +231,26 @@ const db = getFirestore(app);
 const $ = (s) => document.querySelector(s);
 const params = new URLSearchParams(location.search);
 
+const TYPES = {
+  single:   { label:'單選',        choice:true  },
+  multi:    { label:'複選',        choice:true  },
+  dropdown: { label:'下拉選單',    choice:true  },
+  short:    { label:'簡答',        choice:false },
+  para:     { label:'問答',        choice:false },
+  scale:    { label:'量表',        choice:false }
+};
+const isChoice = (q) => !!(TYPES[q.type] && TYPES[q.type].choice);
+
 let pollId = '';
 let poll = null;
-let votes = new Map();      // person -> {picks, comment}
+let questions = [];
+let votes = new Map();      // person -> vote doc
 let currentPerson = '';
-let currentSel = [];        // 保持選取順序
+let ans = {};               // qid -> {picks:[], other:'', text:'', value:null}
+let renderedLocked = null;  // 目前表單是以「鎖住」還是「可填」畫的
+let shuffleOrder = {};      // qid -> [optionId] 洗牌後的順序（同一次載入固定）
 let unsub = null;
 
-// 前台記住上次選的人（同一台電腦連續投票時省事，但不當成身分驗證）
 const LS_KEY = 'vote_last_person';
 
 init();
@@ -213,45 +285,88 @@ async function resolvePoll(){
     }
     pollId = qs.docs[0].id; poll = qs.docs[0].data();
   }
-  poll.options = (poll.options || []).slice().sort((a,b) => (a.sort ?? 0) - (b.sort ?? 0));
   poll.voters = poll.voters || [];
+  questions = questionsOf(poll);
+  questions.forEach(q => {
+    if (q.shuffle && isChoice(q)) shuffleOrder[q.id] = shuffled(q.options.map(o => o.id));
+  });
+}
+
+// 舊格式（只有 options + votesPerPerson）自動遷移成一題 q_main，舊票的 picks 仍算得到
+function questionsOf(data){
+  const norm = (q) => {
+    const t = TYPES[q.type] ? q.type : 'single';
+    const out = {
+      id: q.id, type: t, title: q.title || '', desc: q.desc || '',
+      required: q.required !== false,
+      options: (q.options || []).slice().sort((a,b) => (a.sort ?? 0) - (b.sort ?? 0)),
+      layout: q.layout === 'grid' ? 'grid' : 'list',
+      shuffle: !!q.shuffle, allowOther: !!q.allowOther,
+      min: Number.isFinite(q.min) ? q.min : 1,
+      max: Number.isFinite(q.max) ? q.max : 1,
+      placeholder: q.placeholder || '',
+      maxLen: Number.isFinite(q.maxLen) ? q.maxLen : 0,
+      validate: q.validate || 'none',
+      scaleMin: Number.isFinite(q.scaleMin) ? q.scaleMin : 1,
+      scaleMax: Number.isFinite(q.scaleMax) ? q.scaleMax : 5,
+      scaleMinLabel: q.scaleMinLabel || '', scaleMaxLabel: q.scaleMaxLabel || ''
+    };
+    if (t === 'single' || t === 'dropdown') { out.min = out.required ? 1 : 0; out.max = 1; }
+    return out;
+  };
+  if (Array.isArray(data.questions) && data.questions.length) {
+    return data.questions.slice().sort((a,b) => (a.sort ?? 0) - (b.sort ?? 0)).map(norm);
+  }
+  const opts = (data.options || []);
+  if (!opts.length) return [];
+  const per = Math.max(1, parseInt(data.votesPerPerson || 1, 10));
+  return [norm({
+    id:'q_main', type: per > 1 ? 'multi' : 'single', title: data.pickHint || '請選擇',
+    required:true,
+    // 舊資料只要有照片就當圖卡投票；全是純文字選項（例如滿意度）就用清單，不然空圖卡很佔版面
+    layout: opts.some(o => o.img) ? 'grid' : 'list',
+    min:per, max:per, options:opts
+  })];
 }
 
 // ── 開放狀態判斷 ───────────────────────────────
 function phase(){
-  if (poll.status === 'draft') return { open:false, code:'draft', msg:'這場投票尚未開放。' };
-  if (poll.status === 'closed') return { open:false, code:'closed', msg:'這場投票已結束，感謝參與。' };
+  if (poll.status === 'draft') return { open:false, code:'draft', msg:'這場問卷尚未開放。' };
+  if (poll.status === 'closed') return { open:false, code:'closed', msg:'這場問卷已結束，感謝參與。' };
   const now = Date.now();
   const s = poll.startAt ? new Date(poll.startAt).getTime() : null;
   const e = poll.endAt ? new Date(poll.endAt).getTime() : null;
-  if (s && now < s) return { open:false, code:'early', msg:'投票尚未開始，開放時間：' + fmtTime(poll.startAt) };
-  if (e && now > e) return { open:false, code:'closed', msg:'投票已於 ' + fmtTime(poll.endAt) + ' 截止。' };
-  return { open:true, code:'open', msg:e ? ('投票截止時間：' + fmtTime(poll.endAt)) : '' };
+  if (s && now < s) return { open:false, code:'early', msg:'尚未開始，開放時間：' + fmtTime(poll.startAt) };
+  if (e && now > e) return { open:false, code:'closed', msg:'已於 ' + fmtTime(poll.endAt) + ' 截止。' };
+  return { open:true, code:'open', msg:e ? ('截止時間：' + fmtTime(poll.endAt)) : '' };
 }
 
 function canSeeResults(){
   const p = phase();
   if (poll.showResults === 'never') return false;
   if (poll.showResults === 'afterClose') return !p.open && (p.code === 'closed');
-  return true; // always
+  return true;
 }
+
+function hasVoted(){ return !!(currentPerson && votes.has(currentPerson)); }
+function formLocked(){ return !phase().open || !currentPerson || hasVoted(); }
 
 // ── 畫面 ───────────────────────────────────────
 function renderAll(){
-  document.title = (poll.title || '投票') + ' — 投票系統';
-  $('#pollTitle').textContent = poll.title || '投票';
-  $('#pollDesc').textContent = poll.description || '';
-  $('#perPerson').textContent = poll.votesPerPerson || 1;
-  $('#pickTitle').textContent = '請點選 ' + (poll.votesPerPerson || 1) + ' 個項目' + (poll.pickHint ? '（' + poll.pickHint + '）' : '');
-  $('#ruleTip').textContent = '每人限投 ' + (poll.votesPerPerson || 1) + ' 票，同一人不可重複投票。';
-  $('#commentField').style.display = poll.allowComment ? '' : 'none';
+  document.title = (poll.title || '問卷') + ' — 投票系統';
+  $('#pollTitle').textContent = poll.title || '問卷';
+  const descText = (poll.description || '').trim();
+  $('#pollDesc').textContent = descText;
+  $('#descCard').style.display = descText ? '' : 'none';
+  $('#commentCard').style.display = poll.allowComment ? '' : 'none';
   $('#proposalWrap').style.display = (poll.allowProposal && phase().open) ? '' : 'none';
   $('#revokeBtn').style.display = poll.allowRevoke ? '' : 'none';
+  $('#ruleTip').textContent = '同一個名字只能填一次' + (poll.allowRevoke ? '，填錯可以按「撤銷我的填答重填」。' : '，送出後就不能改了，請先確認。');
   $('#footerNote').textContent = '場次代號：' + pollId;
 
   renderBanner();
   renderVoterPick();
-  renderGrid();
+  renderForm();
 }
 
 function renderBanner(){
@@ -271,7 +386,7 @@ function renderVoterPick(){
   if (poll.voters.length > 0) {
     const sel = document.createElement('select');
     sel.id = 'personSelect';
-    sel.innerHTML = '<option value="">— 請選擇投票人 —</option>';
+    sel.innerHTML = '<option value="">— 請選擇你的名字 —</option>';
     poll.voters.forEach(n => {
       const o = document.createElement('option');
       o.value = n; o.textContent = n;
@@ -286,141 +401,329 @@ function renderVoterPick(){
     inp.type = 'text'; inp.id = 'personInput'; inp.placeholder = '請輸入你的姓名';
     inp.value = localStorage.getItem(LS_KEY) || '';
     box.appendChild(inp);
-    inp.addEventListener('input', () => setPerson(inp.value.trim()));
+    let t = null;
+    inp.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => setPerson(inp.value.trim()), 250); });
     if (inp.value) setPerson(inp.value.trim());
   }
 }
 
-function renderGrid(){
-  const grid = $('#grid');
-  grid.innerHTML = '';
-  if (!poll.options.length) {
-    grid.innerHTML = '<p class="muted small">這場投票還沒有設定選項。</p>';
-    return;
-  }
-  poll.options.forEach((opt, idx) => {
-    const card = document.createElement('div');
-    card.className = 'opt';
-    card.dataset.id = opt.id;
-    card.addEventListener('click', () => toggleSelect(opt.id));
-
-    const check = document.createElement('div');
-    check.className = 'check';
-    check.textContent = '✓';
-    card.appendChild(check);
-
-    if (opt.img) {
-      const box = document.createElement('div');
-      box.className = 'imgbox';
-      const img = document.createElement('img');
-      img.src = opt.img; img.alt = opt.title || ('選項 ' + (idx+1)); img.loading = 'lazy';
-      box.appendChild(img);
-      const zb = document.createElement('button');
-      zb.className = 'zoom'; zb.title = '放大看'; zb.textContent = '🔍';
-      zb.addEventListener('click', (ev) => { ev.stopPropagation(); openLightbox(idx); });
-      box.appendChild(zb);
-      card.appendChild(box);
-    } else {
-      const nb = document.createElement('div');
-      nb.className = 'noimg';
-      nb.textContent = '（無圖片）';
-      card.appendChild(nb);
-    }
-
-    const cap = document.createElement('div');
-    cap.className = 'cap';
-    const t = document.createElement('div');
-    t.className = 't';
-    t.textContent = opt.title || ('選項 ' + (idx + 1));
-    cap.appendChild(t);
-    if (opt.desc) { const d = document.createElement('div'); d.className = 'd'; d.textContent = opt.desc; cap.appendChild(d); }
-    if (opt.link) {
-      const a = document.createElement('a');
-      a.href = opt.link; a.target = '_blank'; a.rel = 'noopener noreferrer';
-      a.textContent = '🔗 看詳細';
-      a.addEventListener('click', ev => ev.stopPropagation());
-      cap.appendChild(a);
-    }
-    card.appendChild(cap);
-    grid.appendChild(card);
-  });
-  refreshGridState();
-}
-
-function refreshGridState(){
-  const p = phase();
-  const hasVoted = currentPerson && votes.has(currentPerson);
-  const locked = !p.open || !currentPerson || hasVoted;
-  document.querySelectorAll('.opt').forEach(el => {
-    el.classList.toggle('locked', locked);
-    el.classList.toggle('selected', currentSel.includes(el.dataset.id));
-  });
-  $('#remain').textContent = String(Math.max(0, (poll.votesPerPerson || 1) - currentSel.length));
-  $('#submitBtn').disabled = !(p.open && currentPerson && !hasVoted && currentSel.length === (poll.votesPerPerson || 1));
-  $('#revokeBtn').disabled = !(p.open && hasVoted);
-
-  let tip = '';
-  if (currentPerson && hasVoted) {
-    const names = (votes.get(currentPerson).picks || []).map(id => optName(id)).join('、');
-    tip = '✅ 已投：' + names;
-  } else if (currentPerson) {
-    tip = '尚未投票';
-  }
-  $('#votedTip').textContent = tip;
-}
-
-function optName(id){
-  const i = poll.options.findIndex(o => o.id === id);
-  if (i < 0) return id;
-  return poll.options[i].title || ('選項 ' + (i + 1));
-}
+function blankAnswer(){ return { picks:[], other:'', text:'', value:null }; }
 
 function setPerson(name){
   currentPerson = name || '';
-  currentSel = [];
   if (currentPerson) localStorage.setItem(LS_KEY, currentPerson);
+  ans = {};
+  questions.forEach(q => ans[q.id] = blankAnswer());
   const v = votes.get(currentPerson);
-  $('#commentInput').value = v ? (v.comment || '') : '';
-  refreshGridState();
-}
-
-function toggleSelect(id){
-  const p = phase();
-  if (!p.open) return toast('目前不開放投票');
-  if (!currentPerson) return toast('請先選擇投票人');
-  if (votes.has(currentPerson)) return toast('你已經投過票了');
-  const max = poll.votesPerPerson || 1;
-  const i = currentSel.indexOf(id);
-  if (i >= 0) currentSel.splice(i, 1);
-  else {
-    if (currentSel.length >= max) {
-      if (max === 1) currentSel = [id];       // 單選直接換
-      else return toast('最多只能選 ' + max + ' 個，請先取消一個');
-    } else currentSel.push(id);
+  if (v) {
+    questions.forEach(q => {
+      const a = (v.answers || {})[q.id] || {};
+      ans[q.id] = {
+        picks: Array.isArray(a.picks) ? a.picks.slice() : ((q.id === 'q_main' && Array.isArray(v.picks)) ? v.picks.slice() : []),
+        other: a.other || '',
+        text: typeof a.text === 'string' ? a.text : '',
+        value: Number.isFinite(a.value) ? a.value : null
+      };
+    });
   }
-  refreshGridState();
+  $('#commentInput').value = v ? (v.comment || '') : '';
+  $('#commentInput').disabled = formLocked();
+  renderForm();
+  refreshState();
 }
 
-// ── 即時同步票數 ───────────────────────────────
+function orderedOptions(q){
+  if (!q.shuffle || !shuffleOrder[q.id]) return q.options;
+  const map = new Map(q.options.map(o => [o.id, o]));
+  return shuffleOrder[q.id].map(id => map.get(id)).filter(Boolean);
+}
+
+function ruleText(q){
+  const bits = [];
+  if (q.type === 'multi') {
+    if (q.min > 0 && q.max > 0 && q.min === q.max) bits.push('請選 ' + q.max + ' 個');
+    else {
+      if (q.min > 0) bits.push('至少選 ' + q.min + ' 個');
+      if (q.max > 0) bits.push('最多選 ' + q.max + ' 個');
+    }
+  }
+  if (q.type === 'short' || q.type === 'para') {
+    if (q.maxLen > 0) bits.push('限 ' + q.maxLen + ' 字內');
+    if (q.validate === 'email') bits.push('請填 Email 格式');
+    if (q.validate === 'number') bits.push('請填數字');
+  }
+  return bits.join('　·　');
+}
+
+function renderForm(){
+  const box = $('#qForm');
+  box.innerHTML = '';
+  renderedLocked = formLocked();
+  if (!questions.length) {
+    box.innerHTML = '<section class="card"><p class="muted small">這場問卷還沒有設定題目。</p></section>';
+    return;
+  }
+  questions.forEach((q, qi) => {
+    const c = document.createElement('div');
+    c.className = 'qcard' + (renderedLocked ? ' locked' : '');
+    c.id = 'qc_' + q.id;
+    const rule = ruleText(q);
+    c.innerHTML =
+      '<div class="qno">第 ' + (qi+1) + ' 題　/　共 ' + questions.length + ' 題</div>' +
+      '<div class="qt">' + escapeHtml(q.title || '（未命名題目）') + (q.required ? '<span class="req">＊</span>' : '') + '</div>' +
+      (q.desc ? '<div class="qd">' + escapeHtml(q.desc) + '</div>' : '') +
+      (rule ? '<div class="qrule">' + escapeHtml(rule) + '</div>' : '') +
+      '<div class="qbody"></div>' +
+      '<div class="qerr"></div>';
+    buildQBody(c.querySelector('.qbody'), q, qi);
+    box.appendChild(c);
+  });
+}
+
+function buildQBody(box, q, qi){
+  const locked = formLocked();
+  const a = ans[q.id] || (ans[q.id] = blankAnswer());
+
+  if (q.type === 'dropdown') {
+    const sel = document.createElement('select');
+    sel.innerHTML = '<option value="">— 請選擇 —</option>' +
+      orderedOptions(q).map((o, i) => '<option value="' + attr(o.id) + '"' + (a.picks[0] === o.id ? ' selected' : '') + '>' +
+        escapeHtml(o.title || ('選項 ' + (i+1))) + '</option>').join('') +
+      (q.allowOther ? '<option value="__other__"' + (a.picks[0] === '__other__' ? ' selected' : '') + '>其他（自行填寫）</option>' : '');
+    sel.disabled = locked;
+    sel.onchange = () => { a.picks = sel.value ? [sel.value] : []; if (sel.value !== '__other__') a.other = ''; renderOtherRow(); clearErr(q); refreshState(); };
+    box.appendChild(sel);
+    const otherWrap = document.createElement('div');
+    box.appendChild(otherWrap);
+    const renderOtherRow = () => {
+      otherWrap.innerHTML = '';
+      if (q.allowOther && a.picks[0] === '__other__') otherWrap.appendChild(otherInput(q, a, locked));
+    };
+    renderOtherRow();
+    return;
+  }
+
+  if (isChoice(q) && q.layout === 'grid') {
+    const grid = document.createElement('div');
+    grid.className = 'grid';
+    orderedOptions(q).forEach((o) => {
+      const idx = q.options.indexOf(o);
+      const card = document.createElement('div');
+      card.className = 'opt' + (a.picks.includes(o.id) ? ' selected' : '') + (locked ? ' locked' : '');
+      card.innerHTML =
+        '<div class="check">✓</div>' +
+        (o.img
+          ? '<div class="imgbox"><img src="' + attr(o.img) + '" alt="" loading="lazy"><button class="zoom" title="放大看">🔍</button></div>'
+          : '<div class="noimg">（無圖片）</div>') +
+        '<div class="cap">' +
+          '<div class="t">' + escapeHtml(o.title || ('選項 ' + (idx+1))) + '</div>' +
+          (o.desc ? '<div class="d">' + escapeHtml(o.desc) + '</div>' : '') +
+          (o.link ? '<a href="' + attr(o.link) + '" target="_blank" rel="noopener noreferrer">🔗 看詳細</a>' : '') +
+        '</div>';
+      card.onclick = () => togglePick(q, o.id);
+      const zb = card.querySelector('.zoom');
+      if (zb) zb.onclick = (ev) => { ev.stopPropagation(); openLightbox(q, o.id); };
+      const lk = card.querySelector('a');
+      if (lk) lk.onclick = (ev) => ev.stopPropagation();
+      grid.appendChild(card);
+    });
+    box.appendChild(grid);
+    if (q.allowOther) box.appendChild(otherRow(q, a, locked));
+    return;
+  }
+
+  if (isChoice(q)) {
+    const list = document.createElement('div');
+    list.className = 'choices';
+    orderedOptions(q).forEach((o) => {
+      const idx = q.options.indexOf(o);
+      const row = document.createElement('div');
+      row.className = 'choice' + (a.picks.includes(o.id) ? ' on' : '') + (locked ? ' locked' : '');
+      row.innerHTML =
+        '<div class="box ' + (q.type === 'multi' ? 'check' : 'radio') + '">' + (q.type === 'multi' ? '✓' : '●') + '</div>' +
+        (o.img ? '<div class="thumb"><img src="' + attr(o.img) + '" alt="" loading="lazy"></div>' : '') +
+        '<div class="txt"><div class="t">' + escapeHtml(o.title || ('選項 ' + (idx+1))) + '</div>' +
+          (o.desc ? '<div class="d">' + escapeHtml(o.desc) + '</div>' : '') +
+          (o.link ? '<a href="' + attr(o.link) + '" target="_blank" rel="noopener noreferrer">🔗 看詳細</a>' : '') +
+        '</div>';
+      row.onclick = () => togglePick(q, o.id);
+      const th = row.querySelector('.thumb');
+      if (th) th.onclick = (ev) => { ev.stopPropagation(); openLightbox(q, o.id); };
+      const lk = row.querySelector('a');
+      if (lk) lk.onclick = (ev) => ev.stopPropagation();
+      list.appendChild(row);
+    });
+    box.appendChild(list);
+    if (q.allowOther) box.appendChild(otherRow(q, a, locked));
+    return;
+  }
+
+  if (q.type === 'scale') {
+    const wrap = document.createElement('div');
+    wrap.className = 'scale';
+    const nums = document.createElement('div');
+    nums.className = 'nums';
+    for (let n = q.scaleMin; n <= q.scaleMax; n++) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = String(n);
+      b.className = (a.value === n ? 'on' : '');
+      b.disabled = locked;
+      b.onclick = () => {
+        a.value = (a.value === n) ? null : n;
+        nums.querySelectorAll('button').forEach(x => x.classList.toggle('on', x.textContent === String(a.value)));
+        clearErr(q); refreshState();
+      };
+      nums.appendChild(b);
+    }
+    if (q.scaleMinLabel) { const l = document.createElement('span'); l.className = 'lbl'; l.textContent = q.scaleMinLabel; wrap.appendChild(l); }
+    wrap.appendChild(nums);
+    if (q.scaleMaxLabel) { const l = document.createElement('span'); l.className = 'lbl'; l.textContent = q.scaleMaxLabel; wrap.appendChild(l); }
+    box.appendChild(wrap);
+    return;
+  }
+
+  // 簡答／問答
+  const el = document.createElement(q.type === 'para' ? 'textarea' : 'input');
+  if (q.type !== 'para') el.type = (q.validate === 'number' ? 'number' : (q.validate === 'email' ? 'email' : 'text'));
+  el.placeholder = q.placeholder || (q.type === 'para' ? '請填寫你的想法' : '請填寫');
+  el.value = a.text || '';
+  el.disabled = locked;
+  if (q.maxLen > 0) el.maxLength = q.maxLen;
+  const counter = document.createElement('div');
+  counter.className = 'counter';
+  const upd = () => { counter.textContent = q.maxLen > 0 ? ((a.text || '').length + ' / ' + q.maxLen + ' 字') : ''; };
+  el.oninput = () => { a.text = el.value; upd(); clearErr(q); refreshState(); };
+  box.appendChild(el);
+  if (q.maxLen > 0) { upd(); box.appendChild(counter); }
+}
+
+function otherRow(q, a, locked){
+  const wrap = document.createElement('div');
+  wrap.className = 'choices';
+  wrap.style.marginTop = '8px';
+  const row = document.createElement('div');
+  row.className = 'choice' + (a.picks.includes('__other__') ? ' on' : '') + (locked ? ' locked' : '');
+  row.innerHTML = '<div class="box ' + (q.type === 'multi' ? 'check' : 'radio') + '">' + (q.type === 'multi' ? '✓' : '●') + '</div>' +
+                  '<div class="txt"><div class="t">其他（自行填寫）</div></div>';
+  row.onclick = () => togglePick(q, '__other__');
+  wrap.appendChild(row);
+  const ow = document.createElement('div');
+  ow.className = 'otherrow';
+  ow.style.marginTop = '8px';
+  if (a.picks.includes('__other__')) ow.appendChild(otherInput(q, a, locked));
+  wrap.appendChild(ow);
+  return wrap;
+}
+
+function otherInput(q, a, locked){
+  const inp = document.createElement('input');
+  inp.type = 'text';
+  inp.placeholder = '請填寫你的答案';
+  inp.value = a.other || '';
+  inp.disabled = locked;
+  inp.oninput = () => { a.other = inp.value; clearErr(q); refreshState(); };
+  inp.onclick = (ev) => ev.stopPropagation();
+  return inp;
+}
+
+function togglePick(q, id){
+  const p = phase();
+  if (!p.open) return toast('目前不開放填答');
+  if (!currentPerson) return toast('請先在最上面選擇你是誰');
+  if (hasVoted()) return toast('你已經填過了');
+  const a = ans[q.id];
+  const i = a.picks.indexOf(id);
+  if (q.type === 'multi') {
+    if (i >= 0) a.picks.splice(i, 1);
+    else {
+      if (q.max > 0 && a.picks.length >= q.max) return toast('這題最多只能選 ' + q.max + ' 個，請先取消一個');
+      a.picks.push(id);
+    }
+  } else {
+    a.picks = (i >= 0 && !q.required) ? [] : [id];
+  }
+  if (!a.picks.includes('__other__')) a.other = '';
+  clearErr(q);
+  renderForm();
+  refreshState();
+}
+
+function clearErr(q){
+  const c = document.getElementById('qc_' + q.id);
+  if (c) c.classList.remove('err');
+}
+
+// ── 驗證 ───────────────────────────────────────
+function validate(showError){
+  let firstBad = null;
+  for (const q of questions) {
+    const a = ans[q.id] || blankAnswer();
+    let msg = '';
+    if (isChoice(q)) {
+      const n = a.picks.length;
+      if (q.required && n === 0) msg = '這題必填，請至少選一個';
+      else if (n > 0 && q.type === 'multi' && q.min > 0 && n < q.min) msg = '這題至少要選 ' + q.min + ' 個（目前 ' + n + ' 個）';
+      else if (q.type === 'multi' && q.max > 0 && n > q.max) msg = '這題最多只能選 ' + q.max + ' 個';
+      else if (a.picks.includes('__other__') && !a.other.trim()) msg = '選了「其他」就要填內容';
+    } else if (q.type === 'scale') {
+      if (q.required && a.value == null) msg = '這題必填，請選一個分數';
+    } else {
+      const t = (a.text || '').trim();
+      if (q.required && !t) msg = '這題必填，請填寫';
+      else if (t && q.maxLen > 0 && t.length > q.maxLen) msg = '超過 ' + q.maxLen + ' 字上限';
+      else if (t && q.validate === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(t)) msg = '請填正確的 Email 格式';
+      else if (t && q.validate === 'number' && isNaN(Number(t))) msg = '請填數字';
+    }
+    if (msg) {
+      if (!firstBad) firstBad = { q, msg };
+      if (showError) {
+        const c = document.getElementById('qc_' + q.id);
+        if (c) { c.classList.add('err'); c.querySelector('.qerr').textContent = '⚠️ ' + msg; }
+      }
+    }
+  }
+  return firstBad;
+}
+
+function refreshState(){
+  const p = phase();
+  const locked = formLocked();
+  if (locked !== renderedLocked) renderForm();
+  $('#commentInput').disabled = locked;
+  // 不因為有題目沒填就把按鈕鎖死 — 按下去才逐題標紅提示，比較好找哪一題沒填
+  $('#submitBtn').disabled = !(p.open && currentPerson && !hasVoted());
+  $('#revokeBtn').disabled = !(p.open && hasVoted());
+  $('#submitBtn').textContent = hasVoted() ? '已送出' : '送出';
+
+  let tip = '';
+  if (currentPerson && hasVoted()) tip = '✅ ' + currentPerson + ' 已完成填答，下方是你填的內容。';
+  else if (currentPerson) tip = '👋 ' + currentPerson + '，請往下作答，' + questions.length + ' 題填完按最下方「送出」。';
+  else tip = '請先選擇你是誰，才能開始作答。';
+  $('#votedTip').textContent = tip;
+}
+
+// ── 即時同步 ───────────────────────────────────
 function listenVotes(){
   if (unsub) unsub();
   unsub = onSnapshot(collection(db, 'polls', pollId, 'votes'), (snap) => {
+    const wasVoted = hasVoted();
     votes.clear();
     snap.forEach(d => votes.set(d.id, d.data()));
     renderResults();
     renderVoterStat();
-    refreshGridState();
+    if (hasVoted() !== wasVoted) setPerson(currentPerson);
+    else refreshState();
   }, (err) => {
     console.error(err);
-    toast('讀取投票資料失敗：' + err.code);
+    toast('讀取資料失敗：' + err.code);
   });
 }
 
-function tally(){
-  const counts = {};
-  poll.options.forEach(o => counts[o.id] = 0);
-  votes.forEach(v => (v.picks || []).forEach(id => { if (counts[id] != null) counts[id]++; }));
-  return counts;
+function answerOf(v, q){
+  const a = (v.answers || {})[q.id] || {};
+  const picks = Array.isArray(a.picks) ? a.picks : ((q.id === 'q_main' && Array.isArray(v.picks)) ? v.picks : []);
+  return { picks, other:a.other || '', text: typeof a.text === 'string' ? a.text : '', value: Number.isFinite(a.value) ? a.value : null };
 }
 
 function renderResults(){
@@ -428,48 +731,84 @@ function renderResults(){
   const hint = $('#resultHint');
   if (!canSeeResults()) {
     box.innerHTML = '';
-    hint.innerHTML = '🔒 為避免影響大家的判斷，投票期間不公布票數，' +
+    hint.innerHTML = '🔒 為避免影響大家的判斷，填答期間不公布結果，' +
       (poll.showResults === 'afterClose' ? '截止後就會顯示。' : '結果由管理員另行公布。');
     return;
   }
   hint.textContent = '';
-  const counts = tally();
-  const max = Math.max(1, ...Object.values(counts));
-  const ranked = poll.options.slice().sort((a,b) => (counts[b.id]||0) - (counts[a.id]||0));
-  box.innerHTML = '';
-  ranked.forEach((o, i) => {
-    const c = counts[o.id] || 0;
-    const wrap = document.createElement('div');
-    wrap.className = 'meter' + (i === 0 && c > 0 ? ' rank1' : '');
-    const nm = (i === 0 && c > 0 ? '🏆 ' : '') + (o.title || ('選項 ' + (poll.options.indexOf(o) + 1)));
-    wrap.innerHTML =
-      '<div class="flex"><div class="nm">' + escapeHtml(nm) + '</div><div class="ct"><b>' + c + '</b> 票</div></div>' +
-      '<div class="bar"><span style="width:' + (c / max * 100).toFixed(1) + '%"></span></div>';
-    box.appendChild(wrap);
+  const total = votes.size;
+  let html = '';
+  questions.forEach((q, qi) => {
+    html += '<div class="qres"><h3>第 ' + (qi+1) + ' 題　' + escapeHtml(q.title || '（未命名）') + '</h3>';
+    if (isChoice(q)) {
+      const counts = {};
+      q.options.forEach(o => counts[o.id] = 0);
+      let others = 0;
+      votes.forEach(v => {
+        const a = answerOf(v, q);
+        a.picks.forEach(id => { if (counts[id] != null) counts[id]++; else if (id === '__other__') others++; });
+      });
+      const max = Math.max(1, ...Object.values(counts), others);
+      const ranked = q.options.slice().sort((a,b) => (counts[b.id]||0) - (counts[a.id]||0));
+      ranked.forEach((o, i) => {
+        const c = counts[o.id] || 0;
+        const nm = (i === 0 && c > 0 ? '🏆 ' : '') + (o.title || ('選項 ' + (q.options.indexOf(o) + 1)));
+        html += '<div class="meter' + (i === 0 && c > 0 ? ' rank1' : '') + '"><div class="flex"><div class="nm">' + escapeHtml(nm) +
+          '</div><div class="ct"><b>' + c + '</b> 票</div></div><div class="bar"><span style="width:' + (c/max*100).toFixed(1) + '%"></span></div></div>';
+      });
+      if (others) html += '<div class="meter"><div class="flex"><div class="nm">其他（自填）</div><div class="ct"><b>' + others +
+        '</b> 票</div></div><div class="bar"><span style="width:' + (others/max*100).toFixed(1) + '%"></span></div></div>';
+    } else if (q.type === 'scale') {
+      const vals = [];
+      votes.forEach(v => { const n = answerOf(v, q).value; if (n != null) vals.push(n); });
+      const avg = vals.length ? vals.reduce((a,b) => a+b, 0) / vals.length : 0;
+      html += '<p class="small" style="margin-bottom:8px">平均 <b style="font-size:18px;color:var(--brand)">' + avg.toFixed(2) +
+              '</b> 分（' + q.scaleMin + '～' + q.scaleMax + ' 分，' + vals.length + ' 人作答）</p>';
+      const maxC = Math.max(1, ...rangeArr(q.scaleMin, q.scaleMax).map(n => vals.filter(x => x === n).length));
+      rangeArr(q.scaleMin, q.scaleMax).forEach(n => {
+        const c = vals.filter(x => x === n).length;
+        const lbl = n + ' 分' + (n === q.scaleMin && q.scaleMinLabel ? '（' + q.scaleMinLabel + '）' : '') +
+                    (n === q.scaleMax && q.scaleMaxLabel ? '（' + q.scaleMaxLabel + '）' : '');
+        html += '<div class="meter"><div class="flex"><div class="nm">' + escapeHtml(lbl) + '</div><div class="ct"><b>' + c +
+          '</b> 人</div></div><div class="bar"><span style="width:' + (c/maxC*100).toFixed(1) + '%"></span></div></div>';
+      });
+    } else {
+      let n = 0;
+      votes.forEach(v => { if (answerOf(v, q).text.trim()) n++; });
+      html += '<p class="muted small">已收到 <b>' + n + '</b> 筆文字回答（內容不公開，僅管理員可看）。</p>';
+    }
+    html += '</div>';
   });
+  html += '<p class="muted small">目前共 ' + total + ' 人完成填答。</p>';
+  box.innerHTML = html;
 }
 
 function renderVoterStat(){
   const stat = $('#voteStat');
   const box = $('#nonVoters');
   if (poll.voters.length === 0) {
-    stat.textContent = '目前已有 ' + votes.size + ' 人投票。';
+    stat.textContent = '目前已有 ' + votes.size + ' 人完成填答。';
     const names = Array.from(votes.keys());
-    box.innerHTML = names.map(n => '<span class="tag done">' + escapeHtml(n) + '</span>').join('') || '<span class="muted small">還沒有人投票</span>';
+    box.innerHTML = names.map(n => '<span class="tag done">' + escapeHtml(n) + '</span>').join('') || '<span class="muted small">還沒有人填答</span>';
     return;
   }
   const voted = new Set(votes.keys());
   const none = poll.voters.filter(p => !voted.has(p));
   stat.innerHTML = none.length === 0
-    ? '<span style="color:var(--ok);font-weight:600">✔ 全員已完成投票（' + poll.voters.length + ' 人）</span>'
-    : '已投 <b>' + voted.size + '</b> / ' + poll.voters.length + ' 人，尚未投票 <b style="color:var(--danger)">' + none.length + '</b> 人：';
+    ? '<span style="color:var(--ok);font-weight:600">✔ 全員已完成填答（' + poll.voters.length + ' 人）</span>'
+    : '已填 <b>' + voted.size + '</b> / ' + poll.voters.length + ' 人，尚未填答 <b style="color:var(--danger)">' + none.length + '</b> 人：';
   box.innerHTML = none.map(n => '<span class="tag">' + escapeHtml(n) + '</span>').join('');
 }
 
 // ── 動作 ───────────────────────────────────────
 function bindEvents(){
   $('#submitBtn').addEventListener('click', onSubmit);
-  $('#clearSelBtn').addEventListener('click', () => { currentSel = []; refreshGridState(); });
+  $('#clearSelBtn').addEventListener('click', () => {
+    if (hasVoted()) return toast('你已經送出了，要改請按「撤銷我的填答重填」');
+    questions.forEach(q => ans[q.id] = blankAnswer());
+    $('#commentInput').value = '';
+    renderForm(); refreshState();
+  });
   $('#revokeBtn').addEventListener('click', onRevoke);
   $('#propBtn').addEventListener('click', onProposal);
   document.addEventListener('keydown', (e) => {
@@ -483,40 +822,56 @@ function bindEvents(){
 
 async function onSubmit(){
   const p = phase();
-  if (!p.open) return toast('目前不開放投票');
-  if (!currentPerson) return toast('請先選擇投票人');
-  if (currentSel.length !== (poll.votesPerPerson || 1)) return;
+  if (!p.open) return toast('目前不開放填答');
+  if (!currentPerson) return toast('請先選擇你是誰');
+  const bad = validate(true);
+  if (bad) {
+    const c = document.getElementById('qc_' + bad.q.id);
+    if (c) c.scrollIntoView({ behavior:'smooth', block:'center' });
+    return toast('還有題目沒填好：' + bad.msg);
+  }
 
   const btn = $('#submitBtn');
   btn.disabled = true; btn.textContent = '送出中…';
   try {
     const ref = doc(db, 'polls', pollId, 'votes', currentPerson);
     const exists = await getDoc(ref);
-    if (exists.exists()) { toast('這個名字已經投過票了'); return; }
+    if (exists.exists()) { toast('這個名字已經填過了'); return; }
+
+    const answers = {};
+    questions.forEach(q => {
+      const a = ans[q.id];
+      if (isChoice(q)) answers[q.id] = { picks:a.picks.slice(), other:a.picks.includes('__other__') ? a.other.trim() : '' };
+      else if (q.type === 'scale') answers[q.id] = { value:a.value };
+      else answers[q.id] = { text:(a.text || '').trim() };
+    });
+    // 舊欄位相容：第一個選擇題的選擇同時寫回 picks
+    const firstChoice = questions.find(isChoice);
+    const legacyPicks = firstChoice ? (ans[firstChoice.id].picks.filter(id => id !== '__other__')) : [];
+
     await setDoc(ref, {
       person: currentPerson,
-      picks: currentSel.slice(),
+      answers,
+      picks: legacyPicks,
       comment: poll.allowComment ? ($('#commentInput').value || '').trim() : '',
+      schemaVersion: 2,
       createdAt: serverTimestamp()
     });
-    currentSel = [];
-    toast('✅ 投票完成，感謝你的參與');
+    toast('✅ 已送出，感謝你的填答');
   } catch (e) {
     console.error(e);
     toast('送出失敗：' + (e.code || e.message));
   } finally {
-    btn.textContent = '送出投票';
-    refreshGridState();
+    refreshState();
   }
 }
 
 async function onRevoke(){
   if (!currentPerson || !votes.has(currentPerson)) return;
-  if (!confirm('確定撤銷「' + currentPerson + '」的投票並重新投一次？')) return;
+  if (!confirm('確定撤銷「' + currentPerson + '」的填答並重新填一次？')) return;
   try {
     await deleteDoc(doc(db, 'polls', pollId, 'votes', currentPerson));
-    currentSel = [];
-    toast('已撤銷，可以重新投票');
+    toast('已撤銷，可以重新填答');
   } catch (e) { toast('撤銷失敗：' + (e.code || e.message)); }
 }
 
@@ -540,32 +895,35 @@ async function onProposal(){
   finally { btn.disabled = false; }
 }
 
-// ── 燈箱 ───────────────────────────────────────
-let lbIndex = 0;
-function imgOptions(){ return poll.options.filter(o => o.img); }
-window.openLightbox = function(optIndex){
-  const list = imgOptions();
-  const target = poll.options[optIndex];
-  lbIndex = Math.max(0, list.findIndex(o => o.id === target.id));
+// ── 燈箱（只在同一題的照片之間切換）─────────────
+let lbList = [], lbIndex = 0;
+function openLightbox(q, optId){
+  lbList = q.options.filter(o => o.img);
+  if (!lbList.length) return;
+  lbIndex = Math.max(0, lbList.findIndex(o => o.id === optId));
   showLightbox();
-};
+}
 function showLightbox(){
-  const list = imgOptions();
-  if (!list.length) return;
-  const o = list[lbIndex];
+  if (!lbList.length) return;
+  const o = lbList[lbIndex];
   $('#lightboxImg').src = o.img;
-  $('#lightboxCap').textContent = (o.title || '') + (o.desc ? '　' + o.desc : '') + '　（' + (lbIndex+1) + '/' + list.length + '）';
+  $('#lightboxCap').textContent = (o.title || '') + (o.desc ? '　' + o.desc : '') + '　（' + (lbIndex+1) + '/' + lbList.length + '）';
   $('#lightbox').classList.add('open');
 }
 window.stepLightbox = function(d){
-  const list = imgOptions();
-  if (!list.length) return;
-  lbIndex = (lbIndex + d + list.length) % list.length;
+  if (!lbList.length) return;
+  lbIndex = (lbIndex + d + lbList.length) % lbList.length;
   showLightbox();
 };
 window.closeLightbox = function(){ $('#lightbox').classList.remove('open'); };
 
 // ── 小工具 ─────────────────────────────────────
+function rangeArr(a, b){ const out = []; for (let i = a; i <= b; i++) out.push(i); return out; }
+function shuffled(arr){
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+}
 let toastTimer = null;
 function toast(msg){
   const t = $('#toast');
@@ -582,8 +940,9 @@ function fmtTime(iso){
   return d.getFullYear() + '/' + p(d.getMonth()+1) + '/' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
 }
 function escapeHtml(s){
-  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
+function attr(s){ return escapeHtml(s ?? ''); }
 </script>
 </body>
 </html>
