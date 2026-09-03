@@ -1,6 +1,10 @@
 <!--
-  版本：v5.4
+  版本：v5.8
   版更記錄：
+  v5.8 (2026-09-04) - 新增「對話名同步」卡片（🏷️ → modal 說明書）：把 Claude Code 的對話名（session jsonl 裡的 ai-title）對齊 20_專案\_進行中\ 的進度檔名，讓 /resume 清單跟 vault 對得起來。對 AI 說「同步檔名」觸發 session-title-sync skill；收工流程自動 C 也會跑一次。機制限制：Claude Code 每回合都會 append 一筆自己算的 ai-title，進行中的 session 改了會被蓋掉，只有已結束的 session 改動才穩。腳本在 C:\Users\admin\.codex\skills\session-title-sync\（不在本 repo，僅 Claude Code 適用）
+  v5.7 (2026-08-31) - 新增「正反比較決策分析器」卡片（⚖️ → modal 說明書）：三代理正反辯論（正方極致立論＋社群推坑好評、反方魔鬼代言＋社群吐槽與災情報告、客觀事實＋即時價格/購買通路連結），主控端論點碰撞交叉審查，提煉根本分歧與 If-Then 條件化決策樹，產出左右雙欄對照總表，自動存檔入 Obsidian（30_研究/正反比較/）並調用 URI 開啟。適用所有 AI（Codex、Claude、Hermes、agy）下「比較」「正反比較」等指令
+  v5.6 (2026-08-31) - 將「課程雲端比對歸檔」卡片名稱更新為「ECF課程下載整理器」
+  v5.5 (2026-08-31) - 新增「ECF課程下載整理器」卡片（📁 → modal 說明書）：從對話記錄或文字清單批次比對 Google Drive 課程雲端連結與本機目錄（D:\ECF\），自動識別缺漏、產出純文字下載連結、偵測下載解壓展平、影音教材分類歸位、安全清理壓縮包，並依 Q201/Q302 規範產生左右對照表進行批次更名。適用所有 AI（Codex、Claude、Hermes、agy）下「比對課程」等指令
   v5.4 (2026-08-25) - 新增「待辦總表儀表板（本機）」卡片（✅ → 127.0.0.1:8771，🚀 走 todoboard:// 一鍵啟動）：九分類分欄看板，直接讀寫 D:\本機MD檔\10_日記\自己手工日記\待辦總表.md，可勾選完成（自動加 ✅ 日期）與新增待辦。程式在 C:\Code\todo_dashboard\（不在 classroom repo 內，因為待辦是私人內容而本 repo 公開）。協定註冊在 HKCU\Software\Classes\todoboard → start.bat v2.0：先探 8771 有沒有人在聽，有就只開瀏覽器不重複起服務，沒有才用 pythonw 背景啟動（不留黑視窗）。這是純本機服務：資料在 D 槽、server 在本機，卡片只是入口，離開這台電腦點了不會有反應
   v5.3 (2026-08-24) - 「圖片合併 PDF」的名稱欄改成選填：留空就由本機服務認第一張圖的封面書名（Groq 視覺模型，認不出來往後看最多 5 張），再拿去博客來搜尋校正成正式書名，直接用它建資料夾與 PDF，中途不再詢問。網頁把登入後拿到的 Groq key（window._groqKey）跟著 /api/start 一起送給 8767；認不出書名就整個中止，圖檔不會被動過。命名成「主書名 - 作者」，冒號後的副標不帶進檔名（幾百張圖的深路徑會撞 Windows 長度上限）。網頁 key 失效時本機服務會退回環境變數 GROQ_API_KEY。搭配 server.py v1.6
   v5.2 (2026-08-21) - 新增「OpenSlideX 簡報（本機）」卡片（🖼️ → modal 說明書）：本機 MDX 簡報編輯器，repo clone 在 D:\2026_簡報工具、簡報庫 open-slidex-workspace\，Workspace 網頁在 127.0.0.1:4172/workspace。modal 內含啟動指令一鍵複製、開啟編輯器連結、MCP 用法。沒做自訂協定啟動（Node 服務要常駐，跟 8767 那種一按就起的 bat 不同），服務要自己下指令起
@@ -431,6 +435,163 @@
   </div>
 </div>
 
+<!-- course-drive-sync-organizer modal（v5.6） -->
+<div class="modal-overlay" id="courseDriveSyncModal" onclick="closeOnOverlay(event)">
+  <div class="modal" style="max-height:90vh">
+    <button class="modal-close" onclick="closeCourseDriveSync()">✕</button>
+    <div class="modal-title">📁 ECF課程下載整理器</div>
+    <div class="modal-sub">比對 Google Drive 課程、缺漏下載、解壓展平、分類歸位與規範化命名</div>
+
+    <div class="step">
+      <div class="step-label">怎麼用（所有 AI 皆可執行）</div>
+      <div class="cmd-box">貼上含有 Google Drive 課程或工具連結的對話／文字，打「比對課程」</div>
+      <div style="font-size:12px;color:#aaa;margin-top:6px">Codex、Claude、Hermes、agy 全環境皆已同步安裝 <code>course-drive-sync-organizer</code> Skill。</div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">核心標準作業流程（6 大階段）</div>
+      <div class="cmd-box" style="font-family:sans-serif;line-height:1.75">
+        <strong>① 來源比對與現況盤點</strong>：掃描輸入連結，與本機目標目錄（如 <code>D:\ECF\</code>）交叉比對，判斷齊全／需處置／缺漏待下載。<br>
+        <strong>② 缺漏追蹤與純文字連結</strong>：產出比對總表與待下載清單，附上終端機友善的<strong>完整純文字 URL</strong> 方便直接點擊。<br>
+        <strong>③ 下載偵測與解壓縮展平</strong>：偵測新落地壓縮檔，處理中文編碼與大檔解壓，自動消除多餘巢狀層級（Flattening）。<br>
+        <strong>④ 檔案標準化分類歸位</strong>：影片收納進 <code>課程錄影\</code> 子目錄；講義、提示詞、工具平鋪於根目錄；修正跨包混裝檔案。<br>
+        <strong>⑤ 解壓完整性校驗與清理</strong>：驗證實體檔案大小與時長無誤後，安全刪除 <code>.zip</code> 壓縮檔釋放硬碟空間。<br>
+        <strong>⑥ 規範化命名左右對照更名</strong>：依 <code>YYYYMMDD_分類代碼_主題核心</code> 規範產出「目前（左） vs 建議（右）」對照表，經使用者回覆「確定」後批次更名。
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">資料夾命名規範範例</div>
+      <div class="cmd-box" style="font-family:sans-serif">
+        • <strong>季度常規</strong>：<code>20260421_Q201_釣魚選股</code>、<code>20260724_Q302_Node-RED與資訊圖表</code><br>
+        • <strong>單場分享</strong>：<code>20260620_分享會_AI BMC_益師傅</code><br>
+        • <strong>專題實戰</strong>：<code>20260621_Codex實戰I_夜市小霸王</code><br>
+        • <strong>系列研習</strong>：<code>20260719_研習營_Node-RED (I)</code>（依實際上課日標註）<br>
+        • <strong>軟體工具</strong>：<code>20260621_工具_開課通標準版</code>
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">主要觸發詞</div>
+      <div class="cmd-box">比對課程、整理課程下載、比對課程連結、整理 ECF、課程歸位、下載資料夾整理、課程資料夾統一命名</div>
+    </div>
+
+    <div style="font-size:12px;color:#aaa;margin-top:16px">技能正本：<code>C:\Users\admin\.codex\skills\course-drive-sync-organizer\SKILL.md</code>（全 AI Junction 實時同步）。</div>
+  </div>
+</div>
+
+<!-- session-title-sync modal（v5.8） -->
+<div class="modal-overlay" id="sessionTitleSyncModal" onclick="closeOnOverlay(event)">
+  <div class="modal" style="max-height:90vh">
+    <button class="modal-close" onclick="closeSessionTitleSync()">✕</button>
+    <div class="modal-title">🏷️ 對話名同步</div>
+    <div class="modal-sub">把 Claude Code 對話名對齊 <code>20_專案\_進行中\</code> 的進度檔名</div>
+
+    <div class="step">
+      <div class="step-label">怎麼用</div>
+      <div class="cmd-box">對 Claude Code 說「同步檔名」</div>
+      <div style="font-size:12px;color:#aaa;margin-top:6px">收工流程的「自動 C」也會跑一次，對齊當次的進度檔名。</div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">解決什麼問題</div>
+      <div class="cmd-box" style="font-family:sans-serif;line-height:1.75">
+        對話名是 Claude Code 在<strong>開場前幾回合就算定</strong>的，那時候使用者往往還沒講清楚要做什麼，
+        算出來的名字常常跟最後做的事差很遠。結果就是 <code>/resume</code> 清單裡一排看不出在幹嘛的名字，
+        跟 vault 的進度檔對不起來。
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">運作方式</div>
+      <div class="cmd-box" style="font-family:sans-serif;line-height:1.75">
+        <strong>① 找對象</strong>：掃 session 紀錄，取每個對話的現用名稱。<br>
+        <strong>② 找進度檔</strong>：只認該對話<strong>實際用工具動過</strong>的進度檔（取出現最多次的），
+        避免被開場注入的工作交接內容誤導。<br>
+        <strong>③ 算期望名</strong>：進度檔名去掉日期前綴與「-進度」後綴。<br>
+        <strong>④ 先乾跑</strong>：列出不一致的清單給使用者看，<strong>確認後才寫入</strong>。<br>
+        <strong>⑤ 只 append 不改舊資料</strong>，寫入前自動備份。
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">⚠️ 機制限制（重要）</div>
+      <div class="cmd-box" style="font-family:sans-serif;line-height:1.75">
+        Claude Code <strong>每回合都會寫一筆自己算的對話名</strong>，而且不讀檔案。所以：<br>
+        ・<strong>進行中的對話</strong>改了會被下一回合蓋掉，只有「改完不再發言」才留得住。<br>
+        ・<strong>已結束的對話</strong>改了就穩——那個檔案不會再被寫入。<br>
+        因此收工時改是成功率最高的時機，但收工後又講話就會被蓋回去，這時再喊一次「同步檔名」補救。
+      </div>
+      <div style="font-size:12px;color:#aaa;margin-top:6px">改完要下次 <code>/resume</code> 或重開清單才看得到新名字。</div>
+    </div>
+
+    <div style="font-size:12px;color:#aaa;margin-top:16px">
+      腳本在 <code>C:\Users\admin\.codex\skills\session-title-sync\</code>（不在本 repo）。
+      僅 Claude Code 適用——Codex／Hermes／agy 沒有對應的 session 紀錄。
+    </div>
+  </div>
+</div>
+
+<!-- pro-con-analysis modal（v5.7） -->
+<div class="modal-overlay" id="proConModal" onclick="closeOnOverlay(event)">
+  <div class="modal" style="max-height:90vh">
+    <button class="modal-close" onclick="closeProConAnalysis()">✕</button>
+    <div class="modal-title">⚖️ 正反比較決策分析器</div>
+    <div class="modal-sub">多子代理正反辯論・社群好評/吐槽/災情・價格購買通路・左右雙欄對照總表</div>
+
+    <div class="step">
+      <div class="step-label">怎麼用（所有 AI 皆可執行）</div>
+      <div class="cmd-box">對 AI 說「比較 A 與 B」或「幫我比較 [產品/方案/決策]」</div>
+      <div style="font-size:12px;color:#aaa;margin-top:6px">Codex、Claude、Hermes、agy 全環境皆已同步安裝 <code>pro-con-analysis</code> Skill。</div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">核心運作機制（3 大代理並行立論 ＋ 主控端交叉審查）</div>
+      <div class="cmd-box" style="font-family:sans-serif;line-height:1.75">
+        <strong>① 子代理 A（正方極致辯護 ＋ 社群推坑好評）</strong>：發掘最強立論（Steelman 非稻草人），鎖定核心優勢、長期效益與上限潛力；完整引用 PTT／Dcard／Mobile01 網友具體好評貼文。<br>
+        <strong>② 子代理 B（反方魔鬼代言 ＋ 社群吐槽與災情報告）</strong>：殘酷壓力測試與風險挑骨頭；完整搜集日常痛點吐槽、硬體通病、故障率與維修翻車災情報告（禁止一句話模糊帶過）。<br>
+        <strong>③ 子代理 C（客觀事實 ＋ 即時價格與購買通路）</strong>：查證官方定價、電商實售價（Momo/PChome/蝦皮/Amazon）、購買網頁連結、耗材後續維護成本與基準規格。<br>
+        <strong>④ 主控端交叉審查（Cross-Examination）</strong>：論點碰撞，檢驗正方能否抵擋反方質疑、災情有無解法，提煉<strong>根本分歧點</strong>（預算/情境/風險承受度）。<br>
+        <strong>⑤ 條件化決策指引（If-Then 決策樹）</strong>：拒絕「各有優缺點」模稜兩可，給出具體條件「若滿足條件 X → 選方案 A；若滿足條件 Y → 選方案 B」。<br>
+        <strong>⑥ 結尾左右雙欄對照總表</strong>：橫向左右對比價格通路、優勢 vs 吐槽、災情風險、適合 vs 勸退對象與一鍵決策結論。
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">自動存檔與 Obsidian 連動</div>
+      <div class="cmd-box" style="font-family:sans-serif">
+        • <strong>自動存檔路徑</strong>：<code>D:\本機MD檔\30_研究\正反比較\YYYYMMDD_HHMM_主題_正反比較.md</code><br>
+        • <strong>自動調用開啟</strong>：產出完成後自動以 <code>obsidian://open</code> 調用開啟該筆記，立即預覽。
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">主要觸發詞</div>
+      <div class="cmd-box">比較、正反比較、利弊分析、正反辯論、優缺點比對、幫我比較、A跟B哪個好</div>
+    </div>
+
+    <div style="font-size:12px;color:#aaa;margin-top:16px">技能正本：<code>C:\Users\admin\.codex\skills\pro-con-analysis\SKILL.md</code>（全 AI Junction 實時同步）。</div>
+  </div>
+</div>
+
 <!-- yt-dlp modal -->
 <div class="modal-overlay" id="ytDlpModal" onclick="closeOnOverlay(event)">
   <div class="modal">
@@ -713,8 +874,8 @@ const getGroqKeyFn = httpsCallable(functions, 'getGroqKey');
 const getAssemblyAIKeyFn = httpsCallable(functions, 'getAssemblyAIKey');
 const ALLOWED_EMAIL = 'ohihio@gmail.com';
 const TOOLS_COL = 'admin_tools';
-const CARD_CONTENT_VERSION = 3;
-const ICON_OPTIONS = ['🗂️','🎙️','📝','📚','📌','📎','📦','⚙️','🛠️','💡','📊','🧾','📁','🔧','🔍','🚀','⭐','✅'];
+const CARD_CONTENT_VERSION = 7;
+const ICON_OPTIONS = ['🗂️','🎙️','📝','📚','📌','📎','📦','⚙️','🛠️','💡','📊','🧾','📁','🔧','🔍','🚀','⭐','✅','⚖️'];
 const DEFAULT_TOOLS = [
   // order -1：Firestore 裡既有卡片的 order 是 0 起跳，給 -1 才排得到第一格（normalizeOrder 會重編成 0）
   { id: 'ai-workbench', title: 'AI 工作台（本機）', description: '啟動 7 個 Hermes 分頁：3 AGY／2 Claude／2 Codex', icon: '🚀', actionType: 'link', href: 'aiwork://start', launchHref: 'aiwork://start', order: -1, createdAt: '2026-08-08T00:00:00+08:00' },
@@ -725,6 +886,8 @@ const DEFAULT_TOOLS = [
   { id: 'transcript-pack', title: '逐字稿培訓包', description: '將單一逐字稿整理成培訓報告、摘要與心智圖', icon: '📝', actionType: 'modal', modalFn: 'openTranscriptPack', order: 3, createdAt: '2026-05-02T00:00:00+08:00' },
   { id: 'course-filing', title: '課程整理入 Obsidian', description: '整合筆記、逐字稿與心智圖，拆解知識點並更新日記', icon: '📚', actionType: 'modal', modalFn: 'openCourseFiling', order: 4, createdAt: '2026-05-02T00:00:00+08:00' },
   { id: 'course-collect', title: '課程散檔歸檔', description: '收齊課程檔案、統一命名後歸檔到 D:\\2026_已整理課程', icon: '🗃️', actionType: 'modal', modalFn: 'openCourseCollect', order: 10, createdAt: '2026-07-31T00:00:00+08:00' },
+  { id: 'course-drive-sync-organizer', title: 'ECF課程下載整理器', description: '比對 Google Drive 課程連結、缺漏下載、解壓展平與對照更名', icon: '📁', actionType: 'modal', modalFn: 'openCourseDriveSync', order: 10.5, createdAt: '2026-08-31T00:00:00+08:00' },
+  { id: 'pro-con-analysis', title: '正反比較決策分析器', description: '三代理正反辯論、社群評價與災情報告、價格通路比對、左右對照表', icon: '⚖️', actionType: 'modal', modalFn: 'openProConAnalysis', order: 10.8, createdAt: '2026-08-31T00:00:00+08:00' },
   { id: 'subtitle-archive', title: '課程字幕歸檔', description: '用 Arctime 校對版 SRT 取代自動字幕並保留整理結構', icon: '🔤', actionType: 'modal', modalFn: 'openSubtitleArchive', order: 11, createdAt: '2026-07-31T00:00:00+08:00' },
   { id: 'yt-dlp', title: '網址下載批次檔', description: '產生 YouTube 影片／MP3 或 FB 照片下載 BAT', icon: '⬇️', actionType: 'modal', modalFn: 'openYtDlp', order: 5, createdAt: '2026-05-07T00:00:00+08:00' },
   { id: 'video-progress', title: '影片製作進度表', description: '依 9 個階段追蹤每支影片的狀態、進度與連結', icon: '🎞️', actionType: 'link', href: '/影片進度表/', order: 6, createdAt: '2026-05-31T00:00:00+08:00' },
@@ -736,7 +899,8 @@ const DEFAULT_TOOLS = [
   { id: 'image-to-pdf', title: '圖片合併 PDF（本機）', description: '整夾圖片合成 PDF 並依序編號歸檔；需啟動 8767', icon: '📄', actionType: 'modal', modalFn: 'openImgPdf', launchHref: 'mediatools://open', order: 14, createdAt: '2026-08-08T00:00:00+08:00' },
   { id: 'vote-admin', title: '投票管理', description: '開投票活動、換照片、改名單，看即時結果與明細', icon: '🗳️', actionType: 'link', href: '/admin/vote/', order: 15, createdAt: '2026-08-20T00:00:00+08:00' },
   { id: 'open-slidex', title: 'OpenSlideX 簡報（本機）', description: '本機 MDX 簡報編輯器＋MCP，可叫 AI 直接改投影片；需啟動 4172', icon: '🖼️', actionType: 'modal', modalFn: 'openSlideX', order: 16, createdAt: '2026-08-21T00:00:00+08:00' },
-  { id: 'todo-dashboard-local', title: '待辦總表儀表板（本機）', description: '九分類看板讀寫 Obsidian 待辦總表，可勾選與新增；沒開按 🚀 啟動 8771', icon: '✅', actionType: 'link', href: 'http://127.0.0.1:8771/', launchHref: 'todoboard://open', order: 17, createdAt: '2026-08-25T00:00:00+08:00' }
+  { id: 'todo-dashboard-local', title: '待辦總表儀表板（本機）', description: '九分類看板讀寫 Obsidian 待辦總表，可勾選與新增；沒開按 🚀 啟動 8771', icon: '✅', actionType: 'link', href: 'http://127.0.0.1:8771/', launchHref: 'todoboard://open', order: 17, createdAt: '2026-08-25T00:00:00+08:00' },
+  { id: 'session-title-sync', title: '對話名同步（本機）', description: '把 Claude Code 對話名對齊進度檔名；對 AI 說「同步檔名」', icon: '🏷️', actionType: 'modal', modalFn: 'openSessionTitleSync', order: 18, createdAt: '2026-09-04T00:00:00+08:00' }
 ];
 
 let toolsState = DEFAULT_TOOLS.map(tool => ({ ...tool }));
@@ -1143,6 +1307,8 @@ function closeOnOverlay(e) {
   if (e.target === document.getElementById('transcriptPackModal')) closeTranscriptPack();
   if (e.target === document.getElementById('courseFilingModal')) closeCourseFiling();
   if (e.target === document.getElementById('courseCollectModal')) closeCourseCollect();
+  if (e.target === document.getElementById('courseDriveSyncModal')) closeCourseDriveSync();
+  if (e.target === document.getElementById('proConModal')) closeProConAnalysis();
   if (e.target === document.getElementById('subtitleArchiveModal')) closeSubtitleArchive();
   if (e.target === document.getElementById('ytDlpModal')) closeYtDlp();
   if (e.target === document.getElementById('ytDownloadModal')) closeYtDownload();
@@ -1238,6 +1404,30 @@ function openCourseCollect() {
 }
 function closeCourseCollect() {
   document.getElementById('courseCollectModal').classList.remove('open');
+}
+
+// course-drive-sync-organizer（課程雲端比對歸檔）modal
+function openCourseDriveSync() {
+  document.getElementById('courseDriveSyncModal').classList.add('open');
+}
+function closeCourseDriveSync() {
+  document.getElementById('courseDriveSyncModal').classList.remove('open');
+}
+
+// pro-con-analysis（正反比較決策分析器）modal
+function openProConAnalysis() {
+  document.getElementById('proConModal').classList.add('open');
+}
+function closeProConAnalysis() {
+  document.getElementById('proConModal').classList.remove('open');
+}
+
+// session-title-sync（對話名同步）modal
+function openSessionTitleSync() {
+  document.getElementById('sessionTitleSyncModal').classList.add('open');
+}
+function closeSessionTitleSync() {
+  document.getElementById('sessionTitleSyncModal').classList.remove('open');
 }
 
 // 自動右鍵截圖 modal（說明書；啟動走卡片右上角 🚀 → autoshot://）
