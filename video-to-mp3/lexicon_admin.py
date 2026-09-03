@@ -2,8 +2,14 @@
 """
 lexicon_admin.py — 詞庫管理與校正比對後台（掛在 8767 服務底下）
 
-版本：v1.0.0
+版本：v1.1.0
 版更記錄：
+  v1.1.0 (2026-08-26) by Claude (Opus 5)
+    - 頁面最上面新增「斷句學習」：選「正確版（人工校對）」與「待校正版（機器產出）」
+      兩個 srt，比對後學出斷句風格（尺度參數 / 子句起始詞 / 行尾懸空字 / 不可拆詞組），
+      勾選後寫進 lexicon/style.json，refine_srt.py 下次轉字幕會讀它。
+      學習引擎在 style_learn.py，載不到只是這一區不出現，不影響詞庫與比對。
+    - 選檔走本機 tkinter 對話框（瀏覽器的 file input 拿不到完整路徑）
   v1.0.0 (2026-08-23) by Claude (Opus 5)
     - 詞庫管理：分類 CRUD、terms/fixes 增刪改
     - 校正比對：把「我們轉的稿」與「正確的稿」丟進來自動找差異，勾選後入庫
@@ -15,15 +21,55 @@ lexicon_admin.py — 詞庫管理與校正比對後台（掛在 8767 服務底�
 import difflib
 import json
 import re
+import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
+
+try:
+    import style_learn as STYLE
+except Exception as _style_err:      # 學習引擎壞掉不該拖垮詞庫管理
+    STYLE = None
+    print("[warn] 斷句學習模組未載入：%s" % _style_err)
 
 LEXICON_DIR = Path(r"C:\Users\admin\Desktop\classroom\transcribe-audio\lexicon")
 LEXICON_JSON = LEXICON_DIR / "lexicon.json"
 AGY = Path(r"C:\Users\admin\AppData\Local\agy\bin\agy.exe")
 
 MARKS = "，。、？！,.?!；;：:「」『』…—-（）()"
+
+
+PICK_CODE = r"""
+import sys, tkinter as tk
+from tkinter import filedialog
+root = tk.Tk(); root.withdraw(); root.attributes("-topmost", True)
+picked = filedialog.askopenfilename(
+    title=sys.argv[2] if len(sys.argv) > 2 else "選擇字幕檔",
+    filetypes=[("字幕與文字檔", "*.srt *.txt *.md"), ("所有檔案", "*.*")])
+open(sys.argv[1], "w", encoding="utf-8").write(picked or "")
+root.destroy()
+"""
+
+
+def pick_file_dialog(title: str = "選擇字幕檔") -> str:
+    """開 Windows 選檔框回傳完整路徑；取消或出錯都回空字串
+
+    跟 server.py 的選圖框同一套路：瀏覽器的 file input 只給檔名不給路徑，
+    選檔一定得由本機開；tkinter 丟在 HTTP 執行緒上會出事，所以跑獨立子進程。
+    """
+    work = Path(tempfile.mkdtemp(prefix="lexpick_"))
+    try:
+        script, out = work / "pick.py", work / "picked.txt"
+        script.write_text(PICK_CODE, encoding="utf-8")
+        subprocess.run([sys.executable, str(script), str(out), title],
+                       capture_output=True, timeout=600,
+                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        return out.read_text(encoding="utf-8").strip() if out.exists() else ""
+    except Exception:
+        return ""
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
 
 
 # ------------------------------------------------------------ 詞庫存取
@@ -328,6 +374,31 @@ border-radius:20px;padding:3px 10px;margin:3px 4px 3px 0;font-size:12px}
 <main>
 <div class="msg" id="msg"></div>
 
+<div class="card" id="learnCard" style="border-color:#2f4a7a">
+  <div class="row">
+    <b>斷句學習</b>
+    <span class="muted">拿同一支影片的兩版字幕比對，學出你的斷句習慣，下次轉字幕直接套用</span>
+    <button style="margin-left:auto" onclick="lrStyle()">看目前風格</button>
+  </div>
+  <div class="row">
+    <span style="width:96px;color:var(--ok)">✅ 正確版</span>
+    <input type="text" id="lrRight" style="flex:1" spellcheck="false"
+           placeholder="人工校對過的字幕（例：Arctime 校對版 .srt）">
+    <button onclick="lrPick('lrRight')">選檔</button>
+  </div>
+  <div class="row">
+    <span style="width:96px;color:var(--warn)">⏳ 待校正版</span>
+    <input type="text" id="lrWrong" style="flex:1" spellcheck="false"
+           placeholder="機器產出的字幕（同一支影片的 .srt）">
+    <button onclick="lrPick('lrWrong')">選檔</button>
+  </div>
+  <div class="row">
+    <button class="go" onclick="lrLearn()">開始學習</button>
+    <span class="muted" id="lrHint"></span>
+  </div>
+  <div id="lrOut"></div>
+</div>
+
 <section id="s1" class="on">
   <div class="card">
     <div class="row">
@@ -418,6 +489,94 @@ let LEX={categories:{}}, CUR="", PAIRS=[], MODE="file";
 function say(t,ok){const m=document.getElementById('msg');
   m.textContent=t;m.className='msg '+(ok?'ok':'err');
   setTimeout(()=>{m.className='msg'},5000);}
+// ---------------- 斷句學習
+let LR=null;
+function lrHint(t){document.getElementById('lrHint').textContent=t||'';}
+
+async function lrPick(id){
+  const title=(id=='lrRight')?'選「正確版」字幕（人工校對過的）':'選「待校正版」字幕（機器產出的）';
+  lrHint('選檔視窗已開啟，在工作列找一下…');
+  try{
+    const r=await fetch('/api/lexicon/pick',{method:'POST',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify({title})});
+    const j=await r.json(); lrHint('');
+    if(j.path)document.getElementById(id).value=j.path;
+  }catch(e){lrHint('');say('選檔失敗：'+e,0);}
+}
+
+async function lrLearn(){
+  const right=document.getElementById('lrRight').value.trim();
+  const wrong=document.getElementById('lrWrong').value.trim();
+  if(!right||!wrong){say('兩個檔案都要選：一個正確版、一個待校正版',0);return;}
+  lrHint('比對中…'); document.getElementById('lrOut').innerHTML='';
+  const r=await fetch('/api/lexicon/style/learn',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify({right,wrong})});
+  const j=await r.json();
+  if(j.error){lrHint('');say(j.error,0);return;}
+  LR=j; lrHint('兩份內容相似度 '+Math.round(j.similarity*100)+'%'); lrRender(j);
+}
+
+function lrRender(j){
+  j.starters.forEach(x=>x._on=(x.missed>0));
+  j.hanging.forEach(x=>x._on=true);
+  j.compounds.forEach((x,i)=>x._on=(i<15));
+  const pills=(arr,cls,fmt)=>arr.map(x=>
+    '<label class="pill"><input type="checkbox" class="'+cls+'" value="'+esc(x.w)+'"'+
+    (x._on?' checked':'')+'> '+esc(x.w)+' <span class="muted">'+fmt(x)+'</span></label>').join('');
+  const blk=(title,note,arr,cls,fmt)=>'<div style="margin-top:14px"><b>'+title+'</b> '+
+    '<span class="muted">'+note+'</span><div style="margin-top:6px">'+
+    (arr.length?pills(arr,cls,fmt):'<span class="muted">（這次沒學到新的）</span>')+'</div></div>';
+  const r=j.right, w=j.wrong;
+  document.getElementById('lrOut').innerHTML=
+    '<div class="card" style="background:#10131a;margin-top:12px">'+
+    '<div class="muted">正確版 '+r.cues+' 條 · 平均 '+r.chars_avg+' 字 / '+r.secs_avg+' 秒（九成在 '+
+    r.chars_p90+' 字 '+r.secs_p90+' 秒以內）　｜　待校正版 '+w.cues+' 條 · 平均 '+
+    w.chars_avg+' 字 / '+w.secs_avg+' 秒</div>'+
+    '<div class="row" style="margin-top:12px">'+
+    '<label><input type="checkbox" id="lrUseSize" checked> 套用尺度</label>'+
+    '每條上限 <input type="text" id="lrMaxChars" style="width:64px;min-width:0" value="'+j.suggest.max_chars+'"> 字'+
+    '<input type="text" id="lrMaxSecs" style="width:64px;min-width:0" value="'+j.suggest.max_secs+'"> 秒'+
+    '<span class="muted">（程式現在寫死 16 字 / 4 秒）</span></div>'+
+    blk('這些詞前面要斷開','＝你習慣在這裡起新的一條，機器沒學到的排前面',j.starters,'lr-st',
+        x=>x.n+' 次'+(x.missed?'／機器漏了 '+x.missed:'')) +
+    blk('這些字後面不能斷','＝機器把它留在行尾，你從不這樣斷',j.hanging,'lr-hg',x=>'機器犯 '+x.n+' 次') +
+    blk('這些詞不能拆開','＝機器從中間切斷，你整組保留',j.compounds,'lr-cp',x=>'被切 '+x.n+' 次') +
+    '<div class="row" style="margin-top:16px">'+
+    '<button class="go" onclick="lrApply()">套用勾選項目</button>'+
+    '<span class="muted">寫進 lexicon/style.json，下次跑 refine_srt.py 產字幕就會用它。'+
+    '錯字對照請走上面的「校正比對」分頁。</span></div></div>';
+}
+
+async function lrApply(){
+  if(!LR){say('先按開始學習',0);return;}
+  const grab=c=>[...document.querySelectorAll('.'+c+':checked')].map(x=>x.value);
+  const body={starters:grab('lr-st'),hanging:grab('lr-hg'),compounds:grab('lr-cp'),
+              source:LR.source};
+  if(document.getElementById('lrUseSize').checked){
+    body.max_chars=document.getElementById('lrMaxChars').value;
+    body.max_secs=document.getElementById('lrMaxSecs').value;
+  }
+  const r=await fetch('/api/lexicon/style/apply',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const j=await r.json();
+  if(j.error){say(j.error,0);return;}
+  const a=j.added;
+  say('已套用：斷點詞 +'+a.clause_starters+'、懸空字 +'+a.trailing_hanging+
+      '、不可拆詞 +'+a.compound_suffixes,1);
+}
+
+async function lrStyle(){
+  const r=await fetch('/api/lexicon/style'); const j=await r.json();
+  const n=x=>(j[x]||[]).length;
+  document.getElementById('lrOut').innerHTML='<div class="card" style="background:#10131a;margin-top:12px">'+
+    '<b>目前的斷句風格</b><div class="muted" style="margin-top:6px">'+
+    '每條上限：'+(j.max_chars||'（未設定，用程式預設 16）')+' 字 / '+
+    (j.max_secs||'（未設定，用程式預設 4）')+' 秒<br>'+
+    '斷點詞 '+n('clause_starters')+' 個 · 懸空字 '+n('trailing_hanging')+' 個 · 不可拆詞 '+
+    n('compound_suffixes')+' 個 · 學習紀錄 '+n('learned')+' 次</div>'+
+    '<div class="muted" style="margin-top:8px">檔案：transcribe-audio\\lexicon\\style.json</div></div>';
+}
+
 function tab(n){for(const i of [1,2]){
   document.getElementById('s'+i).className=(i==n?'section on':'section');
   document.getElementById('s'+i).style.display=(i==n?'block':'none');
@@ -596,6 +755,38 @@ def handle(method: str, path: str, body: bytes = b"") -> tuple:
             if not ours.strip() or not truth.strip():
                 raise ValueError("兩邊都要有內容才能比對")
             return _json({"pairs": diff_pairs(ours, truth), "mode": mode})
+        except Exception as e:
+            return _json({"error": str(e)}, 400)
+
+    if method == "POST" and path == "/api/lexicon/pick":
+        try:
+            title = (json.loads(body or b"{}").get("title") or "選擇字幕檔")
+        except Exception:
+            title = "選擇字幕檔"
+        return _json({"path": pick_file_dialog(title)})
+
+    if method == "GET" and path == "/api/lexicon/style":
+        if STYLE is None:
+            return _json({"error": "斷句學習模組未載入"}, 500)
+        return _json(STYLE.load_style())
+
+    if method == "POST" and path == "/api/lexicon/style/learn":
+        if STYLE is None:
+            return _json({"error": "斷句學習模組未載入"}, 500)
+        try:
+            p = json.loads(body or b"{}")
+            right, wrong = (p.get("right") or "").strip(), (p.get("wrong") or "").strip()
+            if not right or not wrong:
+                raise ValueError("正確版與待校正版都要指定")
+            return _json(STYLE.learn(right, wrong))
+        except Exception as e:
+            return _json({"error": str(e)}, 400)
+
+    if method == "POST" and path == "/api/lexicon/style/apply":
+        if STYLE is None:
+            return _json({"error": "斷句學習模組未載入"}, 500)
+        try:
+            return _json(STYLE.apply_style(json.loads(body or b"{}")))
         except Exception as e:
             return _json({"error": str(e)}, 400)
 

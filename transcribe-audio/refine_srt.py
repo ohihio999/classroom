@@ -2,8 +2,12 @@
 """
 refine_srt.py — SRT 精修後處理器（階段 4 LLM 校對 + 階段 2 語意聚合）
 
-版本：v1.0.0
+版本：v1.2.0
 版更記錄：
+  v1.2.0 (2026-08-26) by Claude (Opus 5)
+    - 字幕斷句改為可學習：讀 lexicon/style.json（由 8767 詞庫後台的「斷句學習」
+      比對人工校對版產生），覆寫每條字數／秒數上限，並把學到的子句起始詞、
+      行尾懸空字、不可拆詞組併進內建表。讀不到檔案就完全照舊，不影響既有行為。
   v1.0.0 (2026-08-22) by Claude (Opus 5)
     - 階段 4：LLM 逐 cue 校對（補標點 + 修專有名詞），以「行數與編號」為硬約束，
       LLM 完全不碰時間軸；行數/編號對不上就整批退回重試，最後仍失敗則保留原文。
@@ -42,6 +46,19 @@ try:
     import lexicon as LX
 except Exception:
     LX = None
+
+# v1.2.0: 斷句風格（8767 後台「斷句學習」寫出來的，沒有就用下面的內建值）
+STYLE_JSON = Path(__file__).parent / "lexicon" / "style.json"
+
+
+def _load_style() -> dict:
+    try:
+        return json.loads(STYLE_JSON.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+STYLE = _load_style()
 
 SENTENCE_END = "。！？!?"
 PAUSE_MARKS = "，、,;；:："
@@ -299,8 +316,8 @@ def stage2_aggregate(cues: list[dict]) -> list[dict]:
 
 # 字幕切分參數（對齊標準影視與 YouTube 繁體字幕風格：平均 9~14 字 / 1.8~3.5 秒）
 # v1.1.0 (2026-08-23): 從 12 字調至 16 字，加入數字+量詞黏著保護與行尾懸空字避讓，消除 1600 與 萬 斷裂
-SUB_MAX_CHARS = 16      # 一條字幕的字數上限
-SUB_MAX_SECS  = 4.0     # 一條字幕的時長上限
+SUB_MAX_CHARS = int(STYLE.get("max_chars") or 16)      # 一條字幕的字數上限
+SUB_MAX_SECS  = float(STYLE.get("max_secs") or 4.0)   # 一條字幕的時長上限
 SUB_GAP_BREAK = 1.2     # 保留給純 word-level 切法的停頓門檻
 
 STICKY_UNITS = set("萬億千萬百個歲分秒天年月日元塊倍點KMGBkmbg")
@@ -312,6 +329,12 @@ COMPOUND_SUFFIXES = [
     "直覺上", "市場上", "技術上", "商業上", "短時間", "長時間", "高難度", "低成本", "落點分析"
 ]
 
+# 學到的詞放在內建表後面（比對時長詞優先，順序不影響正確性，只影響可讀性）
+STICKY_UNITS |= set("".join(STYLE.get("sticky_units") or []))
+TRAILING_HANGING |= set("".join(STYLE.get("trailing_hanging") or []))
+COMPOUND_SUFFIXES += [w for w in (STYLE.get("compound_suffixes") or [])
+                      if w not in COMPOUND_SUFFIXES]
+
 CLAUSE_STARTERS = [
     # 疑問與反詰
     "到底", "究竟", "難道", "為什麼", "怎麼樣", "怎麼", "是不是", "能不能", "會不會", "可不可以", "要不要",
@@ -320,6 +343,9 @@ CLAUSE_STARTERS = [
     # 副詞與語氣
     "其實", "畢竟", "反正", "總之", "突然", "立刻", "馬上", "順便", "大概", "甚至", "千萬", "一定"
 ]
+
+CLAUSE_STARTERS += [w for w in (STYLE.get("clause_starters") or [])
+                    if w not in CLAUSE_STARTERS]
 
 
 def _strip_marks(t: str) -> str:

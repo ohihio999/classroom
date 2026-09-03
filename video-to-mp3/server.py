@@ -1,6 +1,27 @@
 """
 影音工具本機服務（YouTube 下載 / 影片轉 MP3 / 錄音檔合併 / 圖檔轉 PDF）
 
+v1.11 2026-08-27 archive 的 vault 副本條件改成收「courseDir 底下全部 .md（含子資料夾，
+                 保留相對路徑）」，原本只收第一層。使用者會在課程資料夾自建「付費」「網站轉高級」
+                 之類的子資料夾放 MD，壓平到根層會失去分類。
+v1.10 2026-08-26 課程資料夾不再出現雙日期：課程名本身已經以合法日期開頭時（資料夾批次
+                 直接拿原檔名當課程名，而檔名常見 20260826_主題.mp4）就沿用該名稱，
+                 不再前綴今天的日期。沿用而非改成今天，是因為檔名裡的日期通常才是上課日。
+v1.9 2026-08-26 課程整理SOP 兩項修改（使用者拷問後定案）：
+                 (1) 建任務當下就把本機來源影片／錄音「剪」進 courseDir 並改名成課程名
+                     （分段來源給 _01、_02 序號），不再等 AI 到 acquisition 才搬。
+                     搬不動就全有全無回滾：已搬的放回原位、剛建的課程資料夾刪掉、建立失敗；
+                     資料夾批次時連同已建好的其他堂課一起撤回。來源資料夾本身與非媒體檔不碰。
+                     manifest 的 source 改記新位置，另存 originalValue 與 movedFiles 供追溯，
+                     preserveOriginal 只剩 YouTube 為真。
+                 (2) archive 驗收條件加一條：courseDir 第一層全部 .md 要複製一份到
+                     D:\\本機MD檔\\30_研究\\課程逐字稿整理\\<與課程資料夾同名>\\
+                     （沒有就建；同名跳過不覆蓋；HTML／srt／媒體不進 vault）。
+v1.8 2026-08-26 首頁新增第二個分頁「字幕詞庫」（hash 入口 #lexicon）：用 iframe 內嵌既有的
+                 /lexicon 管理頁（lexicon_admin.py 不動，該網址仍可單獨開）。iframe 等第一次
+                 點分頁才給 src，首頁載入不多打一次請求；切走再切回保留頁面狀態。
+v1.7 2026-08-26 課程流水線的「含教學 / 含最小案例」改成跟在「🌳 技能樹」勾選框後面同一列
+                 顯示（原本落在下方獨立子區塊，離技能樹太遠看不出從屬關係）。
 v1.6 2026-08-24 「圖檔轉 PDF」的資料夾／PDF 名稱可以留空自動命名：ffmpeg 把第一張圖縮成
                  1024px JPEG 交給 Groq 視覺模型讀封面書名（認不出來往後看，最多 5 張），
                  再拿去博客來搜尋校正成正式書名，最後命名成「主書名 - 作者」（副標不進檔名，
@@ -67,6 +88,8 @@ DEFAULT_YTDL_DIR = r"C:\OBS"
 # 2026-08-19 使用者裁定：課程產物一律不進 vault（媒體檔會撐大 vault 的 git 快照）。
 # 這是預設值，網頁上的「課程歸檔根目錄」可以隨時改成別的位置。
 COURSE_ROOT = r"D:\2026_已整理課程"
+# 課程包的 Markdown 副本要複製進 Obsidian vault 的這裡（archive 階段由 AI 執行）。
+VAULT_COURSE_MD_ROOT = r"D:\本機MD檔\30_研究\課程逐字稿整理"
 
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".flv", ".wmv", ".ts"}
 AUDIO_EXTENSIONS = {".m4a", ".mp3", ".wav", ".aac", ".flac", ".ogg", ".opus", ".wma"}
@@ -118,6 +141,19 @@ def validate_course_source(source_type: str, value: str) -> bool:
         # 資料夾批次：每個媒體檔各一堂課，音訊影片都收
         return path.is_dir() and bool(list_batch_media(path))
     return False
+
+
+# 課程名開頭已經是一個合法日期（常見於檔名 20260826_主題.mp4）時就沿用它，
+# 不再前綴今天，否則資料夾會變成 20260826_20260826_主題（2026-08-26 使用者實際踩到）。
+# 沿用而不是換成今天：檔名裡那個日期通常才是上課日，不一定等於整理日。
+LEADING_DATE_RE = re.compile(r"^(?:19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])(?:[_\-\s]|$)")
+
+
+def course_folder_name(clean_name: str) -> str:
+    """課程資料夾名：`YYYYMMDD_課程名`；課程名自己已帶日期就不重複加。"""
+    if LEADING_DATE_RE.match(clean_name):
+        return clean_name
+    return f"{datetime.now().strftime('%Y%m%d')}_{clean_name}"
 
 
 def _pipeline_stage(status: str, criterion: str) -> dict:
@@ -233,6 +269,83 @@ def _stage_for(selected: bool, criterion: str) -> dict:
     return _pipeline_stage("pending" if selected else "skipped", criterion)
 
 
+# 2026-08-26 使用者裁定：建任務當下就把本機來源媒體「剪」進 courseDir 並改名成課程名，
+# 不再等 AI 到 acquisition 才搬（舊做法常忘了搬，archive 因為「產物不在 courseDir」卡住）。
+# 這同時推翻 course-content-pipeline SKILL.md 2026-08-20 的「只搬不改名」。
+def plan_source_moves(source_type: str, source_val: str, clean_name: str) -> list:
+    """算出 [(來源檔, courseDir 內的目標檔名)]；YouTube 沒有本機原檔，回空清單。"""
+    if source_type == "youtube":
+        return []
+    src = Path(source_val)
+    if source_type == MULTI_PART_SOURCE:
+        # 分段是同一堂課：依檔名排序後編號，維持段序可讀。
+        return [(item, f"{clean_name}_{index:02d}{item.suffix}")
+                for index, item in enumerate(list_batch_media(src), start=1)]
+    return [(src, f"{clean_name}{src.suffix}")]
+
+
+def _restore_moved(moved: list) -> list:
+    """把搬過的檔案放回原位；回傳沒能放回去的目標路徑。"""
+    failed = []
+    for record in reversed(moved):
+        origin, target = Path(record["from"]), Path(record["to"])
+        try:
+            if target.exists():
+                origin.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(target), str(origin))
+        except OSError:
+            failed.append(record["to"])
+    return failed
+
+
+def move_source_into_course_dir(source_type: str, source_val: str,
+                                course_dir: Path, clean_name: str) -> tuple:
+    """把本機來源媒體搬進 courseDir 並改名；回傳 (新的 source value, 搬移紀錄)。
+
+    全有全無：任何一個檔搬不動（被播放器鎖住、空間不足、權限不足），
+    就把這一輪已搬的檔案全部放回原位再拋錯，不留半殘的課程資料夾。
+    來源資料夾本身與其中的非媒體檔一律不動。
+    """
+    pairs = plan_source_moves(source_type, source_val, clean_name)
+    if not pairs:
+        return source_val, []
+
+    moved = []
+    try:
+        for origin, target_name in pairs:
+            target = course_dir / target_name
+            if target.exists():
+                raise ValueError(f"課程資料夾已經有同名檔案：{target_name}")
+            shutil.move(str(origin), str(target))
+            moved.append({"from": str(origin), "to": str(target)})
+    except (OSError, ValueError) as exc:
+        leftovers = _restore_moved(moved)
+        message = f"來源檔搬移失敗：{exc}；已建立的課程資料夾與搬移全部取消"
+        if leftovers:
+            message += "；下列檔案沒能放回原位，請手動處理：" + "、".join(leftovers)
+        raise ValueError(message) from exc
+
+    # 分段來源整批進 courseDir，來源改指資料夾本身；單檔則指向搬完的那個檔。
+    new_value = str(course_dir) if source_type == MULTI_PART_SOURCE else moved[0]["to"]
+    return new_value, moved
+
+
+def rollback_course_manifest(manifest: dict) -> list:
+    """撤銷一份已建立的課程：搬回原檔、刪掉 manifest 與空的課程資料夾。
+
+    回傳沒能放回原位的檔案清單。資料夾若還有殘留檔案就保留不刪。
+    """
+    moved = manifest.get("source", {}).get("movedFiles", []) or []
+    failed = _restore_moved(moved)
+    course_dir = Path(manifest.get("courseDir", ""))
+    try:
+        (course_dir / "course-manifest.json").unlink(missing_ok=True)
+        course_dir.rmdir()
+    except OSError:
+        pass
+    return failed
+
+
 def create_course_manifest(source_type: str, source_val: str, course_name: str,
                            options: dict | None = None, output_root: str | None = None) -> tuple:
     """建立不覆蓋既有資料夾的 course-manifest.json，供 AI 跨 Session 續跑。"""
@@ -273,13 +386,27 @@ def create_course_manifest(source_type: str, source_val: str, course_name: str,
             raise ValueError("enginePriority 有重複項目")
     root = Path(output_root or COURSE_ROOT)
     root.mkdir(parents=True, exist_ok=True)
-    base_name = f"{datetime.now().strftime('%Y%m%d')}_{clean_name}"
+    base_name = course_folder_name(clean_name)
     course_dir = root / base_name
     suffix = 2
     while course_dir.exists():
         course_dir = root / f"{base_name}-{suffix}"
         suffix += 1
     course_dir.mkdir(parents=False)
+
+    # 建完資料夾立刻把本機原檔剪進來；搬不動就連同剛建的空資料夾一起收掉。
+    try:
+        moved_value, moved_files = move_source_into_course_dir(
+            source_type, source_val, course_dir, clean_name)
+    except ValueError:
+        try:
+            course_dir.rmdir()
+        except OSError:
+            pass
+        raise
+
+    # 課程包的 MD 副本落點（2026-08-26 使用者裁定）：一堂課一個同名子資料夾。
+    vault_md_dir = Path(VAULT_COURSE_MD_ROOT) / course_dir.name
 
     is_youtube = source_type == "youtube"
     is_multi_part = source_type == MULTI_PART_SOURCE
@@ -293,11 +420,15 @@ def create_course_manifest(source_type: str, source_val: str, course_name: str,
         )
     elif is_multi_part:
         acquisition_criterion = (
-            "資料夾內所有支援的音訊與影片已依檔名排序列入 manifest，"
-            "每段的絕對路徑與 size 已記錄且未覆蓋；這些是同一堂課的分段"
+            "分段媒體已由 8767 剪進 courseDir 並依檔名排序改名為 "
+            f"{clean_name}_01、{clean_name}_02…，每段 size > 0；"
+            "這些是同一堂課的分段，來源資料夾保持原狀不得刪除"
         )
     else:
-        acquisition_criterion = "本機來源存在且非空，原始檔絕對路徑與 size 已記錄且未覆蓋"
+        acquisition_criterion = (
+            "本機原檔已由 8767 剪進 courseDir 並改名為 "
+            f"{clean_name}<原副檔名>，size > 0；來源資料夾保持原狀不得刪除"
+        )
 
     transcription_criterion = (
         "每一段各自產出 raw transcript 且非空，並依段序合併成單一份完整逐字稿"
@@ -320,8 +451,11 @@ def create_course_manifest(source_type: str, source_val: str, course_name: str,
         "courseName": clean_name,
         "source": {
             "type": source_type,
-            "value": source_val,
-            "preserveOriginal": True,
+            "value": moved_value,
+            # 本機來源的原檔已經被剪走，只有 YouTube 還談得上「保留原始來源」。
+            "preserveOriginal": is_youtube,
+            "originalValue": source_val,
+            "movedFiles": moved_files,
         },
         "outputRoot": str(root),
         "courseDir": str(course_dir),
@@ -367,7 +501,12 @@ def create_course_manifest(source_type: str, source_val: str, course_name: str,
             "skill_tree": _stage_for(
                 artifacts["skillTree"],
                 "技能樹存在；模式 3 每個節點另含教學與最小案例"),
-            "archive": _pipeline_stage("pending", "所有要求產物位於 courseDir，manifest 證據完整"),
+            "archive": _pipeline_stage(
+                "pending",
+                "所有要求產物位於 courseDir，manifest 證據完整；"
+                f"並已把 courseDir 底下全部 .md（含子資料夾，保留相對路徑）複製一份到 {vault_md_dir}"
+                "（資料夾與子資料夾不存在就建；同名檔一律跳過不覆蓋，並在 evidence 列出跳過清單；"
+                "HTML、srt、words.json 與媒體檔不進 vault）"),
         },
     }
     manifest_path = course_dir / "course-manifest.json"
@@ -442,8 +581,19 @@ def create_course_batch(source_type: str, source_val: str, course_name: str = ""
     for item in media:
         # 逐檔各自成課：型別依副檔名分流；legacy local_mp3 key 承載非影片媒體。
         per_type = "local_video" if item.suffix.lower() in VIDEO_EXTENSIONS else "local_mp3"
-        results.append(create_course_manifest(
-            per_type, str(item), item.stem, options=options, output_root=output_root))
+        try:
+            results.append(create_course_manifest(
+                per_type, str(item), item.stem, options=options, output_root=output_root))
+        except (ValueError, OSError) as exc:
+            # 全有全無：一個檔搬不動，這批已經建好的課程也全部撤回，不留下半批。
+            leftovers = []
+            for done_manifest, _ in results:
+                leftovers += rollback_course_manifest(done_manifest)
+            message = (f"批次建立中止於「{item.name}」：{exc}；"
+                       f"已建立的 {len(results)} 堂課全部回滾，來源檔已放回原位")
+            if leftovers:
+                message += "；下列檔案沒能放回原位，請手動處理：" + "、".join(leftovers)
+            raise ValueError(message) from exc
     return results
 
 
@@ -1578,6 +1728,7 @@ PAGE = r"""<!doctype html>
   .subpicks { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0 0 10px;
               padding-left: 14px; border-left: 2px solid #2f3b4a; }
   .subpicks .pick { padding: 6px 12px; font-size: 12px; }
+  .subpicks.inline { margin: 0; align-items: center; }
   .engine { display: flex; align-items: center; gap: 8px; margin: 10px 0 0 10px;
             padding-left: 14px; border-left: 2px solid #2f3b4a; }
   .engine select { flex: 0 1 380px; min-width: 200px; }
@@ -1620,6 +1771,7 @@ PAGE = r"""<!doctype html>
   <div class="sub">網頁操作、本機處理。檔案不上傳，轉檔輸出寫回原資料夾。</div>
   <div class="tabs">
     <div class="tab on" data-mode="course">課程整理SOP</div>
+    <div class="tab" data-mode="lexicon">字幕詞庫</div>
     <div class="tab" data-mode="video">影片轉 MP3</div>
     <div class="tab" data-mode="audio">錄音檔合併</div>
     <div class="tab" data-mode="ytdl">YouTube 下載</div>
@@ -1696,6 +1848,10 @@ PAGE = r"""<!doctype html>
       <label class="pick" id="w-report"><input type="checkbox" id="a-report" checked onchange="syncCourseArtifacts()"> 📊 培訓報告</label>
       <label class="pick" id="w-mindmap"><input type="checkbox" id="a-mindmap" checked onchange="syncCourseArtifacts()"> 🧠 心智圖</label>
       <label class="pick" id="w-skillTree"><input type="checkbox" id="a-skillTree" onchange="syncCourseArtifacts()"> 🌳 技能樹</label>
+      <div class="subpicks inline" id="courseSkillSub" style="display:none">
+        <label class="pick" id="w-teach"><input type="checkbox" id="s-teach" onchange="syncCourseArtifacts()"> 含教學</label>
+        <label class="pick"><input type="checkbox" id="s-minimum" onchange="syncCourseArtifacts()"> 含最小案例</label>
+      </div>
     </div>
     <div class="engine" id="courseQualityRow">
       <span class="hintx">影片畫質</span>
@@ -1710,10 +1866,6 @@ PAGE = r"""<!doctype html>
     <div class="subpicks" id="courseSummarySub" style="display:none">
       <label class="pick" id="w-dense"><input type="checkbox" id="s-dense" onchange="syncCourseArtifacts()"> 高密度總覽（1-2 段，取代預設 3-6 段）</label>
       <label class="pick" id="w-rawSegments"><input type="checkbox" id="a-rawSegments" onchange="syncCourseArtifacts()"> 另出原字分段版（保留原句不改寫）</label>
-    </div>
-    <div class="subpicks" id="courseSkillSub" style="display:none">
-      <label class="pick" id="w-teach"><input type="checkbox" id="s-teach" onchange="syncCourseArtifacts()"> 含教學</label>
-      <label class="pick"><input type="checkbox" id="s-minimum" onchange="syncCourseArtifacts()"> 含最小案例</label>
     </div>
     <div class="engine" id="courseEngineRow">
       <span class="hintx">轉錄引擎</span>
@@ -1766,6 +1918,11 @@ PAGE = r"""<!doctype html>
     </div>
   </div>
 
+  <div class="card hide" id="lexCard" style="padding:0;overflow:hidden">
+    <iframe id="lexFrame" title="字幕詞庫管理"
+            style="width:100%;height:calc(100vh - 230px);min-height:520px;border:0;display:block"></iframe>
+  </div>
+
   <div class="card hide" id="progress">
     <div class="job-head"><b id="jobTitle">處理中</b><span class="pct" id="jobPct">0%</span></div>
     <div class="bar" id="jobBar"><i></i></div>
@@ -1795,7 +1952,9 @@ document.querySelectorAll('.tab').forEach(tab => tab.onclick = () => {
   mode = tab.dataset.mode;
   $('ytdlCard').classList.toggle('hide', mode !== 'ytdl');
   $('courseCard').classList.toggle('hide', mode !== 'course');
-  $('browseCard').classList.toggle('hide', mode === 'ytdl' || mode === 'course');
+  $('lexCard').classList.toggle('hide', mode !== 'lexicon');
+  $('browseCard').classList.toggle('hide', mode === 'ytdl' || mode === 'course' || mode === 'lexicon');
+  if (mode === 'lexicon') { const f = $('lexFrame'); if (!f.src) f.src = '/lexicon'; return; }
   if (mode === 'ytdl') { $('ytOut').value = $('ytOut').value || DEFAULTS.ytdl; return; }
   if (mode === 'course') {
     $('courseOut').value = $('courseOut').value || DEFAULTS.course;
@@ -1857,6 +2016,8 @@ let coursePrio = [
 // 這段需在 ENGINE_LABELS 與 coursePrio 完成初始化後才能觸發 tab 的同步呼叫鏈。
 if (location.hash === '#course') {
   document.querySelector('.tab[data-mode="course"]').click();
+} else if (location.hash === '#lexicon') {
+  document.querySelector('.tab[data-mode="lexicon"]').click();
 } else if (location.hash.startsWith('#ytdl:')) {
   try {
     const prefill = decodeURIComponent(location.hash.slice(6));

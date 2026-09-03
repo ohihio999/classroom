@@ -4,6 +4,7 @@ Unit tests for course pipeline features in server.py
 
 import json
 import tempfile
+from datetime import datetime
 import unittest
 from unittest import mock
 from pathlib import Path
@@ -1123,6 +1124,163 @@ class TestCourseAPI(unittest.TestCase):
         self.assertEqual(prog["count"], 2)
         self.assertTrue(all(r["percent"] == 0 for r in prog["rows"]))
         self.assertTrue(all(r["status"] == "pending" for r in prog["rows"]))
+
+
+class TestCourseSourceMove(unittest.TestCase):
+    """2026-08-26：建任務當下就把本機來源剪進 courseDir 並改名成課程名。"""
+
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.output_root = str(Path(self.temp_dir.name) / "out")
+        self.src_dir = Path(self.temp_dir.name) / "來源"
+        self.src_dir.mkdir(parents=True)
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+
+    def test_single_file_is_moved_and_renamed(self):
+        source = self.src_dir / "Screenrecording_20260825.mp4"
+        source.write_bytes(b"fake video")
+
+        manifest, _ = server.create_course_manifest(
+            "local_video", str(source), "雷蒙試聽班", output_root=self.output_root)
+
+        course_dir = Path(manifest["courseDir"])
+        moved = course_dir / "雷蒙試聽班.mp4"
+        self.assertTrue(moved.is_file(), "原檔應該被剪進 courseDir 並改名成課程名")
+        self.assertFalse(source.exists(), "剪過去之後原位置不該還留著")
+        self.assertEqual(manifest["source"]["value"], str(moved))
+        self.assertEqual(manifest["source"]["originalValue"], str(source))
+        self.assertFalse(manifest["source"]["preserveOriginal"])
+        self.assertEqual(len(manifest["source"]["movedFiles"]), 1)
+
+    def test_multi_part_files_get_ordered_suffix(self):
+        for name in ("b段.mp3", "a段.mp3", "c段.mp3"):
+            (self.src_dir / name).write_bytes(b"fake mp3")
+
+        manifest, _ = server.create_course_manifest(
+            "mp3_parts", str(self.src_dir), "八小時課程", output_root=self.output_root)
+
+        course_dir = Path(manifest["courseDir"])
+        self.assertEqual(
+            sorted(item.name for item in course_dir.glob("*.mp3")),
+            ["八小時課程_01.mp3", "八小時課程_02.mp3", "八小時課程_03.mp3"])
+        # 依原檔名排序編號：a段是第一段。
+        self.assertEqual(
+            Path(manifest["source"]["movedFiles"][0]["from"]).name, "a段.mp3")
+        # 分段來源改指 courseDir 本身。
+        self.assertEqual(manifest["source"]["value"], str(course_dir))
+        self.assertTrue(self.src_dir.is_dir(), "來源資料夾要留著不動")
+
+    def test_non_media_files_and_source_folder_survive(self):
+        (self.src_dir / "第一段.mp3").write_bytes(b"fake mp3")
+        note = self.src_dir / "講義.pdf"
+        note.write_bytes(b"pdf")
+
+        server.create_course_manifest(
+            "mp3_parts", str(self.src_dir), "課程", output_root=self.output_root)
+
+        self.assertTrue(note.is_file(), "非媒體檔不該被搬走")
+
+    def test_youtube_source_is_untouched(self):
+        manifest, _ = server.create_course_manifest(
+            "youtube", "https://www.youtube.com/watch?v=dQw4w9WgXcQ", "YT課",
+            output_root=self.output_root)
+        self.assertTrue(manifest["source"]["preserveOriginal"])
+        self.assertEqual(manifest["source"]["movedFiles"], [])
+
+    def test_move_failure_rolls_back_everything(self):
+        source = self.src_dir / "課程.mp3"
+        source.write_bytes(b"fake mp3")
+
+        with mock.patch.object(server.shutil, "move", side_effect=OSError("檔案正在使用中")):
+            with self.assertRaisesRegex(ValueError, "來源檔搬移失敗"):
+                server.create_course_manifest(
+                    "local_mp3", str(source), "課程", output_root=self.output_root)
+
+        self.assertTrue(source.is_file(), "搬移失敗後原檔要留在原位")
+        self.assertEqual(list(Path(self.output_root).glob("*")), [],
+                         "搬移失敗不該留下半殘的課程資料夾")
+
+    def test_batch_failure_rolls_back_already_created_courses(self):
+        for name in ("第一堂.mp3", "第二堂.mp3", "第三堂.mp3"):
+            (self.src_dir / name).write_bytes(b"fake mp3")
+
+        real_move = server.shutil.move
+        calls = {"n": 0}
+
+        def flaky_move(src, dst):
+            calls["n"] += 1
+            if calls["n"] == 3:
+                raise OSError("檔案正在使用中")
+            return real_move(src, dst)
+
+        with mock.patch.object(server.shutil, "move", side_effect=flaky_move):
+            with self.assertRaisesRegex(ValueError, "批次建立中止"):
+                server.create_course_batch(
+                    "mp3_folder", str(self.src_dir), output_root=self.output_root)
+
+        for name in ("第一堂.mp3", "第二堂.mp3", "第三堂.mp3"):
+            self.assertTrue((self.src_dir / name).is_file(), f"{name} 應該被放回原位")
+        self.assertEqual(list(Path(self.output_root).glob("*")), [],
+                         "整批回滾後不該留下任何課程資料夾")
+
+    def test_archive_criterion_points_at_vault_md_folder(self):
+        source = self.src_dir / "課程.mp3"
+        source.write_bytes(b"fake mp3")
+        manifest, _ = server.create_course_manifest(
+            "local_mp3", str(source), "入庫測試", output_root=self.output_root)
+
+        criterion = manifest["stages"]["archive"]["completion_criteria"]
+        expected = str(Path(server.VAULT_COURSE_MD_ROOT) / Path(manifest["courseDir"]).name)
+        self.assertIn(expected, criterion)
+        self.assertIn(".md", criterion)
+        self.assertIn("跳過", criterion)
+
+
+class TestCourseFolderName(unittest.TestCase):
+    """2026-08-26：課程名自帶日期時，資料夾不該變成 20260826_20260826_主題。"""
+
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.output_root = str(Path(self.temp_dir.name) / "out")
+        self.src_dir = Path(self.temp_dir.name) / "來源"
+        self.src_dir.mkdir(parents=True)
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+
+    def test_leading_date_is_reused_not_duplicated(self):
+        self.assertEqual(
+            server.course_folder_name("20260826_AI 許願池系統拆解"),
+            "20260826_AI 許願池系統拆解")
+        # 上課日不等於整理日時，沿用檔名裡的上課日。
+        self.assertEqual(
+            server.course_folder_name("20260820_舊錄影"), "20260820_舊錄影")
+
+    def test_name_without_date_still_gets_today(self):
+        today = datetime.now().strftime("%Y%m%d")
+        self.assertEqual(
+            server.course_folder_name("雷蒙試聽班"), f"{today}_雷蒙試聽班")
+
+    def test_number_prefix_that_is_not_a_date_still_gets_today(self):
+        today = datetime.now().strftime("%Y%m%d")
+        # 13 月、32 日、非 19/20 開頭都不算日期。
+        for name in ("20261301_課", "20260832_課", "12345678_課", "2026082_課"):
+            self.assertEqual(server.course_folder_name(name), f"{today}_{name}")
+
+    def test_batch_from_dated_filenames_has_single_date(self):
+        for name in ("20260826_AI 許願池系統拆解.mp4", "20260826_用 AI 找出可轉移能力.mp4"):
+            (self.src_dir / name).write_bytes(b"fake video")
+
+        results = server.create_course_batch(
+            "mp3_folder", str(self.src_dir), output_root=self.output_root)
+
+        folders = sorted(Path(m["courseDir"]).name for m, _ in results)
+        self.assertEqual(folders, ["20260826_AI 許願池系統拆解",
+                                   "20260826_用 AI 找出可轉移能力"])
+        for folder in folders:
+            self.assertNotIn("20260826_20260826", folder)
 
 
 class TestAdminIntegration(unittest.TestCase):
