@@ -1,6 +1,20 @@
 <!--
-  版本：v5.8
+  版本：v6.12
   版更記錄：
+  v6.12 (2026-09-10) - 推公開 repo 前的個資清理：「研討會資料整理」說明書 modal 的命名規則範例，把實際場次名（含真實對話對象的職稱與日期）換成虛構的 20260315_1400_資安研討會，教學效果不變。本 repo 是 PUBLIC，範例一律不用真實素材
+  v6.11 (2026-09-10) - 卡片新增可選欄位 infoFn：有值就在卡片右上 🚀 旁邊多一顆 📖 說明書鈕，onclick 帶 event.stopPropagation() 所以不會觸發卡片本體。五處卡片正規化（Firestore 寫入、預設卡合併、更新、排序、單筆存檔）同步補上 infoFn 的傳遞。「研討會資料整理」卡片改成 actionType link 開 agy ＋ infoFn 開原本那份說明書 modal，兩個入口並存。CARD_CONTENT_VERSION 11→12
+  v6.10 (2026-09-10) - 「研討會資料整理」卡片從 modal 說明書改成一鍵啟動：actionType 由 modal 改 link，href 走既有的 ytcli:// 協定 ytcli://agy/56CU6KiO5pyD5pW055CG（base64url 解碼＝「研討會整理」），點卡片直接開新終端機視窗跑 agy --effort medium -i「研討會整理」。SKILL 端同步加上「沒收到資料夾路徑就先問『請問你要整理哪個資料夾？』」的硬性規則（SKILL.md 升 v1.1）。CARD_CONTENT_VERSION 10→11。註：原本的 modal 說明書 HTML 與 openSeminarOrganizer/closeSeminarOrganizer 函式保留在檔案裡但目前沒有入口，待決定要不要改掛 📖 按鈕
+  v6.9 (2026-09-10) - 新增「研討會資料整理」卡片（🎪 → modal 說明書）：一天跑多場活動帶回來的照片／錄音／錄影／簡報拍照，依錄音錄影的時間段切出場次，用聯絡表讓 AI 逐格判讀把照片分成簡報／現場／誤拍，產「舊檔名→新檔名」對照表經使用者確認後才搬檔，媒體進 D:\2026_已整理課程\<YYYYMMDD_HHMM_主題>\、照片進 D:\2026_照片集\<同名>\、課程包 MD 進 vault 30_研究\課程逐字稿整理\<同名>\，再用 mklink /J 目錄接合點讓課程夾同時看得到照片與文件、實體只存一份。技能正本 C:\Users\admin\.codex\skills\seminar-organizer\（含 resegment.py 字幕重切與 contact_sheet.py 聯絡表）。CARD_CONTENT_VERSION 9→10 讓 Firestore 同步更新
+  v6.8 (2026-09-10) - 卡片交付產物清單同步 SKILL.md v1.3.5 新增的硬性規則 2：心智圖 MD 最上方內建指向同資料夾 HTML 版的相對路徑超連結，且 HTML 不是另寫一份、內容與 MD 逐字一致，改了 MD 必須重產 HTML
+  v6.7 (2026-09-10) - 卡片 modal ③ 補上「置頂原片連結必須是 [標題](網址) Markdown 超連結、不可裸網址」，與 SKILL.md v1.3.4 的硬性規則 1 同步
+  v6.6 (2026-09-10) - 修正 v6.4：YT 摘要產出路徑的 YT摘要 是獨立的一層資料夾，不是資料夾名前綴：D:\本機MD檔\30_研究\課程逐字稿整理\YT摘要\<YYYYMMDD_影片名>\。三處同步修正：本卡片 modal、SKILL.md（升 v1.3.3）、fetch_transcript.py（升 v1.2.0，DEFAULT_ROOT 末端加 \YT摘要、folder_name 回復無前綴）
+  v6.5 (2026-09-09) - 修「影音課程流水線」卡片 modal ⑤ 輸出位置的舊路徑：C:\Users\admin\Desktop\本機MD檔 → D:\本機MD檔（vault 於 2026-08-05 已從桌面搬到 D 槽，這張卡片漏改）。已比對過 skills 正本：course-content-pipeline 與 course-collect 裡的 Desktop\本機MD檔 是刻意保留的歷史警語與教訓記述，不動；course-filing 已無殘留
+  v6.4 (2026-09-09) - YT 摘要產出資料夾加 YT摘要 前綴：D:\本機MD檔\30_研究\課程逐字稿整理\YT摘要<YYYYMMDD_影片名>\（上層目錄不變，只加前綴，讓該目錄下分得出哪些是 YT 摘要產的）。三處同步改：本卡片 modal 的「預設儲存路徑」、skill 正本 C:\Users\admin\.codex\skills\yt-summary\SKILL.md（升 v1.3.2，.claude 與 .gemini 為 junction 自動同步）、scripts\fetch_transcript.py 的 folder_name（升 v1.1.0）
+  v6.3 (2026-09-09) - 使用者裁定：五顆雲端 AI 網頁按鈕（ChatGPT/Claude/Perplexity/Grok/Gemini 的 ?q= 寫法）全數拿掉，改成四顆本機 CLI：ChatGPT(codex) / Claude(claude) / agy(--effort medium -i) / Gemini(gemini -i)。Hermes 不做按鈕（只有 -z 一次性模式，沒有「帶初始指令進互動」的用法）。協定格式擴充為 ytcli://<cli>/<b64>，run.ps1 升 v2.0 做分流，舊格式 ytcli://<b64> 仍預設走 claude。拿掉 AI_ENDPOINTS 與 sendToAi()
+  v6.2 (2026-09-09) - 「一鍵開 AI」區塊新增第六顆「⌨️ Claude Code CLI」：不走雲端 AI 網頁，改走新建的本機協定 ytcli://（HKCU\Software\Classes\ytcli → C:\Code\ytcli\start.bat → run.ps1 v1.0），直接開一個新終端機視窗跑 claude "<指令>"。prompt 以 base64url 編碼帶在 URI 裡，再由 run.ps1 解碼寫成 UTF-8 暫存檔後讀進來，全程不讓中文經過 cmd 命令列（避開碼頁 950/65001 亂碼）。選「開新視窗」而非「貼進現有視窗」：不搶焦點、不怕原視窗正在忙、不依賴 Windows Terminal 分頁順序
+  v6.1 (2026-09-09) - YT 摘要 modal 新增「一鍵開 AI 並自動送出」區塊：貼 YouTube 網址後點 ChatGPT / Claude / Perplexity / Grok 按鈕，直接開新分頁並自動填字送出（靠各站的 ?q= 網址參數，零安裝、零後端）。Gemini 官方不吃 ?q=，退回「複製到剪貼簿 + 開頁」；prompt 超過 8000 字元（網址上限）也自動退回複製模式。編輯區改過 prompt 就不再被網址覆蓋（dataset.touched）
+  v6.0 (2026-09-09) - 新增「YouTube 極速摘要（本機）」卡片（⚡ → modal 說明書）：免下載影片（0 MB MP4）、字幕優先、音訊轉完即刪，30 秒快速產出置頂原片連結的摘要 MD（含清洗後高讚留言的客觀正反深度批判性檢驗）與 Markmap 互動心智圖網頁版 HTML，預設存入 D:\本機MD檔\30_研究\課程逐字稿整理\。具備會話持續監聽（Session Mode），對 AI 說過「YT摘要」後後續貼網址皆自動批次執行。CARD_CONTENT_VERSION 8→9 讓 Firestore 同步更新
+  v5.9 (2026-09-09) - 「OpenSlideX 簡報（本機）」卡片改名「簡報助手（本機）」，並加上 🚀 啟動鈕：走新協定 slidex://（HKCU\Software\Classes\slidex → D:\2026_簡報工具\start.bat v1.0）。bat 仿 todo_dashboard v2.0：先探 4172 有沒有人在聽，有就只開瀏覽器不重複起服務，沒有才啟動 node。Node 沒有 pythonw 那種無視窗版，所以服務會留一個最小化黑視窗，關掉它就等於關掉服務（modal 內已寫明）。修正 v5.2 當時「Node 服務要常駐所以做不了一鍵啟動」的判斷。modal 全面改寫：拿掉 OpenSlideX 英文名（使用者裁定一律稱「簡報助手」，見 institution\preferences.md 第 45 條）、③ 改成對 AI 說「叫簡報助手…」、④ 補上「正本是 mdx 不是 PPT 檔，要給同事得先 export pptx」與「dist\renders 拼貼圖不是成品」。CARD_CONTENT_VERSION 7→8 讓 Firestore 上的舊卡片標題被覆寫
   v5.8 (2026-09-04) - 新增「對話名同步」卡片（🏷️ → modal 說明書）：把 Claude Code 的對話名（session jsonl 裡的 ai-title）對齊 20_專案\_進行中\ 的進度檔名，讓 /resume 清單跟 vault 對得起來。對 AI 說「同步檔名」觸發 session-title-sync skill；收工流程自動 C 也會跑一次。機制限制：Claude Code 每回合都會 append 一筆自己算的 ai-title，進行中的 session 改了會被蓋掉，只有已結束的 session 改動才穩。腳本在 C:\Users\admin\.codex\skills\session-title-sync\（不在本 repo，僅 Claude Code 適用）
   v5.7 (2026-08-31) - 新增「正反比較決策分析器」卡片（⚖️ → modal 說明書）：三代理正反辯論（正方極致立論＋社群推坑好評、反方魔鬼代言＋社群吐槽與災情報告、客觀事實＋即時價格/購買通路連結），主控端論點碰撞交叉審查，提煉根本分歧與 If-Then 條件化決策樹，產出左右雙欄對照總表，自動存檔入 Obsidian（30_研究/正反比較/）並調用 URI 開啟。適用所有 AI（Codex、Claude、Hermes、agy）下「比較」「正反比較」等指令
   v5.6 (2026-08-31) - 將「課程雲端比對歸檔」卡片名稱更新為「ECF課程下載整理器」
@@ -269,7 +283,7 @@
 
     <div class="step">
       <div class="step-label">⑤ 輸出位置</div>
-      <div class="cmd-box">C:\Users\admin\Desktop\本機MD檔\30_研究\課程逐字稿整理\YYYYMMDD_課程名\</div>
+      <div class="cmd-box">D:\本機MD檔\30_研究\課程逐字稿整理\YYYYMMDD_課程名\</div>
     </div>
 
     <hr class="divider">
@@ -592,6 +606,185 @@
   </div>
 </div>
 
+<!-- yt-summary modal（v6.0） -->
+<div class="modal-overlay" id="ytSummaryModal" onclick="closeOnOverlay(event)">
+  <div class="modal" style="max-height:90vh">
+    <button class="modal-close" onclick="closeYtSummary()">✕</button>
+    <div class="modal-title">⚡ YouTube 極速摘要與心智圖</div>
+    <div class="modal-sub">零影片下載、字幕優先、30 秒出成品、正本直存 Vault</div>
+
+    <div class="step">
+      <div class="step-label">怎麼用（會話持續監聽模式）</div>
+      <div class="cmd-box" id="ytSummaryPromptCmd">YT摘要 https://www.youtube.com/watch?v=...</div>
+      <button class="copy-btn" id="ytSummaryCopyBtn" onclick="copyCmd(this, document.getElementById('ytSummaryPromptCmd').textContent)">複製指令範本</button>
+      <div style="font-size:12px;color:#aaa;margin-top:6px">
+        只要在對話中講過一次「<strong>YT摘要</strong>」，當前會話即進入<strong>持續監聽狀態</strong>！<br>
+        後續貼上任何 YouTube 連結（單篇、換行多篇批次貼上、Shorts、短網址），AI 均自動直接全量摘要，免重複下指令。
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">⌨️ 一鍵送進本機 CLI（開新視窗直接跑）</div>
+      <input class="path-input" id="aiSendUrl" placeholder="https://www.youtube.com/watch?v=..." oninput="buildAiPrompt()" />
+      <textarea class="path-input" id="aiSendPrompt" rows="3" oninput="this.dataset.touched='1'" style="margin-top:8px;resize:vertical;font-family:Consolas,monospace">YT摘要 </textarea>
+      <div class="mode-row" style="margin-top:8px;flex-wrap:wrap">
+        <button class="mode-btn" onclick="sendToCli('codex')">🟢 ChatGPT<br><span style="font-size:11px;font-weight:400;color:inherit">codex</span></button>
+        <button class="mode-btn" onclick="sendToCli('claude')">🟠 Claude<br><span style="font-size:11px;font-weight:400;color:inherit">claude</span></button>
+        <button class="mode-btn" onclick="sendToCli('agy')">🔷 agy<br><span style="font-size:11px;font-weight:400;color:inherit">Antigravity</span></button>
+        <button class="mode-btn" onclick="sendToCli('gemini')">🔵 Gemini<br><span style="font-size:11px;font-weight:400;color:inherit">官方 CLI</span></button>
+      </div>
+      <div id="aiSendHint" style="font-size:12px;color:#aaa;margin-top:8px">
+        這四顆全部不走雲端 AI 網頁，走本機協定：<br>
+        <code>ytcli://&lt;cli&gt;/&lt;base64 指令&gt;</code> → <code>C:\Code\ytcli\start.bat</code> → <code>run.ps1</code> → 開一個新終端機視窗直接跑。<br>
+        對應指令：<code>codex "…"</code> / <code>claude "…"</code> / <code>agy --effort medium -i "…"</code> / <code>gemini -i "…"</code><br>
+        指令以 base64 帶在網址裡、落成 UTF-8 暫存檔再讀進 CLI，全程不讓中文經過 cmd 命令列（避開碼頁 950/65001 亂碼）。<br>
+        只在這台電腦有效；第一次按 Chrome 會問「是否要開啟」，勾「一律允許」後按開啟。
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">核心特色與四無原則</div>
+      <div class="cmd-box" style="font-family:sans-serif;line-height:1.75">
+        <strong>① 零影片下載</strong>：完全不下載臃腫的 MP4，0 MB 本機硬碟負擔。<br>
+        <strong>② 音訊轉完即刪</strong>：字幕優先（1~2 秒抓取）；無字幕時以 yt-dlp 抓純音訊串流送 Groq 轉錄，<strong>轉完立即自動刪除暫存音訊</strong>，目標目錄絕不殘留任何 MP3/M4A 檔案。<br>
+        <strong>③ 原片連結強制置頂</strong>：產出的所有 Markdown 檔案與 HTML 心智圖大標題下方，<strong>一律強制置頂原始 YouTube 連結</strong>，且必須是 <code>[標題](網址)</code> 的 Markdown 超連結、<strong>不可裸網址</strong>，方便隨時回溯原片。<br>
+        <strong>④ 正本直存與自動預覽</strong>：產出直接存入 Vault 課程逐字稿目錄，並自動使用預設瀏覽器跳出 Markmap 心智圖網頁版互動預覽。
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">💬 精選留言與社群正反深度分析（核心亮點）</div>
+      <div class="cmd-box" style="font-family:sans-serif;line-height:1.75">
+        <strong>① 智慧過濾清洗</strong>：擷取 Top 40 熱門留言，自動剔除沒頭沒尾、純符號貼圖、無實質脈絡的灌水留言。<br>
+        <strong>② 權重指標排序</strong>：高讚數、高互動、具實質論點爭議與深入探討的關鍵留言固定置頂。<br>
+        <strong>③ 逐條正反批判性檢驗（精選 Top 3~5 則代表性留言）</strong>：<br>
+        &nbsp;&nbsp;• <strong>完整原話</strong>：保留留言者 ID、讚數、發表時間與原始全文。<br>
+        &nbsp;&nbsp;• <strong>核心主張</strong>：凝練為一句話核心觀點。<br>
+        &nbsp;&nbsp;• <strong>客觀判定</strong>：明確標註【判定：正確／部分正確／存在誤區／事實錯誤】。<br>
+        &nbsp;&nbsp;• <strong>正方依據（合理之處）</strong>：客觀論述其立論依據，符合哪些現實經驗或技術特徵。<br>
+        &nbsp;&nbsp;• <strong>反方盲點（漏洞與限制）</strong>：點出其忽略的前提假設、邊界限制、技術盲區或反例。<br>
+        &nbsp;&nbsp;• <strong>綜合小結與補強指引</strong>：提供平衡視角的避坑建議。<br>
+        <span style="font-size:12px;color:#888">（若原片無留言或關閉留言功能，會自動標記載明）</span>
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">交付產物清單（直存 Vault）</div>
+      <div class="cmd-box" style="font-family:sans-serif;line-height:1.75">
+        • <strong>&lt;影片名&gt;_摘要.md</strong>：置頂原片連結，含摘要總覽、待辦項目、重點記錄、建議行動、精選留言正反分析 5 大章節。<br>
+        • <strong>&lt;影片名&gt;_心智圖.md</strong>：知識模組化 Markdown 與結尾金句，最上方內建指向同資料夾 HTML 版的相對路徑超連結。<br>
+        • <strong>&lt;影片名&gt;_心智圖網頁版.html</strong>：Markmap 獨立互動網頁，支援縮放、拖曳與節點展開收合。<strong>內容與 MD 版逐字一致</strong>（同一份 MD 嵌進 Markmap，改了 MD 就重產 HTML）。<br>
+        • <strong>metadata.json / comments.json / raw_transcript.txt</strong>：結構化元資料、清洗後熱門留言與逐字稿全文。
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">預設儲存路徑</div>
+      <div class="cmd-box">D:\本機MD檔\30_研究\課程逐字稿整理\YT摘要\&lt;YYYYMMDD_影片名&gt;\</div>
+    </div>
+
+    <div style="font-size:12px;color:#aaa;margin-top:16px">
+      技能正本：<code>C:\Users\admin\.gemini\config\skills\yt-summary\SKILL.md</code>（版本 v1.3.1，全 AI Junction 實時同步）。
+    </div>
+  </div>
+</div>
+
+<!-- seminar-organizer modal（v6.9） -->
+<div class="modal-overlay" id="seminarOrganizerModal" onclick="closeOnOverlay(event)">
+  <div class="modal" style="max-height:90vh">
+    <button class="modal-close" onclick="closeSeminarOrganizer()">✕</button>
+    <div class="modal-title">🎪 研討會資料整理</div>
+    <div class="modal-sub">一天跑多場活動帶回來的一坨素材，依錄音時間切場次、照片自動分類、改名歸位</div>
+
+    <div class="step">
+      <div class="step-label">① 什麼時候用</div>
+      <div style="font-size:13px;color:#ccc;line-height:1.7">
+        參加完研討會回來，手機裡是幾百張沒有場次邊界的照片（有拍投影片、有會場、有誤觸快門）、
+        好幾段錄音、可能還有錄影或空拍，檔名全是 <code>IMG_20260909_144200.jpg</code> 這種沒資訊的東西。<br>
+        <strong>單一場課程的收齊</strong>用「課程散檔歸檔」（course-collect）；
+        <strong>已切好場次只要跑逐字稿</strong>用「影音課程流水線」。本卡片處理的是<strong>還沒切場次的原始素材堆</strong>。
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-label">② 對 AI 說</div>
+      <div class="cmd-box" id="seminarPromptCmd">研討會　D:\新增資料夾</div>
+      <button class="copy-btn" onclick="copyCmd(this, document.getElementById('seminarPromptCmd').textContent)">複製指令範本</button>
+      <div style="font-size:12px;color:#aaa;margin-top:6px">
+        觸發詞：<strong>研討會</strong>、研討會整理、活動素材整理、一天多場整理。把素材所在資料夾路徑一起給它。
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">③ 會發生什麼（五步，第四步前一定會停下來等你）</div>
+      <div style="font-size:13px;color:#ccc;line-height:1.8">
+        <strong>1 盤點</strong>　ffprobe 取每段媒體長度，照片時間從檔名取（不看 mtime，複製會變）<br>
+        <strong>2 切場次</strong>　以錄音／錄影的起訖時間段為基準，把照片對回所屬場次；區間外的歸給時間上最近的那一段當會前／會後照<br>
+        <strong>3 分照片</strong>　縮圖貼成 5×5 聯絡表、每格標索引號，AI 逐格判讀分成<strong>簡報／現場／誤拍</strong>（不逐張讀原圖，才不會吃爆 context）<br>
+        <strong>4 產對照表</strong>　輸出「舊檔名 → 新檔名」全表放回來源夾，<strong style="color:#e8a33d">未經你確認不動任何檔案</strong><br>
+        <strong>5 搬檔建連結</strong>　搬移（不是複製）＋改名，再建目錄接合點
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-label">④ 東西會放到哪（三個庫 + 接合點）</div>
+      <div class="cmd-box" style="line-height:1.7">D:\2026_已整理課程\&lt;YYYYMMDD_HHMM_主題&gt;\　　媒體實體
+D:\2026_照片集\&lt;同名&gt;\　　　　　　　　　照片實體（簡報\ 現場\ _誤拍\）
+D:\本機MD檔\30_研究\課程逐字稿整理\&lt;同名&gt;\　課程包 MD 實體</div>
+      <div style="font-size:12px;color:#aaa;margin-top:8px">
+        課程夾裡的 <code>photos</code> 與 <code>文件</code> 是 <code>mklink /J</code> 目錄接合點，
+        指回照片集與 vault，<strong>實體只存一份</strong>。<br>
+        <strong style="color:#e8a33d">接合點語意（已實測）</strong>：透過連結<strong>修改或刪除裡面的檔案＝動到實體檔</strong>，兩邊是同一份；
+        但刪掉<strong>連結本身</strong>是安全的，rm -rf / Remove-Item -Recurse / rmdir 三種都只移除連結、目標內容完好。<br>
+        MD 不用單檔硬連結：Obsidian 存檔是「寫新檔再改名」，一存就把硬連結斷開、兩邊分岔。
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-label">⑤ 命名規則：時間只放資料夾，檔名只放主題</div>
+      <div class="cmd-box" style="line-height:1.7">資料夾　　20260315_1400_資安研討會　　HHMM＝該場錄音起始時間，同日自動照時序排
+媒體＋字幕　資安研討會.m4a　資安研討會.mp3　資安研討會.srt　　同名播放器才自動掛字幕
+衍生文字　　資安研討會_逐字稿.md　資安研討會_摘要.md　資安研討會_技能樹.md
+照片　　　　照片_簡報_20260315_資安研討會_001.jpg</div>
+      <div style="font-size:12px;color:#aaa;margin-top:8px">
+        照片子類受控，正本在 <code>D:\本機MD檔\99_系統\檔名規則與類別詞表.md</code>：
+        <strong>簡報</strong>（拍投影片）、<strong>會場</strong>（研討會現場、報到、講者）、
+        <strong>辦公室</strong>（公司內部場合，不要用「會場」）、<strong>誤拍</strong>（地板、口袋、全黑）。
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-label">⑥ 收齊之後接課程流水線</div>
+      <div style="font-size:13px;color:#ccc;line-height:1.7">
+        每個場次夾的媒體可以再丟給 <strong>8767 影音課程流水線</strong>，產出逐字稿、校對版、摘要、培訓報告、心智圖、技能樹。<br>
+        <strong style="color:#e8a33d">字幕斷句是真正的驗收關卡</strong>：transcribe.py 自動產的 srt 通常過不了門檻
+        （實測一段 9 分鐘對話：228 條、平均 8.6 字、行尾懸空詞 22 條）。
+        用 <code>scripts\resegment.py</code> 讀字級時間軸 <code>words.json</code> 重切，
+        依標點／靜音間隔／引導連接詞斷句、懸空詞往後推、碎片向前併，
+        重切後 137 條、平均 15.4 字、3.89 秒、CPS 4.06、<strong>懸空詞 0</strong>。
+      </div>
+    </div>
+
+    <div style="font-size:12px;color:#aaa;margin-top:16px">
+      技能正本：<code>C:\Users\admin\.codex\skills\seminar-organizer\SKILL.md</code>（v1.0）。
+      附 <code>scripts\resegment.py</code>（字幕重切）與 <code>scripts\contact_sheet.py</code>（聯絡表產生器）。
+      <code>.claude\skills</code> 是指向 <code>.codex\skills</code> 的連結，Claude／Codex／Hermes 共用同一份。
+    </div>
+  </div>
+</div>
+
 <!-- yt-dlp modal -->
 <div class="modal-overlay" id="ytDlpModal" onclick="closeOnOverlay(event)">
   <div class="modal">
@@ -737,58 +930,66 @@
   </div>
 </div>
 
-<!-- OpenSlideX modal（v5.2）：說明書 + 開啟本機 Workspace 的入口
-     沒有做自訂協定，服務要自己用指令起（Node 服務常駐，不像 8767 那種一按就起的 bat）。 -->
+<!-- 簡報助手 modal（v5.9）：說明書 + 啟動本機服務 + 開啟編輯台
+     v5.9 起做了自訂協定 slidex://（HKCU\Software\Classes\slidex → D:\2026_簡報工具\start.bat），
+     卡片右上角 🚀 一按就起服務，不必再自己貼指令。 -->
 <div class="modal-overlay" id="slideXModal" onclick="closeOnOverlay(event)">
   <div class="modal" style="max-height:90vh">
     <button class="modal-close" onclick="closeSlideX()">✕</button>
-    <div class="modal-title">🖼️ OpenSlideX 簡報（本機）</div>
-    <div class="modal-sub">一份簡報＝本機一個資料夾＋一個 presentation.mdx，可以叫 AI 直接改，改完匯出 PPTX／HTML</div>
+    <div class="modal-title">🖼️ 簡報助手（本機）</div>
+    <div class="modal-sub">一份簡報＝本機一個資料夾＋一個 presentation.mdx，可以叫 AI 直接改，改完匯出 PPT 檔</div>
 
     <div class="step">
-      <div class="step-label">① 先啟動服務</div>
-      <div class="cmd-box" id="slideXCmd">cd /d D:\2026_簡報工具 &amp;&amp; npm run dev</div>
-      <button class="copy-btn" onclick="copySlideXCmd(this)">複製指令</button>
-      <div style="font-size:12px;color:#aaa;margin-top:6px">貼到「命令提示字元」執行。第一次會多花十幾秒打包，出現 <code>http://127.0.0.1:4172/workspace</code> 就好了。<strong>這個黑視窗不能關</strong>，關了網頁就斷線。</div>
+      <div class="step-label">① 啟動服務</div>
+      <a class="copy-btn" style="text-align:center;text-decoration:none;display:block" href="slidex://open">🚀 啟動簡報助手</a>
+      <div style="font-size:12px;color:#aaa;margin-top:6px">
+        按下去瀏覽器會問「要開啟 Slide Assistant 嗎」，按允許。服務已經在跑就直接開分頁，不會重複啟動。<br>
+        第一次啟動要多花十幾秒打包。畫面上會多一個<strong>最小化的黑視窗</strong>，那個就是服務本身——<strong>關掉它＝關掉簡報助手</strong>。<br>
+        只有這台電腦有效（協定註冊在 HKCU\Software\Classes\slidex），手機或別台點了不會有反應。
+      </div>
+      <div class="cmd-box" id="slideXCmd" style="margin-top:10px">D:\2026_簡報工具\start.bat</div>
+      <button class="copy-btn" onclick="copySlideXCmd(this)">複製路徑</button>
+      <div style="font-size:12px;color:#aaa;margin-top:6px">🚀 沒反應時的備援：直接雙擊這個 bat，效果一樣。</div>
     </div>
 
     <hr class="divider">
 
     <div class="step">
-      <div class="step-label">② 開啟編輯器</div>
-      <a class="copy-btn" style="text-align:center;text-decoration:none" href="http://127.0.0.1:4172/workspace" target="_blank" rel="noopener">開啟 Workspace（127.0.0.1:4172）</a>
-      <div style="font-size:12px;color:#aaa;margin-top:6px">只有這台電腦有效，手機或別台點了不會有反應。左邊是簡報清單，可開空白檔或套內建範本（Summer Time Report／Moodboard），改完即時預覽。</div>
+      <div class="step-label">② 開啟編輯台</div>
+      <a class="copy-btn" style="text-align:center;text-decoration:none" href="http://127.0.0.1:4172/workspace" target="_blank" rel="noopener">開啟編輯台（127.0.0.1:4172）</a>
+      <div style="font-size:12px;color:#aaa;margin-top:6px">左邊是簡報清單，可開空白檔或套內建範本，改完即時預覽。這是純本機服務，簡報不會上雲，斷網也能用。</div>
     </div>
 
     <hr class="divider">
 
     <div class="step">
-      <div class="step-label">③ 叫 AI 改簡報（MCP，已裝好）</div>
+      <div class="step-label">③ 叫 AI 改簡報（已裝好，直接講就行）</div>
       <div class="cmd-box" style="font-family:sans-serif">
-        Claude Code、Codex、Claude Desktop 三邊都已註冊 <code>open_slidex_workspace</code>，直接下指令就好，例如：<br>
-        「用 open-slidex 把 D:\...\某某摘要.md 做成 12 頁簡報」<br>
-        「把第 5 頁標題改小一點，圖換成 assets 裡那張」
+        對 Claude Code 或 Codex 說「<strong>叫簡報助手</strong>…」，例如：<br>
+        「叫簡報助手把 D:\...\某某摘要.md 做成 12 頁簡報」<br>
+        「叫簡報助手把第 5 頁標題改小一點，圖換成 assets 裡那張」
       </div>
       <div style="font-size:12px;color:#aaa;margin-top:6px">
-        AI 拿到六個工具：選簡報、讀原始碼／素材、匯入 PPTX／HTML 舊檔、找圖轉圖、審查、編輯。<br>
+        AI 拿到六個工具：選簡報、讀原始碼／素材、匯入舊的簡報檔或網頁、找圖轉圖、審查、編輯。<br>
         提交前系統會自動做結構驗證＋渲染檢查，不合格會退件重修，所以不會把版面改爛。<br>
-        <strong>MCP 是新裝的，Claude Code／Codex 要重開一次才吃得到。</strong>
+        投影片只有六種原生圖層可用：文字、圖片、影片、圖表、表格、造型。
       </div>
     </div>
 
     <hr class="divider">
 
     <div class="step">
-      <div class="step-label">④ 檔案在哪、怎麼匯出</div>
+      <div class="step-label">④ 檔案在哪、怎麼變成 PPT 檔</div>
       <div class="cmd-box">D:\2026_簡報工具\open-slidex-workspace\&lt;簡報名&gt;\presentation.mdx</div>
       <div style="font-size:12px;color:#aaa;margin-top:6px">
-        每份簡報自帶 <code>assets\</code>（圖）、<code>knowledge\</code>（你丟給 AI 參考的筆記／PDF／CSV）。<br>
-        匯出：<code>npm run open-slidex -- export &lt;檔案&gt; --format pptx --out 檔名.pptx</code>（format 可選 pptx／html／mdx）。<br>
+        正本是純文字的 <code>presentation.mdx</code>，不是 PPT 檔。要給同事或用 PowerPoint 播，要匯出一份：<br>
+        <code>npm run open-slidex -- export &lt;檔案&gt; --format pptx --out 檔名.pptx</code>（格式可選 pptx／html／mdx），或直接叫 AI「匯出成 PPT」。<br>
+        每份簡報自帶 <code>assets\</code>（圖）、<code>knowledge\</code>（你丟給 AI 參考的筆記／PDF／CSV）。<code>dist\renders\</code> 裡的拼貼圖是系統自我檢查用的，不是成品。<br>
         更新版本：在 D:\2026_簡報工具 執行 <code>git pull</code> 再 <code>npm install</code>。
       </div>
     </div>
 
-    <div style="font-size:12px;color:#aaa;margin-top:16px">來源 github.com/zz41354899/open-slidex（MIT）。完全本機、不需帳號，簡報不會上雲。</div>
+    <div style="font-size:12px;color:#aaa;margin-top:16px">底層是開源專案 open-slidex（MIT）。完全本機、不需帳號，簡報不會上雲。</div>
   </div>
 </div>
 
@@ -874,7 +1075,7 @@ const getGroqKeyFn = httpsCallable(functions, 'getGroqKey');
 const getAssemblyAIKeyFn = httpsCallable(functions, 'getAssemblyAIKey');
 const ALLOWED_EMAIL = 'ohihio@gmail.com';
 const TOOLS_COL = 'admin_tools';
-const CARD_CONTENT_VERSION = 7;
+const CARD_CONTENT_VERSION = 12;
 const ICON_OPTIONS = ['🗂️','🎙️','📝','📚','📌','📎','📦','⚙️','🛠️','💡','📊','🧾','📁','🔧','🔍','🚀','⭐','✅','⚖️'];
 const DEFAULT_TOOLS = [
   // order -1：Firestore 裡既有卡片的 order 是 0 起跳，給 -1 才排得到第一格（normalizeOrder 會重編成 0）
@@ -898,9 +1099,11 @@ const DEFAULT_TOOLS = [
   { id: 'auto-screenshot', title: '自動翻頁截圖（本機）', description: 'F9 開始／暫停，自動翻頁存 PNG；按 🚀 啟動工具', icon: '📸', actionType: 'modal', modalFn: 'openAutoShot', launchHref: 'autoshot://start', order: 13, createdAt: '2026-08-08T00:00:00+08:00' },
   { id: 'image-to-pdf', title: '圖片合併 PDF（本機）', description: '整夾圖片合成 PDF 並依序編號歸檔；需啟動 8767', icon: '📄', actionType: 'modal', modalFn: 'openImgPdf', launchHref: 'mediatools://open', order: 14, createdAt: '2026-08-08T00:00:00+08:00' },
   { id: 'vote-admin', title: '投票管理', description: '開投票活動、換照片、改名單，看即時結果與明細', icon: '🗳️', actionType: 'link', href: '/admin/vote/', order: 15, createdAt: '2026-08-20T00:00:00+08:00' },
-  { id: 'open-slidex', title: 'OpenSlideX 簡報（本機）', description: '本機 MDX 簡報編輯器＋MCP，可叫 AI 直接改投影片；需啟動 4172', icon: '🖼️', actionType: 'modal', modalFn: 'openSlideX', order: 16, createdAt: '2026-08-21T00:00:00+08:00' },
+  { id: 'open-slidex', title: '簡報助手（本機）', description: '叫 AI 直接改投影片、匯出 PPT；沒開按 🚀 啟動 4172', icon: '🖼️', actionType: 'modal', modalFn: 'openSlideX', launchHref: 'slidex://open', order: 16, createdAt: '2026-08-21T00:00:00+08:00' },
   { id: 'todo-dashboard-local', title: '待辦總表儀表板（本機）', description: '九分類看板讀寫 Obsidian 待辦總表，可勾選與新增；沒開按 🚀 啟動 8771', icon: '✅', actionType: 'link', href: 'http://127.0.0.1:8771/', launchHref: 'todoboard://open', order: 17, createdAt: '2026-08-25T00:00:00+08:00' },
-  { id: 'session-title-sync', title: '對話名同步（本機）', description: '把 Claude Code 對話名對齊進度檔名；對 AI 說「同步檔名」', icon: '🏷️', actionType: 'modal', modalFn: 'openSessionTitleSync', order: 18, createdAt: '2026-09-04T00:00:00+08:00' }
+  { id: 'session-title-sync', title: '對話名同步（本機）', description: '把 Claude Code 對話名對齊進度檔名；對 AI 說「同步檔名」', icon: '🏷️', actionType: 'modal', modalFn: 'openSessionTitleSync', order: 18, createdAt: '2026-09-04T00:00:00+08:00' },
+  { id: 'yt-summary', title: 'YouTube 極速摘要（本機）', description: '貼網址免下影片30秒出摘要、留言正反批判檢驗與心智圖HTML；對 AI 說「YT摘要」', icon: '⚡', actionType: 'modal', modalFn: 'openYtSummary', order: 19, createdAt: '2026-09-09T00:00:00+08:00' },
+  { id: 'seminar-organizer', title: '研討會資料整理', description: '點一下開 agy 並送出「研討會整理」，AI 會問你要整理哪個資料夾；📖 看說明書', icon: '🎪', actionType: 'link', href: 'ytcli://agy/56CU6KiO5pyD5pW055CG', infoFn: 'openSeminarOrganizer', order: 20, createdAt: '2026-09-10T00:00:00+08:00' }
 ];
 
 let toolsState = DEFAULT_TOOLS.map(tool => ({ ...tool }));
@@ -1026,6 +1229,7 @@ async function loadToolOverrides() {
           href: tool.href || '',
           modalFn: tool.modalFn || '',
           launchHref: tool.launchHref || '',
+          infoFn: tool.infoFn || '',
           contentVersion: CARD_CONTENT_VERSION
         });
         staleContent.push(merged);
@@ -1053,6 +1257,7 @@ async function seedDefaultTools() {
       href: tool.href || '',
       modalFn: tool.modalFn || '',
       launchHref: tool.launchHref || '',
+      infoFn: tool.infoFn || '',
       contentVersion: CARD_CONTENT_VERSION,
       order: tool.order,
       createdAt: tool.createdAt || seededAt,
@@ -1073,6 +1278,7 @@ async function migrateCardContent(tools) {
     href: tool.href || '',
     modalFn: tool.modalFn || '',
     launchHref: tool.launchHref || '',
+    infoFn: tool.infoFn || '',
     contentVersion: CARD_CONTENT_VERSION,
     updatedAt
   }, { merge: true }));
@@ -1110,6 +1316,7 @@ function renderTools() {
       </div>
       <div class="tool-actions">
         ${tool.launchHref ? `<button class="tool-action-btn" onclick="event.stopPropagation(); launchLocalService('${tool.launchHref}')" title="啟動本機服務">🚀</button>` : ''}
+        ${tool.infoFn ? `<button class="tool-action-btn" onclick="event.stopPropagation(); ${tool.infoFn}()" title="說明書">📖</button>` : ''}
         <button class="tool-action-btn" onclick="event.stopPropagation(); openEditTool('${tool.id}')" title="編輯">✏️</button>
         <button class="tool-action-btn" onclick="event.stopPropagation(); moveToolLeft('${tool.id}')" title="左移" ${firstColumn ? 'disabled' : ''}>◀</button>
         <button class="tool-action-btn" onclick="event.stopPropagation(); moveToolRight('${tool.id}')" title="右移" ${lastColumn ? 'disabled' : ''}>▶</button>
@@ -1202,6 +1409,7 @@ async function persistToolOrder() {
       href: tool.href || '',
       modalFn: tool.modalFn || '',
       launchHref: tool.launchHref || '',
+      infoFn: tool.infoFn || '',
       contentVersion: CARD_CONTENT_VERSION,
       order: index,
       updatedAt
@@ -1222,6 +1430,7 @@ async function persistSingleTool(tool) {
     href: tool.href || '',
     modalFn: tool.modalFn || '',
     launchHref: tool.launchHref || '',
+    infoFn: tool.infoFn || '',
     contentVersion: CARD_CONTENT_VERSION,
     order: tool.order,
     updatedAt: serverTimestamp()
@@ -1309,6 +1518,9 @@ function closeOnOverlay(e) {
   if (e.target === document.getElementById('courseCollectModal')) closeCourseCollect();
   if (e.target === document.getElementById('courseDriveSyncModal')) closeCourseDriveSync();
   if (e.target === document.getElementById('proConModal')) closeProConAnalysis();
+  if (e.target === document.getElementById('sessionTitleSyncModal')) closeSessionTitleSync();
+  if (e.target === document.getElementById('ytSummaryModal')) closeYtSummary();
+  if (e.target === document.getElementById('seminarOrganizerModal')) closeSeminarOrganizer();
   if (e.target === document.getElementById('subtitleArchiveModal')) closeSubtitleArchive();
   if (e.target === document.getElementById('ytDlpModal')) closeYtDlp();
   if (e.target === document.getElementById('ytDownloadModal')) closeYtDownload();
@@ -1428,6 +1640,57 @@ function openSessionTitleSync() {
 }
 function closeSessionTitleSync() {
   document.getElementById('sessionTitleSyncModal').classList.remove('open');
+}
+
+// yt-summary（YouTube 極速摘要與心智圖）modal
+function openYtSummary() {
+  document.getElementById('ytSummaryModal').classList.add('open');
+}
+function closeYtSummary() {
+  document.getElementById('ytSummaryModal').classList.remove('open');
+}
+
+// seminar-organizer（研討會資料整理）modal
+function openSeminarOrganizer() {
+  document.getElementById('seminarOrganizerModal').classList.add('open');
+}
+function closeSeminarOrganizer() {
+  document.getElementById('seminarOrganizerModal').classList.remove('open');
+}
+
+// ── 一鍵送進本機 CLI（v6.3）──
+// 瀏覽器在沙箱裡，沒辦法直接對別的視窗打字，所以走自訂協定：
+//   ytcli://<cli>/<base64url 的 prompt>
+//     → HKCU\Software\Classes\ytcli
+//     → C:\Code\ytcli\start.bat → run.ps1 v2.0
+//     → 新開終端機視窗執行對應 CLI
+// 用 base64url 而不是 encodeURIComponent，是因為中文經過 cmd（碼頁 950/65001）
+// 會變亂碼；編種後全是 ASCII，到 PowerShell 那端才解回來。
+const CLI_NAMES = { codex: 'ChatGPT (codex)', claude: 'Claude', agy: 'agy (Antigravity)', gemini: 'Gemini' };
+
+// 貼網址時自動把 prompt 組好（使用者仍可自行改寫）
+function buildAiPrompt() {
+  const url = document.getElementById('aiSendUrl').value.trim();
+  const box = document.getElementById('aiSendPrompt');
+  if (box.dataset.touched === '1') return;   // 使用者手改過就不覆蓋
+  box.value = 'YT摘要 ' + url;
+}
+
+function toBase64Url(str) {
+  const bytes = new TextEncoder().encode(str);
+  let bin = '';
+  bytes.forEach(b => { bin += String.fromCharCode(b); });
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function sendToCli(cli) {
+  const prompt = document.getElementById('aiSendPrompt').value.trim();
+  const hint = document.getElementById('aiSendHint');
+  if (!prompt) { alert('請先貼網址或輸入要問的內容'); return; }
+
+  window.location.href = 'ytcli://' + cli + '/' + toBase64Url(prompt);
+  hint.innerHTML = '已呼叫 <code>ytcli://' + cli + '/</code>，應該會跳出一個新終端機視窗跑 <strong>' +
+    (CLI_NAMES[cli] || cli) + '</strong>。<br>沒反應代表協定未註冊、不在這台電腦，或 Chrome 的確認框被擋了。';
 }
 
 // 自動右鍵截圖 modal（說明書；啟動走卡片右上角 🚀 → autoshot://）

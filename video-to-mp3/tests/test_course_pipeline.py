@@ -1237,6 +1237,37 @@ class TestCourseSourceMove(unittest.TestCase):
         self.assertIn(".md", criterion)
         self.assertIn("跳過", criterion)
 
+    def test_auto_archive_course(self):
+        source = self.src_dir / "自動歸檔測試.mp3"
+        source.write_bytes(b"fake mp3")
+        manifest, manifest_path = server.create_course_manifest(
+            "local_mp3", str(source), "自動歸檔測試", output_root=self.output_root)
+
+        course_dir = Path(manifest["courseDir"])
+        (course_dir / "測試_逐字稿.md").write_text("# 逐字稿", encoding="utf-8")
+
+        # 把前置活躍 stages 全設為 completed
+        for name, st in manifest["stages"].items():
+            if name != "archive" and st["status"] != "skipped":
+                st["status"] = "completed"
+        manifest_path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+
+        fake_vault = Path(self.temp_dir.name) / "vault"
+        orig_vault = server.VAULT_COURSE_MD_ROOT
+        try:
+            server.VAULT_COURSE_MD_ROOT = str(fake_vault)
+            res = server.auto_archive_course(manifest_path)
+            self.assertIsNotNone(res)
+            self.assertEqual(res["stages"]["archive"]["status"], "completed")
+            self.assertTrue((fake_vault / course_dir.name / "測試_逐字稿.md").is_file())
+
+            # 再次執行 scan_course_progress 驗證 100%
+            rows = server.scan_course_progress(self.output_root)
+            self.assertEqual(rows[0]["percent"], 100)
+            self.assertEqual(rows[0]["status"], "completed")
+        finally:
+            server.VAULT_COURSE_MD_ROOT = orig_vault
+
 
 class TestCourseFolderName(unittest.TestCase):
     """2026-08-26：課程名自帶日期時，資料夾不該變成 20260826_20260826_主題。"""

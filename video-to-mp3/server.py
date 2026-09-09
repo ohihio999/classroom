@@ -1,6 +1,57 @@
 """
 影音工具本機服務（YouTube 下載 / 影片轉 MP3 / 錄音檔合併 / 圖檔轉 PDF）
 
+v1.16 2026-09-10 [Claude Code / Opus 5] ensure_course_docs_link() 改以「接合點實際指向的目標」
+                 為準：既有 junction 直接回傳 os.path.realpath() 的結果，不再無條件先 mkdir
+                 同名 Vault 資料夾。起因是舊檔清理時發現 4 個課程夾名帶重複日期
+                 （20260826_20260826_...），Vault 那邊卻是乾淨名，同名邏輯會另建重複夾；
+                 使用者裁定接合點重指乾淨名舊夾，此處配合改成尊重既有目標。
+
+v1.15 2026-09-10 [Claude Code / Opus 5] MD 從「複製一份到 Vault」改成「只存 Vault 一份」
+                 （使用者裁定：產出的 MD 放文件庫，課程資料夾只放對應的連結）：
+                 (1) 新增 COURSE_DOCS_LINK_NAME=「文件」與 ensure_course_docs_link()／
+                     _is_junction()／iter_course_md()。建任務當下就在課程資料夾建好指向
+                     Vault 課程逐字稿整理同名資料夾的目錄接合點（mklink /J，不需管理員權限）。
+                     AI 一路把 MD 寫進該接合點就等於直接寫進 Vault，全程只有一份，不用搬。
+                 (2) auto_archive_course() 由「複製」改「搬移」：只掃根層與非接合點子資料夾的
+                     殘留 .md，照相對路徑搬進 Vault 後刪原檔；內容相同直接刪重複份，
+                     同名但內容不同的另存 _課程夾版 兩份都留，絕不覆蓋（vault 那份可能已補過
+                     標籤與 wikilink，覆蓋是不可逆損失）。
+                 (3) rollback_course_manifest() 先 os.rmdir 拆掉接合點才刪課程資料夾——
+                     拆連結不會動到 Vault 裡的檔案。接合點建失敗時整筆回滾。
+                 (4) buildCoursePrompt() 加【產物落點】段，並改寫【自動收尾規則】。
+                     course-content-pipeline SKILL.md 同步改為 v1.3.0，三處規則一起改，
+                     只改一處會被另外兩處復原。
+v1.14 2026-09-10 [Claude Code / Opus 5] #course 課程進度清單三項改善＋產物預設全勾：
+                 (1) 課程名變成超連結，點一下由本機服務跑 explorer 開該課程資料夾。
+                     必須繞後端：Chrome 不讓 http 頁面直接跳 file://，新增 /api/course/open。
+                 (2) 清單改依 manifest 的 createdAt 由新到舊排序（原本是資料夾名排序，
+                     新課會掉到中間）；每列左側顯示建立日期。
+                 (3) 每列加刪除鍵：**只刪 course-manifest.json**，課程資料夾、影音檔、
+                     逐字稿與 Vault 副本全部保留（2026-09-10 使用者裁定）。新增 /api/course/delete，
+                     後端硬性檢查檔名必須是 course-manifest.json。按鈕要按兩下才生效
+                     （第一下變成「確定刪？」），不用 confirm() 彈窗免得卡住自動化。
+                 (4) 「要產出哪些東西」預設改成 8 顆全勾＋技能樹「含教學」；
+                     「含最小案例」「高密度總覽」「原字分段版」維持不勾（那三顆是改寫法的開關，
+                     不是多產一份檔）。
+v1.13 2026-09-10 [Claude Code / Opus 5] #course 一鍵送 agy，並把後半段流程從三步併成一步：
+                 (1) 主鍵改成「🚀 建立任務並送 agy」——建 manifest → 組指令 → 直接開新視窗跑 agy，
+                     建立失敗就不送。原本「建立任務 → 複製指令 → 回對話貼上」三步走完剩一步。
+                 (2) 「複製 AI 執行指令」不刪，降級成旁邊的次要備援鍵（button.ghost），
+                     要貼給 Claude／Codex 或別台機器時還用得到。
+                 (3) 新增 toBase64Url()／sendToAgy()：走 ytcli://agy/<base64url> 自訂協定，
+                     實作端是 C:\\Code\\ytcli\\run.ps1 v2.0（跑 agy --effort medium -i）。
+                     中文一定要 base64url，encodeURIComponent 會被 cmd 碼頁 950/65001 弄成亂碼。
+                 (4) 送出的指令原文與複製鍵完全相同（2026-09-10 使用者裁定，一字不改）。
+                     已知風險：agy 沒有 skill 機制，可能不認得開頭的「執行 course-content-pipeline」；
+                     勾「校對逐字稿」時原文寫「呼叫 agy」，執行者本身是 agy 時語意遞迴。
+                     實跑失敗再回頭補「先讀 SKILL.md 絕對路徑」與「你自己直接校對」兩句。
+                 (5) 批次任務同樣直接送 agy，行為與單一任務一致。
+v1.12 2026-09-09 [AGY / Gemini 3.8 Flash High] archive 自動化（使用者裁定「以後這一步都自動」）：
+                 (1) 新增 auto_archive_course() 函式，並在 scan_course_progress 掃描時自動檢查；
+                     若課程的前置活躍產物階段皆已 completed 且 archive 為 pending，即自動建立 Vault 目錄、
+                     複製全數 .md 檔案（同名跳過不覆蓋）、回寫 manifest 完成狀態，不再停留於 88% pending。
+                 (2) buildCoursePrompt 增加【自動收尾規則】，要求 AI 完成產物後自動接續完成 archive。
 v1.11 2026-08-27 archive 的 vault 副本條件改成收「courseDir 底下全部 .md（含子資料夾，
                  保留相對路徑）」，原本只收第一層。使用者會在課程資料夾自建「付費」「網站轉高級」
                  之類的子資料夾放 MD，壓平到根層會失去分類。
@@ -330,6 +381,58 @@ def move_source_into_course_dir(source_type: str, source_val: str,
     return new_value, moved
 
 
+# 課程資料夾裡指向 Vault 的目錄接合點名稱。MD 只存 Vault 一份，課程資料夾用這個看過去。
+# （2026-09-10 使用者裁定，取代 2026-08-26 的「複製一份到 Vault」）
+COURSE_DOCS_LINK_NAME = "文件"
+
+
+def _is_junction(path: Path) -> bool:
+    """Path.is_junction() 要 Python 3.12 才有；os.readlink 在 3.8 之後讀得到 junction。"""
+    try:
+        os.readlink(str(path))
+        return True
+    except OSError:
+        return False
+
+
+def ensure_course_docs_link(course_dir: Path) -> tuple:
+    """在課程資料夾裡建好指向 Vault 同名資料夾的「文件」目錄接合點。
+
+    回傳 (接合點路徑, Vault 目標路徑, 這次做了什麼)。已經是接合點就原樣沿用，
+    已經是實體資料夾就不動它（交給一次性清理腳本處理），不覆蓋任何既有東西。
+    """
+    vault_md_dir = Path(VAULT_COURSE_MD_ROOT) / course_dir.name
+    link = course_dir / COURSE_DOCS_LINK_NAME
+    # 既有接合點可能指向「不同名」的 Vault 資料夾——早期有些課程夾名帶重複日期
+    # （20260826_20260826_...），Vault 那邊卻是乾淨名。一律以接合點實際指向的目標為準，
+    # 不能再用同名路徑去 mkdir，否則每次歸檔都在 Vault 生一個空的重複夾。
+    if _is_junction(link):
+        return link, Path(os.path.realpath(str(link))), "junction 已存在"
+    vault_md_dir.mkdir(parents=True, exist_ok=True)
+    if link.exists():
+        return link, vault_md_dir, "已有同名實體資料夾，未動"
+    # mklink /J 不需要管理員權限；目標必須先存在，所以上面先 mkdir。
+    result = subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(vault_md_dir)],
+                            capture_output=True, text=True, encoding="cp950", errors="replace")
+    if result.returncode != 0 or not _is_junction(link):
+        raise ValueError(f"建立「{COURSE_DOCS_LINK_NAME}」接合點失敗：{(result.stderr or result.stdout).strip()}")
+    return link, vault_md_dir, "已建立 junction"
+
+
+def iter_course_md(course_dir: Path):
+    """課程資料夾底下的實體 .md（含子資料夾，保留相對路徑）。
+
+    「文件」接合點底下的不算——那些檔案本來就已經在 Vault，再走進去會重複計算。
+    """
+    for md_file in sorted(course_dir.rglob("*.md")):
+        rel = md_file.relative_to(course_dir)
+        if rel.parts and rel.parts[0] == COURSE_DOCS_LINK_NAME:
+            continue
+        if md_file.name.startswith("."):
+            continue
+        yield md_file, rel
+
+
 def rollback_course_manifest(manifest: dict) -> list:
     """撤銷一份已建立的課程：搬回原檔、刪掉 manifest 與空的課程資料夾。
 
@@ -340,6 +443,10 @@ def rollback_course_manifest(manifest: dict) -> list:
     course_dir = Path(manifest.get("courseDir", ""))
     try:
         (course_dir / "course-manifest.json").unlink(missing_ok=True)
+        # 接合點要先拆掉才刪得動資料夾；os.rmdir 只拆連結，不會碰到 Vault 那邊的檔案。
+        link = course_dir / COURSE_DOCS_LINK_NAME
+        if _is_junction(link):
+            os.rmdir(str(link))
         course_dir.rmdir()
     except OSError:
         pass
@@ -405,8 +512,18 @@ def create_course_manifest(source_type: str, source_val: str, course_name: str,
             pass
         raise
 
-    # 課程包的 MD 副本落點（2026-08-26 使用者裁定）：一堂課一個同名子資料夾。
-    vault_md_dir = Path(VAULT_COURSE_MD_ROOT) / course_dir.name
+    # MD 正本落點：一堂課一個同名 Vault 子資料夾，課程資料夾裡放「文件」接合點看過去。
+    # 建任務當下就接好，AI 一路把 MD 寫進 <課程夾>\文件\ 就等於直接寫進 Vault，全程只有一份。
+    # （2026-09-10 使用者裁定，取代 2026-08-26 的「archive 時複製一份」）
+    try:
+        docs_link, vault_md_dir, docs_note = ensure_course_docs_link(course_dir)
+    except (OSError, ValueError) as exc:
+        _restore_moved(moved_files)
+        try:
+            course_dir.rmdir()
+        except OSError:
+            pass
+        raise ValueError(f"課程資料夾建好了但接合點失敗，已全部回滾：{exc}") from exc
 
     is_youtube = source_type == "youtube"
     is_multi_part = source_type == MULTI_PART_SOURCE
@@ -504,9 +621,11 @@ def create_course_manifest(source_type: str, source_val: str, course_name: str,
             "archive": _pipeline_stage(
                 "pending",
                 "所有要求產物位於 courseDir，manifest 證據完整；"
-                f"並已把 courseDir 底下全部 .md（含子資料夾，保留相對路徑）複製一份到 {vault_md_dir}"
-                "（資料夾與子資料夾不存在就建；同名檔一律跳過不覆蓋，並在 evidence 列出跳過清單；"
-                "HTML、srt、words.json 與媒體檔不進 vault）"),
+                f"且全部 .md 只存在於 {vault_md_dir} 一份"
+                f"（courseDir 底下的「{COURSE_DOCS_LINK_NAME}」是指向該處的目錄接合點，寫進去就是寫進 Vault）；"
+                "courseDir 根層或其他子資料夾若還留著實體 .md，一律照相對路徑搬進 Vault 後刪除原檔，"
+                "同名但內容不同的加上 _課程夾版 後綴另存、不覆蓋，並在 evidence 列出；"
+                "HTML、srt、words.json 與媒體檔留在 courseDir 不進 Vault"),
         },
     }
     manifest_path = course_dir / "course-manifest.json"
@@ -597,8 +716,100 @@ def create_course_batch(source_type: str, source_val: str, course_name: str = ""
     return results
 
 
+def auto_archive_course(manifest_path: Path, data: dict | None = None) -> dict | None:
+    """若前置所有活躍產物階段皆已 completed 且 archive 為 pending，自動執行歸檔至 Vault 並原子回寫 manifest。"""
+    try:
+        if data is None:
+            data = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
+        stages = data.get("stages", {})
+        archive_stage = stages.get("archive")
+        if not archive_stage or archive_stage.get("status") != "pending":
+            return None
+
+        other_active = [st for name, st in stages.items()
+                        if name != "archive" and st.get("status") not in ("skipped", "cancelled")]
+        if not other_active or not all(st.get("status") == "completed" for st in other_active):
+            return None
+
+        course_dir = manifest_path.parent
+        _, vault_md_dir, docs_note = ensure_course_docs_link(course_dir)
+
+        moved_outputs = []
+        renamed_list = []
+        evidence = []
+
+        # MD 正本只留 Vault 一份：漏在 courseDir 根層或其他子資料夾的實體 .md
+        # 照相對路徑搬進 Vault 後刪掉原檔（2026-09-10 使用者裁定，原本是複製）。
+        # 「文件」接合點底下的不掃，那些本來就已經在 Vault。
+        for md_file, rel_path in iter_course_md(course_dir):
+            target_file = vault_md_dir / rel_path
+            target_file.parent.mkdir(parents=True, exist_ok=True)
+            if target_file.exists():
+                if target_file.read_bytes() == md_file.read_bytes():
+                    md_file.unlink()          # 內容一樣，課程夾那份是重複的，直接收掉
+                    continue
+                # 同名但內容不同：兩份都留，不覆蓋任何人的東西
+                target_file = target_file.with_name(f"{target_file.stem}_課程夾版{target_file.suffix}")
+                renamed_list.append(str(target_file))
+            shutil.move(str(md_file), str(target_file))
+            moved_outputs.append(str(target_file))
+
+        # 確保同名字幕（若有 _逐字稿.srt 但無 <課程名>.srt）
+        media_files = [f for f in course_dir.iterdir() if f.suffix.lower() in COURSE_MEDIA_EXTENSIONS]
+        if media_files:
+            target_srt = media_files[0].with_suffix(".srt")
+            if not target_srt.exists():
+                cand = course_dir / f"{media_files[0].stem}_逐字稿.srt"
+                if cand.exists():
+                    shutil.copy2(cand, target_srt)
+                    evidence.append(f"同名字幕補齊：{target_srt.name}")
+
+        evidence.append(f"產物目錄檢查完畢：{course_dir}")
+        evidence.append(f"「{COURSE_DOCS_LINK_NAME}」接合點 → {vault_md_dir}（{docs_note}）")
+        if moved_outputs:
+            evidence.append(f"已把 {len(moved_outputs)} 份 MD 搬進 Vault 並清掉課程夾原檔")
+        if renamed_list:
+            evidence.append(f"{len(renamed_list)} 份同名但內容不同，另存 _課程夾版：" + "、".join(renamed_list))
+
+        archive_stage["status"] = "completed"
+        archive_stage["evidence"] = evidence
+        archive_stage["outputs"] = moved_outputs
+        archive_stage["error"] = ""
+        data["updatedAt"] = datetime.now().isoformat(timespec="seconds")
+
+        temp_path = course_dir / ".course-manifest.json.tmp"
+        temp_path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        temp_path.replace(manifest_path)
+        return data
+    except Exception:
+        return None
+
+
 # manifest 的 stage 狀態就是進度來源：AI 每做完一段就原子回寫，
 # 網頁只讀不寫，所以關掉網頁、換台電腦、隔天再看都還在。
+def open_course_folder(target: str) -> str:
+    """在檔案總管開啟課程資料夾。瀏覽器從 http 頁面點 file:// 會被 Chrome 擋掉，
+    所以一定得由本機服務代開。"""
+    path = Path(target)
+    if not path.is_dir():
+        raise ValueError(f"找不到資料夾：{target}")
+    # explorer.exe 就算成功也常回非 0 exit code，所以不檢查 returncode。
+    subprocess.Popen(["explorer.exe", str(path)])
+    return str(path)
+
+
+def delete_course_manifest(manifest_path: str) -> str:
+    """把課程從進度清單移除：只刪 course-manifest.json，
+    課程資料夾、影音檔、逐字稿與 Vault 副本全部保留（2026-09-10 使用者裁定）。"""
+    path = Path(manifest_path)
+    if path.name != "course-manifest.json":
+        raise ValueError("只允許刪除 course-manifest.json，不刪其他任何檔案")
+    if not path.is_file():
+        raise ValueError(f"找不到檔案：{manifest_path}")
+    path.unlink()
+    return str(path)
+
+
 def scan_course_progress(output_root: str | None = None) -> list:
     """掃描歸檔根目錄下所有 course-manifest.json，算出每堂課的進度。"""
     root = Path(output_root or COURSE_ROOT)
@@ -607,19 +818,27 @@ def scan_course_progress(output_root: str | None = None) -> list:
     rows = []
     for manifest_path in sorted(root.glob("*/course-manifest.json")):
         try:
-            data = json.loads(manifest_path.read_text(encoding="utf-8"))
+            data = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
         except (OSError, json.JSONDecodeError) as exc:
             rows.append({
                 "courseName": manifest_path.parent.name,
                 "manifestPath": str(manifest_path),
+                "courseDir": str(manifest_path.parent),
+                "createdAt": "",
                 "totalStages": 0, "doneStages": 0, "percent": 0,
                 "currentStage": "", "status": "unreadable", "error": str(exc),
             })
             continue
 
         stages = data.get("stages", {})
+        # 自動歸檔：若前置產物全數完成且 archive 為 pending，自動推進 archive
+        archived_data = auto_archive_course(manifest_path, data)
+        if archived_data is not None:
+            data = archived_data
+            stages = data.get("stages", {})
+
         active = [(name, st) for name, st in stages.items()
-                  if st.get("status") != "skipped"]
+                  if st.get("status") not in ("skipped", "cancelled")]
         total = len(active)
         done = sum(1 for _, st in active if st.get("status") == "completed")
         blocked = next((n for n, st in active if st.get("status") == "blocked"), "")
@@ -638,6 +857,8 @@ def scan_course_progress(output_root: str | None = None) -> list:
         rows.append({
             "courseName": data.get("courseName", manifest_path.parent.name),
             "manifestPath": str(manifest_path),
+            "courseDir": data.get("courseDir", str(manifest_path.parent)),
+            "createdAt": data.get("createdAt", ""),
             "totalStages": total,
             "doneStages": done,
             "percent": round(done / total * 100) if total else 0,
@@ -646,6 +867,8 @@ def scan_course_progress(output_root: str | None = None) -> list:
             "updatedAt": data.get("updatedAt", ""),
             "error": next((st.get("error", "") for _, st in active if st.get("error")), ""),
         })
+    # 建立日期新的排最上面；createdAt 是 ISO 字串，直接字串比較即可。讀不到的排最後。
+    rows.sort(key=lambda row: row.get("createdAt") or "", reverse=True)
     return rows
 
 
@@ -1687,6 +1910,9 @@ PAGE = r"""<!doctype html>
   button:disabled { opacity: .45; cursor: not-allowed; }
   button.go { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
   button.stop { background: #3a2226; border-color: #6b2f35; color: #ffb3b3; }
+  button.ghost { background: transparent; border-color: transparent; color: var(--muted);
+                 padding: 9px 8px; font-size: 12px; text-decoration: underline; }
+  button.ghost:hover:not(:disabled) { color: var(--text); border-color: transparent; }
   .crumbs { display: flex; gap: 6px; flex-wrap: wrap; margin: 12px 0 8px; }
   .chip { padding: 4px 10px; border-radius: 999px; background: #0d1117; border: 1px solid var(--line);
           font-size: 12px; cursor: pointer; color: var(--muted); }
@@ -1745,6 +1971,15 @@ PAGE = r"""<!doctype html>
   .prog .minibar.ok > i { background: var(--ok); }
   .prog .minibar.bad > i { background: var(--bad); }
   .s-completed { color: var(--ok); } .s-blocked { color: var(--bad); }
+  .prog a.nm { color: var(--text); text-decoration: none; border-bottom: 1px dotted var(--muted);
+               cursor: pointer; }
+  .prog a.nm:hover { color: var(--accent); border-bottom-color: var(--accent); }
+  .prog .dt { font-size: 12px; color: var(--muted); white-space: nowrap;
+              font-variant-numeric: tabular-nums; }
+  .prog button.del { padding: 2px 7px; font-size: 12px; line-height: 1.5;
+                     background: transparent; border-color: transparent; color: var(--muted); }
+  .prog button.del:hover:not(:disabled) { color: var(--bad); border-color: var(--bad); }
+  .prog button.del.danger { color: var(--bad); border-color: var(--bad); background: #3a2226; }
   .s-running { color: var(--accent); } .s-pending { color: var(--muted); }
   .prio { margin: 8px 0 0 10px; padding-left: 14px; border-left: 2px solid #2f3b4a; }
   .prio ul { list-style: none; margin: 6px 0 0; padding: 0; }
@@ -1843,13 +2078,13 @@ PAGE = r"""<!doctype html>
       <label class="pick" id="w-video"><input type="checkbox" id="a-video" checked onchange="syncCourseArtifacts()"> 🎬 下載 MP4</label>
       <label class="pick" id="w-mp3"><input type="checkbox" id="a-mp3" checked onchange="syncCourseArtifacts()"> 🎵 轉檔 MP3</label>
       <label class="pick" id="w-transcript"><input type="checkbox" id="a-transcript" checked onchange="syncCourseArtifacts()"> 📝 逐字稿</label>
-      <label class="pick" id="w-review" title="用 agy（Gemini）校對專有名詞與人名，raw 稿保留不覆蓋"><input type="checkbox" id="a-review" onchange="syncCourseArtifacts()"> 🔍 校對逐字稿</label>
+      <label class="pick" id="w-review" title="用 agy（Gemini）校對專有名詞與人名，raw 稿保留不覆蓋"><input type="checkbox" id="a-review" checked onchange="syncCourseArtifacts()"> 🔍 校對逐字稿</label>
       <label class="pick" id="w-summary"><input type="checkbox" id="a-summary" checked onchange="syncCourseArtifacts()"> 📄 摘要</label>
       <label class="pick" id="w-report"><input type="checkbox" id="a-report" checked onchange="syncCourseArtifacts()"> 📊 培訓報告</label>
       <label class="pick" id="w-mindmap"><input type="checkbox" id="a-mindmap" checked onchange="syncCourseArtifacts()"> 🧠 心智圖</label>
-      <label class="pick" id="w-skillTree"><input type="checkbox" id="a-skillTree" onchange="syncCourseArtifacts()"> 🌳 技能樹</label>
+      <label class="pick" id="w-skillTree"><input type="checkbox" id="a-skillTree" checked onchange="syncCourseArtifacts()"> 🌳 技能樹</label>
       <div class="subpicks inline" id="courseSkillSub" style="display:none">
-        <label class="pick" id="w-teach"><input type="checkbox" id="s-teach" onchange="syncCourseArtifacts()"> 含教學</label>
+        <label class="pick" id="w-teach"><input type="checkbox" id="s-teach" checked onchange="syncCourseArtifacts()"> 含教學</label>
         <label class="pick"><input type="checkbox" id="s-minimum" onchange="syncCourseArtifacts()"> 含最小案例</label>
       </div>
     </div>
@@ -1893,14 +2128,13 @@ PAGE = r"""<!doctype html>
       📚 批次：資料夾內每個媒體檔各建一堂課
     </label>
     <div class="row" style="margin-top:14px">
-      <button class="go" id="courseCreate" onclick="startCourseCreate()">建立可續跑任務</button>
+      <button class="go" id="courseCreate" onclick="startCourseCreate()">🚀 建立任務並送 agy</button>
+      <button class="ghost hide" id="courseCopyPrompt" onclick="copyCoursePrompt()">複製指令（備援）</button>
     </div>
     <div class="note">
-      下一步很簡單：① 建立任務　② 按「複製 AI 執行指令」　③ 回到目前的 Hermes 對話貼上。<br>
-      AI 收到指令後只會做你上面勾起來的項目，沒勾的不會產出。
-    </div>
-    <div class="row" style="margin-top:10px">
-      <button class="go hide" id="courseCopyPrompt" onclick="copyCoursePrompt()">複製 AI 執行指令</button>
+      按這一顆就好：建立任務 → 自動組指令 → 開新視窗跑 agy，中途不用再按別的。<br>
+      AI 收到指令後只會做你上面勾起來的項目，沒勾的不會產出。<br>
+      要改貼給 Claude／Codex 或別台機器時，按旁邊的「複製指令（備援）」。
     </div>
     <div class="out" id="courseResult" style="white-space:pre-wrap"></div>
 
@@ -1939,6 +2173,8 @@ let checked = new Set();
 let jobId = null;
 let timer = null;
 let lastCoursePrompt = '';
+let courseRows = [];        // 進度清單目前這批資料，開資料夾／刪除都用索引取，避免把路徑塞進 onclick
+let coursePendingDelete = -1;   // 刪除鍵要按兩下：第一下先變成「確定刪？」
 
 const DEFAULTS = { video: %DEFAULT_VIDEO%, audio: %DEFAULT_AUDIO%, ytdl: %DEFAULT_YTDL%, course: %DEFAULT_COURSE% };
 const $ = id => document.getElementById(id);
@@ -2254,6 +2490,20 @@ async function pickCourseOutput() {
   }
 }
 
+// 網頁 → 本機 CLI 的橋：ytcli://<cli>/<base64url 指令>，實作在 C:\Code\ytcli\run.ps1。
+// 中文一定要走 base64url：改用 encodeURIComponent 會被 cmd 碼頁 950/65001 弄成亂碼。
+function toBase64Url(str) {
+  const bytes = new TextEncoder().encode(str);
+  let bin = '';
+  bytes.forEach(b => { bin += String.fromCharCode(b); });
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function sendToAgy(prompt) {
+  if (!prompt) return;
+  window.location.href = 'ytcli://agy/' + toBase64Url(prompt);
+}
+
 async function copyCoursePrompt() {
   if (!lastCoursePrompt) return;
   try {
@@ -2304,10 +2554,18 @@ function buildCoursePrompt(manifestPaths, st) {
       + '\nmanifest 清單：\n' + paths.map(x => '- ' + x).join('\n')
     : '執行 course-content-pipeline。' + '\nmanifest：' + paths[0];
   return head
+    + '\n【產物落點】所有 .md 一律寫進 courseDir 底下的「文件」資料夾——那是指向 Vault 課程逐字稿整理目錄的'
+    + '目錄接合點，寫進去就等於寫進 Vault，全程只有一份，不要另外複製。'
+    + '媒體檔、srt、words.json、心智圖 HTML 留在 courseDir 根層。'
     + '\n從第一個 pending 或 blocked stage 開始，逐階段親自實跑；不要使用子代理人或外部 AI API。'
     + '把 completion_criteria、evidence、outputs、error 原子寫回 manifest；completed 階段不要重跑。'
-    + '\n這次只做以下項目：' + wanted.join('、')
+    + '\n這次產物階段：' + wanted.join('、')
     + '。manifest 中標成 skipped 的 stage 一律不要產出，也不要補做。'
+    + '\n【自動收尾規則】當上述產物階段全數 completed 後，必須無縫接續執行 archive 階段：'
+    + '檢查所有要求產物、確保媒體同名 srt（<課程名>.srt）、'
+    + '確認全部 .md 只存在於 Vault 一份——courseDir 根層或其他子資料夾若還留著實體 .md，'
+    + '照相對路徑搬進 Vault 後刪掉原檔（同名但內容不同的加 _課程夾版 後綴另存，不覆蓋），'
+    + '並將 manifest 的 archive 標為 completed 後才算整體完成，中途不要停下來。'
     + multi;
 }
 
@@ -2325,6 +2583,8 @@ async function refreshCourseProgress() {
 }
 
 function renderCourseProgress(rows) {
+  courseRows = rows;
+  coursePendingDelete = -1;
   if (!rows.length) {
     $('courseProgTitle').textContent = '這個歸檔目錄下還沒有課程任務';
     $('courseProgPct').textContent = '';
@@ -2339,16 +2599,74 @@ function renderCourseProgress(rows) {
   $('courseProgBar').firstElementChild.style.width = overall + '%';
   const label = { completed: '完成', blocked: '卡住', running: '進行中',
                   pending: '等待中', unreadable: '讀不到' };
-  $('courseProgList').innerHTML = rows.map(r => {
+  $('courseProgList').innerHTML = rows.map((r, i) => {
     const cls = r.status === 'completed' ? 'ok' : (r.status === 'blocked' ? 'bad' : '');
     const tail = r.status === 'completed' ? '完成'
       : `${label[r.status] || r.status}${r.currentStage ? '：' + r.currentStage : ''}`;
     return `<li>
-      <span class="nm" title="${r.manifestPath}">${r.courseName}</span>
+      <span class="dt">${courseDate(r.createdAt)}</span>
+      <a class="nm" href="#" title="點一下開資料夾：${esc(r.courseDir || '')}"
+         onclick="openCourseFolder(${i}); return false;">${esc(r.courseName)}</a>
       <span class="minibar ${cls}"><i style="width:${r.percent}%"></i></span>
       <span class="st s-${r.status}">${r.doneStages}/${r.totalStages}　${tail}</span>
+      <button class="del" onclick="deleteCourseRow(${i}, this)"
+              title="從清單移除（只刪 course-manifest.json，資料夾與影音檔全部保留）">🗑</button>
     </li>`;
   }).join('');
+}
+
+function esc(str) {
+  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// createdAt 是 ISO 字串（2026-08-19T12:07:28+08:00），只取到日期。
+function courseDate(iso) {
+  return iso ? String(iso).slice(0, 10) : '—';
+}
+
+// 開資料夾一定要繞本機服務：Chrome 不讓 http 頁面直接跳 file://。
+async function openCourseFolder(i) {
+  const row = courseRows[i];
+  if (!row || !row.courseDir) return;
+  try {
+    await coursePost('/api/course/open', { path: row.courseDir });
+  } catch (e) {
+    $('courseProgTitle').textContent = '開不了資料夾：' + e.message;
+  }
+}
+
+// 刪除只拿掉 course-manifest.json，影音檔一個都不動（2026-09-10 使用者裁定）。
+// 按兩下才真的刪：第一下把按鈕變成「確定刪？」，免得誤觸。
+async function deleteCourseRow(i, btn) {
+  const row = courseRows[i];
+  if (!row) return;
+  if (coursePendingDelete !== i) {
+    resetDeleteButtons();
+    coursePendingDelete = i;
+    btn.textContent = '確定刪？';
+    btn.classList.add('danger');
+    return;
+  }
+  coursePendingDelete = -1;
+  btn.disabled = true;
+  try {
+    await coursePost('/api/course/delete', { manifestPath: row.manifestPath });
+    refreshCourseProgress();
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = '🗑';
+    btn.classList.remove('danger');
+    $('courseProgTitle').textContent = '刪不掉：' + e.message;
+  }
+}
+
+function resetDeleteButtons() {
+  coursePendingDelete = -1;
+  document.querySelectorAll('#courseProgList button.del').forEach(b => {
+    b.textContent = '🗑';
+    b.classList.remove('danger');
+  });
 }
 
 async function startCourseCreate() {
@@ -2388,8 +2706,9 @@ async function startCourseCreate() {
     $('courseCopyPrompt').classList.remove('hide');
     result.textContent = paths.length > 1
       ? `✅ 已建立 ${paths.length} 個任務：\n` + paths.map(x => '　• ' + x).join('\n')
-        + `\n\n下一步：按上方「複製 AI 執行指令」，一次貼給 AI 就會依序做完。`
-      : `✅ 任務已建立：${paths[0]}\n\n下一步：按上方「複製 AI 執行指令」，回到目前的 Hermes 對話貼上並送出。`;
+        + `\n▶ 已送出 agy（${paths.length} 堂課依序跑），請看新開的視窗。`
+      : `✅ 任務已建立：${paths[0]}\n▶ 已送出 agy，請看新開的視窗。`;
+    sendToAgy(lastCoursePrompt);
     refreshCourseProgress();
   } catch (error) {
     lastCoursePrompt = '';
@@ -2680,6 +2999,36 @@ class Handler(BaseHTTPRequestHandler):
             if kind == "source":
                 response["courseName"] = derive_course_name(source_type, picked)
             self._json(response)
+
+        elif url.path == "/api/course/open":
+            length = int(self.headers.get("Content-Length", 0))
+            try:
+                payload = json.loads(self.rfile.read(length) or b"{}")
+                if not isinstance(payload, dict):
+                    raise ValueError("JSON body 必須是 object")
+                target = payload.get("path", "")
+                if not isinstance(target, str) or not target.strip():
+                    raise ValueError("path 必須是非空字串")
+                opened = open_course_folder(target.strip())
+            except (json.JSONDecodeError, ValueError, TypeError, OSError) as exc:
+                self._json({"error": str(exc)}, 400)
+                return
+            self._json({"opened": opened})
+
+        elif url.path == "/api/course/delete":
+            length = int(self.headers.get("Content-Length", 0))
+            try:
+                payload = json.loads(self.rfile.read(length) or b"{}")
+                if not isinstance(payload, dict):
+                    raise ValueError("JSON body 必須是 object")
+                target = payload.get("manifestPath", "")
+                if not isinstance(target, str) or not target.strip():
+                    raise ValueError("manifestPath 必須是非空字串")
+                removed = delete_course_manifest(target.strip())
+            except (json.JSONDecodeError, ValueError, TypeError, OSError) as exc:
+                self._json({"error": str(exc)}, 400)
+                return
+            self._json({"removed": removed})
 
         elif url.path == "/api/course/batch":
             length = int(self.headers.get("Content-Length", 0))
