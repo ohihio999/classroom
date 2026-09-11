@@ -1,6 +1,8 @@
 <!--
-  版本：v6.12
+  版本：v6.14
   版更記錄：
+  v6.14 (2026-09-11) - 新增「長回覆做成網頁」卡片（📄 → modal 說明書）：安裝 github.com/chenjackle45/html-visualizer（MIT），三個 skill（html-visualizer 主入口／chart 走 @unovis 的圖表／diagram-design 手工 SVG 結構圖 39 型）已複製進 C:\Users\admin\.codex\skills\，Claude／Codex／Hermes／agy 共用。不用背指令：內容超過 50 行或屬報告／教學／規格／盤點／選項拍板時自動觸發，產出存 C:\Users\admin\Documents\claude-html\ 並建索引頁；不想要就說「給我純文字就好」。版面自檢用的 Playwright 裝在 C:\Users\admin\.agents\playwright\，靠使用者環境變數 HTML_VISUALIZER_PLAYWRIGHT_ROOT 指過去。原始碼在 C:\Code\html-visualizer，更新走 git pull＋重跑 install.sh。CARD_CONTENT_VERSION 13→14 讓 Firestore 同步更新
+  v6.13 (2026-09-11) - 新增「訂飲料（你訂 nidin）」卡片（🧋 → modal 說明書）：貼 order.nidin.shop 菜單網址＋一行一杯的名單，AI 從瀏覽器 localStorage 的 Nidin_<store_id>_menu 讀整份菜單（不打 API），把品項／甜度／冰塊／加料反查成 product_id / adjust_id / option_id，先列「姓名｜品項｜規格｜金額＋總計」確認表，確認後一杯一次呼叫逐杯加入購物車並比對送出內容；杯貼姓名 = sticker_memo。邊界寫死：只加購物車，結帳付款送單一律不碰。modal 內含店家 id 搞錯的實例警語（1521 路易莎 vs 16849 五桐號）。技能正本 C:\Users\admin\.claude\skills\drink-order\SKILL.md。CARD_CONTENT_VERSION 12→13 讓 Firestore 同步更新
   v6.12 (2026-09-10) - 推公開 repo 前的個資清理：「研討會資料整理」說明書 modal 的命名規則範例，把實際場次名（含真實對話對象的職稱與日期）換成虛構的 20260315_1400_資安研討會，教學效果不變。本 repo 是 PUBLIC，範例一律不用真實素材
   v6.11 (2026-09-10) - 卡片新增可選欄位 infoFn：有值就在卡片右上 🚀 旁邊多一顆 📖 說明書鈕，onclick 帶 event.stopPropagation() 所以不會觸發卡片本體。五處卡片正規化（Firestore 寫入、預設卡合併、更新、排序、單筆存檔）同步補上 infoFn 的傳遞。「研討會資料整理」卡片改成 actionType link 開 agy ＋ infoFn 開原本那份說明書 modal，兩個入口並存。CARD_CONTENT_VERSION 11→12
   v6.10 (2026-09-10) - 「研討會資料整理」卡片從 modal 說明書改成一鍵啟動：actionType 由 modal 改 link，href 走既有的 ytcli:// 協定 ytcli://agy/56CU6KiO5pyD5pW055CG（base64url 解碼＝「研討會整理」），點卡片直接開新終端機視窗跑 agy --effort medium -i「研討會整理」。SKILL 端同步加上「沒收到資料夾路徑就先問『請問你要整理哪個資料夾？』」的硬性規則（SKILL.md 升 v1.1）。CARD_CONTENT_VERSION 10→11。註：原本的 modal 說明書 HTML 與 openSeminarOrganizer/closeSeminarOrganizer 函式保留在檔案裡但目前沒有入口，待決定要不要改掛 📖 按鈕
@@ -1057,6 +1059,163 @@ D:\本機MD檔\30_研究\課程逐字稿整理\&lt;同名&gt;\　課程包 MD �
   </div>
 </div>
 
+<div class="modal-overlay" id="drinkOrderModal" onclick="closeOnOverlay(event)">
+  <div class="modal" style="max-height:90vh">
+    <button class="modal-close" onclick="closeDrinkOrder()">✕</button>
+    <div class="modal-title">🧋 訂飲料（你訂 nidin）</div>
+    <div class="modal-sub">貼菜單網址＋一行一杯的名單，AI 自動加進購物車；<strong>結帳一律自己按</strong></div>
+
+    <div class="step">
+      <div class="step-label">① 怎麼用</div>
+      <div class="cmd-box">https://order.nidin.shop/menu/16849
+加購物車
+
+陳姵存 麝香葡萄粉粿烏龍 微冰 無糖
+石博仁 島嶼鳳梨水梨青 正常冰 正常糖
+潘怡穎 玄米蕎麥奶茶 去冰 微糖 杏仁凍</div>
+      <div style="font-size:12px;color:#aaa;margin-top:6px">
+        順序、空格、全形半形都不拘。加料直接寫名稱，<code>+15元</code> 這種尾綴不用打。
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">② 店家網址不能省</div>
+      <div class="cmd-box" style="font-family:sans-serif;line-height:1.75">
+        <code>/menu/&lt;store_id&gt;</code> 決定下單到哪一家，<strong>沒給網址 AI 會先問，不准猜</strong>。<br>
+        2026-09-11 實例：說「第一家」指的是 <code>/menu/1521</code>，但那是<strong>路易莎 民生松江店</strong>，
+        名單上 9 款飲料全在 <code>/menu/16849</code><strong>五桐號 台北合江店</strong>。差一個 id 就整批下錯店。
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">③ 運作方式</div>
+      <div class="cmd-box" style="font-family:sans-serif;line-height:1.75">
+        <strong>① 讀菜單</strong>：整份菜單就快取在瀏覽器 <code>localStorage</code> 的
+        <code>Nidin_&lt;store_id&gt;_menu</code>，不用打 API。<br>
+        <strong>② 反查 id</strong>：品項名、甜度、冰塊、加料全部換成 <code>product_id</code> /
+        <code>adjust_id</code> / <code>option_id</code>，對不上就報「第幾筆對不上」，不模糊猜測。<br>
+        <strong>③ 先給表</strong>：姓名｜品項｜規格｜金額＋總計，<strong>確認後才動手</strong>。<br>
+        <strong>④ 逐杯加入</strong>：一杯一次呼叫，每杯回報，送出的內容當場跟本機算的比對。<br>
+        <strong>⑤ 杯貼姓名</strong>＝ <code>sticker_memo</code>，直接帶名單上的名字。
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">④ 需要你補答的情況</div>
+      <div class="cmd-box" style="font-family:sans-serif;line-height:1.75">
+        同一品項<strong>有多個尺寸而名單沒寫</strong>，或名單上的品項<strong>該店根本沒有</strong>。<br>
+        這兩種 AI 會把可選清單列出來問你，不會自己挑一個最像的。<br>
+        只有一個選項的必選項（例：五桐號合江店尺寸只有 L）會自動帶入。
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">⑤ 邊界（寫死在 SKILL 裡）</div>
+      <div class="cmd-box" style="font-family:sans-serif;line-height:1.75">
+        <strong>只加購物車。結帳、付款、送出訂單一律不碰</strong>，也不會提議代勞。<br>
+        加完會附上 <code>order.nidin.shop/carts/</code> 讓你自己去按。
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">技能正本</div>
+      <div class="cmd-box">C:\Users\admin\.claude\skills\drink-order\SKILL.md</div>
+      <div style="font-size:12px;color:#aaa;margin-top:6px">
+        <code>.codex\skills</code> 是同一份（目錄接合點），Claude／Codex／Hermes 都吃得到。
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="htmlVisualizerModal" onclick="closeOnOverlay(event)">
+  <div class="modal" style="max-height:90vh">
+    <button class="modal-close" onclick="closeHtmlVisualizer()">✕</button>
+    <div class="modal-title">📄 長回覆做成網頁（html-visualizer）</div>
+    <div class="modal-sub">AI 回你三百行文字很難讀；裝了這個之後同樣的問題會得到<strong>一頁網頁</strong>：有目錄可跳、有表格可對照、該畫圖的地方真的畫成圖</div>
+
+    <div class="step">
+      <div class="step-label">① 怎麼用：不用背指令，照平常講話</div>
+      <div class="cmd-box">幫我整理這份會議記錄
+教我這個東西怎麼運作
+這幾個做法我該選哪個
+這組數字幫我看一下趨勢
+這個流程幫我畫出來</div>
+      <div style="font-size:12px;color:#aaa;margin-top:6px">
+        沒觸發就直接說<strong>「做成網頁給我看」</strong>；反過來不想要網頁就說<strong>「給我純文字就好」</strong>。
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">② 什麼時候它自己會出來</div>
+      <div class="cmd-box" style="font-family:sans-serif;line-height:1.75">
+        報告／研究／分析、規格／設計決策、架構與系統說明、教學與概念解釋、儀表板、
+        <strong>要你拍板的選項清單</strong>，或任何<strong>超過 50 行</strong>的長回覆。<br>
+        短問答、程式碼修正、終端機輸出<strong>刻意不出現</strong>——免得小事也丟一個網頁給你。
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">③ 產出存哪裡</div>
+      <div class="cmd-box">C:\Users\admin\Documents\claude-html\</div>
+      <div style="font-size:12px;color:#aaa;margin-top:6px">
+        產完自動在瀏覽器打開，同時建一份索引頁，方便回頭找「上禮拜那份」。
+        要換位置就設環境變數 <code>HTML_VISUALIZER_ARCHIVE_DIR</code>。
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">④ 三個 skill 的分工</div>
+      <div class="cmd-box" style="font-family:sans-serif;line-height:1.75">
+        <strong>html-visualizer</strong>：主入口。挑版型、建頁、跑自檢、開給你看。<br>
+        <strong>chart</strong>：資料圖表，用 <code>@unovis</code> 畫，各種圖共用一套配色。<br>
+        <strong>diagram-design</strong>：結構圖，手工排版 SVG，涵蓋架構／流程／時序／狀態機等 39 型。
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">⑤ 為什麼不是叫 AI 直接產 HTML 就好</div>
+      <div class="cmd-box" style="font-family:sans-serif;line-height:1.75">
+        因為 AI 產的 HTML 會<strong>安靜地壞掉、而它自己看不到</strong>。所以給你看之前會先跑一支自檢：
+        每段程式碼做語法檢查、每段樣式抓沒收尾的括號、用真瀏覽器在手機／平板／桌機三種寬度實際畫一次、
+        抓「文字被壓成直排／元素被壓扁／對比太低／被蓋住」這四種看不見的壞掉。<br>
+        檢查結果寫<strong>「未驗證」不是壞了</strong>，是「這一項沒檢查」。
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">⑥ 技能正本與更新</div>
+      <div class="cmd-box">C:\Users\admin\.codex\skills\html-visualizer\SKILL.md</div>
+      <div style="font-size:12px;color:#aaa;margin-top:6px">
+        <code>.claude\skills</code> 是指向 <code>.codex\skills</code> 的連結，Claude／Codex／Hermes／agy 共用同一份。
+        原始碼在 <code>C:\Code\html-visualizer</code>（<a href="https://github.com/chenjackle45/html-visualizer" target="_blank" rel="noopener">GitHub</a>，MIT）；
+        更新是 <code>git pull</code> 後重跑 <code>./install.sh --dir ~/.codex/skills --copy</code>。
+        版面自檢用的 Playwright 裝在 <code>C:\Users\admin\.agents\playwright\</code>，
+        由使用者環境變數 <code>HTML_VISUALIZER_PLAYWRIGHT_ROOT</code> 指過去。
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script type="module">
@@ -1075,7 +1234,7 @@ const getGroqKeyFn = httpsCallable(functions, 'getGroqKey');
 const getAssemblyAIKeyFn = httpsCallable(functions, 'getAssemblyAIKey');
 const ALLOWED_EMAIL = 'ohihio@gmail.com';
 const TOOLS_COL = 'admin_tools';
-const CARD_CONTENT_VERSION = 12;
+const CARD_CONTENT_VERSION = 14;
 const ICON_OPTIONS = ['🗂️','🎙️','📝','📚','📌','📎','📦','⚙️','🛠️','💡','📊','🧾','📁','🔧','🔍','🚀','⭐','✅','⚖️'];
 const DEFAULT_TOOLS = [
   // order -1：Firestore 裡既有卡片的 order 是 0 起跳，給 -1 才排得到第一格（normalizeOrder 會重編成 0）
@@ -1103,7 +1262,9 @@ const DEFAULT_TOOLS = [
   { id: 'todo-dashboard-local', title: '待辦總表儀表板（本機）', description: '九分類看板讀寫 Obsidian 待辦總表，可勾選與新增；沒開按 🚀 啟動 8771', icon: '✅', actionType: 'link', href: 'http://127.0.0.1:8771/', launchHref: 'todoboard://open', order: 17, createdAt: '2026-08-25T00:00:00+08:00' },
   { id: 'session-title-sync', title: '對話名同步（本機）', description: '把 Claude Code 對話名對齊進度檔名；對 AI 說「同步檔名」', icon: '🏷️', actionType: 'modal', modalFn: 'openSessionTitleSync', order: 18, createdAt: '2026-09-04T00:00:00+08:00' },
   { id: 'yt-summary', title: 'YouTube 極速摘要（本機）', description: '貼網址免下影片30秒出摘要、留言正反批判檢驗與心智圖HTML；對 AI 說「YT摘要」', icon: '⚡', actionType: 'modal', modalFn: 'openYtSummary', order: 19, createdAt: '2026-09-09T00:00:00+08:00' },
-  { id: 'seminar-organizer', title: '研討會資料整理', description: '點一下開 agy 並送出「研討會整理」，AI 會問你要整理哪個資料夾；📖 看說明書', icon: '🎪', actionType: 'link', href: 'ytcli://agy/56CU6KiO5pyD5pW055CG', infoFn: 'openSeminarOrganizer', order: 20, createdAt: '2026-09-10T00:00:00+08:00' }
+  { id: 'seminar-organizer', title: '研討會資料整理', description: '點一下開 agy 並送出「研討會整理」，AI 會問你要整理哪個資料夾；📖 看說明書', icon: '🎪', actionType: 'link', href: 'ytcli://agy/56CU6KiO5pyD5pW055CG', infoFn: 'openSeminarOrganizer', order: 20, createdAt: '2026-09-10T00:00:00+08:00' },
+  { id: 'drink-order', title: '訂飲料（你訂 nidin）', description: '貼菜單網址＋一行一杯名單，AI 逐杯加購物車；結帳自己按', icon: '🧋', actionType: 'modal', modalFn: 'openDrinkOrder', order: 21, createdAt: '2026-09-11T00:00:00+08:00' },
+  { id: 'html-visualizer', title: '長回覆做成網頁', description: 'AI 的長回覆自動變成能跳目錄、有表格圖表的網頁，存 Documents\\claude-html', icon: '📄', actionType: 'modal', modalFn: 'openHtmlVisualizer', order: 22, createdAt: '2026-09-11T00:00:00+08:00' }
 ];
 
 let toolsState = DEFAULT_TOOLS.map(tool => ({ ...tool }));
@@ -1521,6 +1682,7 @@ function closeOnOverlay(e) {
   if (e.target === document.getElementById('sessionTitleSyncModal')) closeSessionTitleSync();
   if (e.target === document.getElementById('ytSummaryModal')) closeYtSummary();
   if (e.target === document.getElementById('seminarOrganizerModal')) closeSeminarOrganizer();
+  if (e.target === document.getElementById('drinkOrderModal')) closeDrinkOrder();
   if (e.target === document.getElementById('subtitleArchiveModal')) closeSubtitleArchive();
   if (e.target === document.getElementById('ytDlpModal')) closeYtDlp();
   if (e.target === document.getElementById('ytDownloadModal')) closeYtDownload();
@@ -1656,6 +1818,22 @@ function openSeminarOrganizer() {
 }
 function closeSeminarOrganizer() {
   document.getElementById('seminarOrganizerModal').classList.remove('open');
+}
+
+// drink-order（訂飲料）modal
+function openDrinkOrder() {
+  document.getElementById('drinkOrderModal').classList.add('open');
+}
+function closeDrinkOrder() {
+  document.getElementById('drinkOrderModal').classList.remove('open');
+}
+
+// html-visualizer（長回覆做成網頁）modal
+function openHtmlVisualizer() {
+  document.getElementById('htmlVisualizerModal').classList.add('open');
+}
+function closeHtmlVisualizer() {
+  document.getElementById('htmlVisualizerModal').classList.remove('open');
 }
 
 // ── 一鍵送進本機 CLI（v6.3）──
