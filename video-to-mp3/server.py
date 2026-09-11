@@ -1,5 +1,47 @@
 """
-影音工具本機服務（YouTube 下載 / 影片轉 MP3 / 錄音檔合併 / 圖檔轉 PDF）
+影音工具本機服務（影音網址下載 / 影片轉 MP3 / 錄音檔合併 / 圖檔轉 PDF）
+
+v1.19 2026-09-10 [Claude Code / Opus 5] 選擇器修 bug ＋ 來源改成頁內清單勾選：
+                 (1) **選資料夾按了沒反應的真因**：COURSE_PICK_DIALOG_CODE 用 root.withdraw()
+                     把父視窗藏起來，對話框就開在其他視窗後面又不進工作列，看起來像沒反應，
+                     按鈕還一直卡在 disabled。改成 1x1 全透明視窗（-alpha 0）＋ lift()＋
+                     focus_force()，並把 parent=root 傳給 filedialog；實測前景視窗標題
+                     已是「選擇課程媒體資料夾」。
+                 (2) 「選檔案」按鈕移除，只留「選資料夾」。Windows 的檔案／資料夾是兩個
+                     不同的原生對話框，一顆按鈕做不到兩件事；改成選完資料夾後由網頁把第一層
+                     全部列出來逐項打勾（跟「影片轉 MP3」分頁同一套操作），預設全勾，
+                     附全選／全不選與「已勾 N 項 → 建 N 堂課」計數。
+                 (3) 後端新增 select_course_entries()，create_course_batch() 與
+                     /api/course/batch 收 include（第一層項目名稱陣列），只建被勾選的那幾堂；
+                     include 只認第一層名稱、不接受路徑分隔符，沒勾的原檔一個都不搬。
+                 (4) 使用者裁定不做「把勾選的合併成一堂」開關——要合併就放進子資料夾。
+
+v1.18 2026-09-10 [Claude Code / Opus 5] #course 來源大簡化（使用者裁定）：
+                 下拉選單的五種來源型別全部收掉，改成「一格來源欄位＋選檔案／選資料夾兩顆鍵」，
+                 型別由 detect_course_source() 自己判斷，前端只送 sourceType: "auto"。
+                 (1) 網址不再限定 YouTube：新增 url 型別（youtube 保留為 legacy 別名），
+                     validate 只擋非 http(s)，Facebook／Instagram／X 等 yt-dlp 支援的站台都收。
+                     fetch_youtube_title() 改名 fetch_media_title()（舊名留別名）。
+                 (2) 新增 ytdl_cookie_args()：需要登入的站台（FB／IG／X／Threads／TikTok…）
+                     抓標題與下載都自動帶 --cookies-from-browser chrome；YouTube 刻意不帶，
+                     匿名本來就抓得到，帶自己的帳號 cookie 反而容易被判成機器人。
+                 (3) 本機來源不再分音訊／影片：COURSE_MEDIA_EXTENSIONS 改成
+                     AUDIO_EXTENSIONS | VIDEO_EXTENSIONS（非 transcribe.py 原生格式靠
+                     media_to_mp3 先轉 MP3），檔案選擇器也合併成同一組篩選。
+                 (4) 資料夾語意改成「第一層每個項目各一堂課」：新增 list_course_entries()
+                     與 list_part_media()（遞迴、依檔名排序）。第一層的媒體檔各一堂，
+                     第一層的子資料夾各一堂（內部檔案合併），所以 3 檔＋1 子資料夾＝4 堂課。
+                     「📚 批次」勾選框連同 courseBatch 一起移除，資料夾一律逐項成課；
+                     建立任務一律走 /api/course/batch（單一來源就回 1 份）。
+                 (5) 排序依據是**檔名**不是檔案時間（使用者裁定：複製搬移會改掉時間戳）。
+
+v1.17 2026-09-10 [Claude Code / Opus 5] 建任務改為「沿用既有同名課程資料夾」：
+                 新增 find_existing_course_dir()，比對時把 YYYYMMDD_ 與 YYYYMMDD_HHMM_ 前綴剝掉，
+                 找到同一堂課就直接用那個資料夾，不再用今天的日期另建一個、也不再開 -2。
+                 舊 manifest 先移進 <課程夾>\_備份\ 再寫新的；manifest 加 reusedDir 旗標，
+                 rollback 遇到沿用的資料夾只收掉 manifest，不拆接合點、不刪資料夾。
+                 起因：09-09 的課 09-10 再建任務跑出第二個 20260910_桃園HR，媒體被剪走、
+                 MD 分裂成兩套 Vault 夾（使用者裁定資料夾名一律 YYYYMMDD_主題，不要 HHMM）。
 
 v1.16 2026-09-10 [Claude Code / Opus 5] ensure_course_docs_link() 改以「接合點實際指向的目標」
                  為準：既有 junction 直接回傳 os.path.realpath() 的結果，不再無條件先 mkdir
@@ -145,17 +187,29 @@ VAULT_COURSE_MD_ROOT = r"D:\本機MD檔\30_研究\課程逐字稿整理"
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".flv", ".wmv", ".ts"}
 AUDIO_EXTENSIONS = {".m4a", ".mp3", ".wav", ".aac", ".flac", ".ogg", ".opus", ".wma"}
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
-COURSE_SOURCE_TYPES = {"youtube", "local_video", "local_mp3", "mp3_folder", "mp3_parts"}
+# 2026-09-10 使用者裁定：來源簡化成「一個網址」＋「一個本機檔案或資料夾」。
+# url＝任何 yt-dlp 支援的影音網址（YouTube、Facebook、Instagram、X…）。
+# youtube 是 url 的 legacy 別名：舊 manifest 讀得回來，行為與 url 完全相同。
+URL_SOURCE = "url"
+LEGACY_URL_SOURCE = "youtube"
+URL_SOURCE_TYPES = {URL_SOURCE, LEGACY_URL_SOURCE}
+COURSE_SOURCE_TYPES = {URL_SOURCE, LEGACY_URL_SOURCE,
+                       "local_video", "local_mp3", "mp3_folder", "mp3_parts"}
 
-# 課程來源的唯一 canonical 副檔名集合。transcribe.py SUPPORTED 已確認為
-# .mp3/.mp4/.wav/.m4a/.ogg/.webm，再納入本服務既有的其他影片格式；不任意擴大
-# 到 ffmpeg 可能讀取的所有格式。
-COURSE_MEDIA_EXTENSIONS = {
-    ".mp3", ".mp4", ".wav", ".m4a", ".ogg", ".webm",
-} | VIDEO_EXTENSIONS
+# 課程來源吃得下的副檔名＝所有音檔＋所有影片檔（使用者裁定「自己去判斷這是什麼檔案」）。
+# transcribe.py 本身只認 .mp3/.mp4/.wav/.m4a/.ogg/.webm，其餘格式靠 media_to_mp3
+# 這一階段先用 ffmpeg 轉成 MP3 再進轉錄，所以這裡可以放寬到全部音視訊格式。
+COURSE_MEDIA_EXTENSIONS = AUDIO_EXTENSIONS | VIDEO_EXTENSIONS
 
-# mp3_parts＝同一堂課的多個媒體檔；mp3_folder＝資料夾內每個媒體檔各自是一堂獨立的課。
+# mp3_parts＝同一堂課的多個媒體檔（現在只由「資料夾裡的子資料夾」產生）；
+# mp3_folder＝使用者選到的那個資料夾本身，第一層每個項目各是一堂獨立的課。
 MULTI_PART_SOURCE = "mp3_parts"
+BATCH_SOURCE = "mp3_folder"
+
+
+def is_url_source(source_type: str) -> bool:
+    """網址來源（含 legacy 的 youtube 型別）。"""
+    return source_type in URL_SOURCE_TYPES
 PIPELINE_STATUSES = {"pending", "in_progress", "completed", "blocked", "skipped", "cancelled"}
 
 
@@ -173,25 +227,60 @@ def validate_course_source(source_type: str, value: str) -> bool:
     if source_type not in COURSE_SOURCE_TYPES:
         return False
     value = str(value or "").strip()
-    if source_type == "youtube":
+    if is_url_source(source_type):
+        # 2026-09-10 起不再限定 YouTube：Facebook、Instagram、X 等 yt-dlp 支援的
+        # 站台一律收；抓不抓得到交給 yt-dlp 自己回報，這裡只擋非 http(s)。
         parsed = urlparse(value)
-        host = (parsed.hostname or "").lower()
-        return parsed.scheme in {"http", "https"} and (
-            host == "youtu.be" or host == "youtube.com" or host.endswith(".youtube.com")
-        )
+        return parsed.scheme in {"http", "https"} and bool(parsed.hostname)
     path = Path(value)
     if source_type == "local_video":
         return path.is_file() and path.suffix.lower() in VIDEO_EXTENSIONS
     if source_type == "local_mp3":
-        # legacy key 不改名：現在代表可直接進課程流水線的單一媒體檔。
+        # legacy key 不改名：現在代表可直接進課程流水線的單一媒體檔（音訊或影片都算）。
         return path.is_file() and path.suffix.lower() in COURSE_MEDIA_EXTENSIONS
     if source_type == MULTI_PART_SOURCE:
-        # 分段媒體整個資料夾算「一堂課」；非支援檔案不納入。
-        return path.is_dir() and bool(list_batch_media(path))
-    if source_type == "mp3_folder":
-        # 資料夾批次：每個媒體檔各一堂課，音訊影片都收
-        return path.is_dir() and bool(list_batch_media(path))
+        # 分段媒體整個資料夾算「一堂課」；遞迴收，非支援檔案不納入。
+        return path.is_dir() and bool(list_part_media(path))
+    if source_type == BATCH_SOURCE:
+        # 容器資料夾：第一層的每個媒體檔、每個含媒體的子資料夾各一堂課。
+        return path.is_dir() and bool(list_course_entries(path))
     return False
+
+
+def detect_course_source(value: str) -> str:
+    """由來源字串自己判斷型別，使用者不必再從下拉選單挑（2026-09-10 使用者裁定）。
+
+    http(s) 開頭＝網址；本機單一媒體檔＝一堂課；資料夾＝容器，第一層每個項目各一堂課。
+    """
+    value = str(value or "").strip().strip('"')
+    if not value:
+        raise ValueError("請先填寫來源網址或本機路徑")
+    parsed = urlparse(value)
+    if parsed.scheme in {"http", "https"}:
+        if not parsed.hostname:
+            raise ValueError(f"網址不完整：{value}")
+        return URL_SOURCE
+    path = Path(value)
+    if path.is_dir():
+        return BATCH_SOURCE
+    if path.is_file():
+        suffix = path.suffix.lower()
+        if suffix in VIDEO_EXTENSIONS:
+            return "local_video"
+        if suffix in COURSE_MEDIA_EXTENSIONS:
+            return "local_mp3"
+        raise ValueError(f"不是支援的音訊或影片檔：{path.name}")
+    raise ValueError(f"找不到這個檔案或資料夾，也不是 http(s) 網址：{value}")
+
+
+def resolve_course_source_type(source_type: str, value: str) -> str:
+    """把呼叫端送來的型別正規化；空字串或 auto 就自己判斷。"""
+    source_type = str(source_type or "").strip()
+    if not source_type or source_type == "auto":
+        return detect_course_source(value)
+    if source_type not in COURSE_SOURCE_TYPES:
+        raise ValueError(f"不支援的課程來源類型：{source_type}")
+    return source_type
 
 
 # 課程名開頭已經是一個合法日期（常見於檔名 20260826_主題.mp4）時就沿用它，
@@ -205,6 +294,37 @@ def course_folder_name(clean_name: str) -> str:
     if LEADING_DATE_RE.match(clean_name):
         return clean_name
     return f"{datetime.now().strftime('%Y%m%d')}_{clean_name}"
+
+
+# 課程夾名前綴：YYYYMMDD_ 或 YYYYMMDD_HHMM_，用來還原出「純課程名」做比對。
+COURSE_DIR_PREFIX_RE = re.compile(r"^(?:19|20)\d{6}[_-](?:\d{4}[_-])?")
+
+
+def _course_stem(name: str) -> str:
+    """剝掉所有日期前綴後的純課程名（小寫），兩邊都用它比對。
+
+    重複剝是因為早期有 `20260826_20260826_主題` 這種雙日期夾名。
+    """
+    prev = None
+    while prev != name:
+        prev = name
+        name = COURSE_DIR_PREFIX_RE.sub("", name)
+    return name.strip().casefold()
+
+
+def find_existing_course_dir(root: Path, clean_name: str):
+    """課程庫裡已經有同一堂課的資料夾就沿用它，不管前綴是哪一天、有沒有 HHMM。
+
+    不這樣做的話，同一堂課隔天再建一次任務會多出一個「今天日期_課程名」資料夾，
+    媒體被剪過去、MD 也分裂成兩套 Vault 夾（2026-09-10 桃園HR 實際踩到）。
+    """
+    target = _course_stem(clean_name)
+    if not target or not root.is_dir():
+        return None
+    for d in sorted(x for x in root.iterdir() if x.is_dir()):
+        if _course_stem(d.name) == target:
+            return d
+    return None
 
 
 def _pipeline_stage(status: str, criterion: str) -> dict:
@@ -244,7 +364,7 @@ TRANSCRIPT_ENGINES = {
 
 # 沒有指定 artifacts 時的預設＝改版前的固定行為：課程包五份全做、技能樹不做。
 ARTIFACT_DEFAULTS = {
-    # YouTube 來源預設保留 MP4（維持改版前行為）；本機來源會自動關掉。
+    # 網址來源預設保留 MP4（維持改版前行為）；本機來源會自動關掉。
     "video": True,
     "mp3": True, "transcript": True, "summary": True,
     "report": True, "mindmap": True, "skillTree": False,
@@ -295,15 +415,19 @@ def resolve_course_artifacts(supplied: dict, source_type: str, skill_mode: int,
         if artifacts[downstream]:
             artifacts[prerequisite] = True
 
-    # 只有 YouTube 需要「下載影片」；本機來源的影片本來就在手上。
-    if source_type != "youtube":
+    # 只有網址來源需要「下載影片」；本機來源的影片本來就在手上。
+    if not is_url_source(source_type):
         artifacts["video"] = False
 
     # 只有單檔是 MP3，或資料夾內全部支援媒體都是 MP3，才沒有轉檔可做。
     source_path = Path(str(source_val or ""))
-    if source_type != "youtube" and source_path.is_file():
+    if not is_url_source(source_type) and source_path.is_file():
         all_sources_are_mp3 = source_path.suffix.lower() == ".mp3"
-    elif source_type in {"mp3_folder", MULTI_PART_SOURCE} and source_path.is_dir():
+    elif source_type == MULTI_PART_SOURCE and source_path.is_dir():
+        source_media = list_part_media(source_path)
+        all_sources_are_mp3 = bool(source_media) and all(
+            item.suffix.lower() == ".mp3" for item in source_media)
+    elif source_type == BATCH_SOURCE and source_path.is_dir():
         source_media = list_batch_media(source_path)
         all_sources_are_mp3 = bool(source_media) and all(
             item.suffix.lower() == ".mp3" for item in source_media)
@@ -324,14 +448,14 @@ def _stage_for(selected: bool, criterion: str) -> dict:
 # 不再等 AI 到 acquisition 才搬（舊做法常忘了搬，archive 因為「產物不在 courseDir」卡住）。
 # 這同時推翻 course-content-pipeline SKILL.md 2026-08-20 的「只搬不改名」。
 def plan_source_moves(source_type: str, source_val: str, clean_name: str) -> list:
-    """算出 [(來源檔, courseDir 內的目標檔名)]；YouTube 沒有本機原檔，回空清單。"""
-    if source_type == "youtube":
+    """算出 [(來源檔, courseDir 內的目標檔名)]；網址來源沒有本機原檔，回空清單。"""
+    if is_url_source(source_type):
         return []
     src = Path(source_val)
     if source_type == MULTI_PART_SOURCE:
-        # 分段是同一堂課：依檔名排序後編號，維持段序可讀。
+        # 分段是同一堂課：遞迴收整個子資料夾，依檔名排序後編號，維持段序可讀。
         return [(item, f"{clean_name}_{index:02d}{item.suffix}")
-                for index, item in enumerate(list_batch_media(src), start=1)]
+                for index, item in enumerate(list_part_media(src), start=1)]
     return [(src, f"{clean_name}{src.suffix}")]
 
 
@@ -443,6 +567,9 @@ def rollback_course_manifest(manifest: dict) -> list:
     course_dir = Path(manifest.get("courseDir", ""))
     try:
         (course_dir / "course-manifest.json").unlink(missing_ok=True)
+        if manifest.get("reusedDir"):
+            # 沿用既有課程夾：資料夾與接合點都是原本就有的，只收掉 manifest 就好。
+            return failed
         # 接合點要先拆掉才刪得動資料夾；os.rmdir 只拆連結，不會碰到 Vault 那邊的檔案。
         link = course_dir / COURSE_DOCS_LINK_NAME
         if _is_junction(link):
@@ -457,6 +584,7 @@ def create_course_manifest(source_type: str, source_val: str, course_name: str,
                            options: dict | None = None, output_root: str | None = None) -> tuple:
     """建立不覆蓋既有資料夾的 course-manifest.json，供 AI 跨 Session 續跑。"""
     source_val = str(source_val or "").strip()
+    source_type = resolve_course_source_type(source_type, source_val)
     if not validate_course_source(source_type, source_val):
         raise ValueError("課程來源無效或不存在")
     clean_name = sanitize_course_name(course_name)
@@ -468,8 +596,8 @@ def create_course_manifest(source_type: str, source_val: str, course_name: str,
     engine = str(supplied.get("transcriptEngine", "auto") or "auto")
     if engine not in TRANSCRIPT_ENGINES:
         raise ValueError(f"不支援的轉錄引擎：{engine}")
-    if engine == "subtitle_only" and source_type != "youtube":
-        raise ValueError("只有 YouTube 來源可能有現成字幕，本機來源請改選其他引擎")
+    if engine == "subtitle_only" and not is_url_source(source_type):
+        raise ValueError("只有網址來源可能有現成字幕，本機檔案請改選其他引擎")
     quality = str(supplied.get("videoQuality", "best") or "best")
     if quality not in VIDEO_QUALITIES:
         raise ValueError(f"不支援的影片畫質：{quality}")
@@ -493,23 +621,35 @@ def create_course_manifest(source_type: str, source_val: str, course_name: str,
             raise ValueError("enginePriority 有重複項目")
     root = Path(output_root or COURSE_ROOT)
     root.mkdir(parents=True, exist_ok=True)
-    base_name = course_folder_name(clean_name)
-    course_dir = root / base_name
-    suffix = 2
-    while course_dir.exists():
-        course_dir = root / f"{base_name}-{suffix}"
-        suffix += 1
-    course_dir.mkdir(parents=False)
+    reused_dir = find_existing_course_dir(root, clean_name)
+    if reused_dir is not None:
+        # 沿用既有課程夾。舊 manifest 先收進 _備份 再寫新的，不覆蓋任何進度紀錄。
+        course_dir = reused_dir
+        old_manifest = course_dir / "course-manifest.json"
+        if old_manifest.is_file():
+            backup_dir = course_dir / "_備份"
+            backup_dir.mkdir(exist_ok=True)
+            stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            old_manifest.replace(backup_dir / f"course-manifest.json.bak-{stamp}-before-reuse")
+    else:
+        base_name = course_folder_name(clean_name)
+        course_dir = root / base_name
+        suffix = 2
+        while course_dir.exists():
+            course_dir = root / f"{base_name}-{suffix}"
+            suffix += 1
+        course_dir.mkdir(parents=False)
 
     # 建完資料夾立刻把本機原檔剪進來；搬不動就連同剛建的空資料夾一起收掉。
     try:
         moved_value, moved_files = move_source_into_course_dir(
             source_type, source_val, course_dir, clean_name)
     except ValueError:
-        try:
-            course_dir.rmdir()
-        except OSError:
-            pass
+        if reused_dir is None:          # 沿用既有資料夾時絕不刪，那是使用者原本就有的東西
+            try:
+                course_dir.rmdir()
+            except OSError:
+                pass
         raise
 
     # MD 正本落點：一堂課一個同名 Vault 子資料夾，課程資料夾裡放「文件」接合點看過去。
@@ -525,13 +665,13 @@ def create_course_manifest(source_type: str, source_val: str, course_name: str,
             pass
         raise ValueError(f"課程資料夾建好了但接合點失敗，已全部回滾：{exc}") from exc
 
-    is_youtube = source_type == "youtube"
+    is_url = is_url_source(source_type)
     is_multi_part = source_type == MULTI_PART_SOURCE
-    if is_youtube:
+    if is_url:
         want_video = artifacts["video"]
         quality_text = "最佳畫質" if quality == "best" else quality
         acquisition_criterion = (
-            "來源媒體存在且非空；YouTube 另有 "
+            "來源媒體存在且非空；網址來源另有 "
             + (f"MP4（{quality_text}）、" if want_video else "")
             + "MP3、metadata 與字幕／raw transcript"
         )
@@ -569,13 +709,14 @@ def create_course_manifest(source_type: str, source_val: str, course_name: str,
         "source": {
             "type": source_type,
             "value": moved_value,
-            # 本機來源的原檔已經被剪走，只有 YouTube 還談得上「保留原始來源」。
-            "preserveOriginal": is_youtube,
+            # 本機來源的原檔已經被剪走，只有網址來源還談得上「保留原始來源」。
+            "preserveOriginal": is_url,
             "originalValue": source_val,
             "movedFiles": moved_files,
         },
         "outputRoot": str(root),
         "courseDir": str(course_dir),
+        "reusedDir": reused_dir is not None,
         "options": {
             "artifacts": artifacts,
             "skillTreeMode": skill_mode,
@@ -583,7 +724,7 @@ def create_course_manifest(source_type: str, source_val: str, course_name: str,
             "youtubeArtifacts": (
                 (["mp4"] if artifacts["video"] else [])
                 + ["mp3", "metadata", "subtitle_or_raw_transcript"]
-                if is_youtube else []
+                if is_url else []
             ),
             "videoQuality": quality,
             "summaryStyle": summary_style,
@@ -638,7 +779,7 @@ BATCH_MEDIA_EXTENSIONS = COURSE_MEDIA_EXTENSIONS
 
 
 def list_batch_media(folder) -> list:
-    """資料夾批次要處理的媒體檔，依檔名排序；非媒體檔忽略。"""
+    """資料夾第一層的媒體檔，依檔名排序；非媒體檔忽略。"""
     folder = Path(folder)
     if not folder.is_dir():
         return []
@@ -649,8 +790,43 @@ def list_batch_media(folder) -> list:
     )
 
 
+def list_part_media(folder) -> list:
+    """同一堂課的分段媒體：遞迴收整個資料夾，依相對路徑（等同檔名）排序。
+
+    2026-09-10 使用者裁定排序依據是**檔名**，不是檔案時間——複製搬移會改掉時間戳，
+    而錄音錄影檔名本來就常帶序號或時間，檔名排序才穩。
+    """
+    folder = Path(folder)
+    if not folder.is_dir():
+        return []
+    return sorted(
+        (item for item in folder.rglob("*")
+         if item.is_file() and item.suffix.lower() in BATCH_MEDIA_EXTENSIONS),
+        key=lambda x: str(x.relative_to(folder)).lower(),
+    )
+
+
+def list_course_entries(folder) -> list:
+    """使用者選到的資料夾，第一層有幾堂課就回幾個項目，依名稱排序。
+
+    2026-09-10 使用者裁定：第一層的每個媒體檔各是一堂課，第一層的每個子資料夾
+    也各是一堂課（該子資料夾內的媒體遞迴合併成同一堂）。所以「3 個檔＋1 個子資料夾」
+    ＝ 4 堂課。裡面沒有支援媒體的子資料夾直接略過，不會建出空課。
+    """
+    folder = Path(folder)
+    if not folder.is_dir():
+        return []
+    entries = []
+    for item in folder.iterdir():
+        if item.is_file() and item.suffix.lower() in BATCH_MEDIA_EXTENSIONS:
+            entries.append(item)
+        elif item.is_dir() and list_part_media(item):
+            entries.append(item)
+    return sorted(entries, key=lambda x: x.name.lower())
+
+
 def preview_course_folder(folder) -> dict:
-    """預覽資料夾第一層的支援媒體；子資料夾不列入也不算忽略。"""
+    """預覽這個資料夾會建出哪幾堂課：媒體檔各一堂，含媒體的子資料夾也各一堂。"""
     raw_folder = str(folder or "").strip()
     if not raw_folder:
         raise ValueError("請指定要預覽的資料夾")
@@ -660,49 +836,95 @@ def preview_course_folder(folder) -> dict:
     if not path.is_dir():
         raise ValueError(f"不是資料夾：{raw_folder}")
 
-    media = list_batch_media(path)
-    ignored_count = sum(
-        1 for item in path.iterdir()
-        if item.is_file() and item.suffix.lower() not in COURSE_MEDIA_EXTENSIONS
-    )
-    return {
-        "files": [
-            {
+    entries = list_course_entries(path)
+    listed = {item.name for item in entries}
+    # 第一層裡沒能變成課的東西都算忽略：非媒體檔，以及不含任何支援媒體的子資料夾。
+    ignored_count = sum(1 for item in path.iterdir() if item.name not in listed)
+
+    files = []
+    for item in entries:
+        if item.is_dir():
+            files.append({
+                "name": item.name,
+                "type": "folder",
+                "partCount": len(list_part_media(item)),
+            })
+        else:
+            files.append({
                 "name": item.name,
                 "type": "video" if item.suffix.lower() in VIDEO_EXTENSIONS else "audio",
-            }
-            for item in media
-        ],
-        "supportedCount": len(media),
+                "partCount": 1,
+            })
+    return {
+        "files": files,
+        "supportedCount": len(files),
         "ignoredCount": ignored_count,
     }
 
 
+def select_course_entries(folder, include=None) -> list:
+    """把使用者在網頁上勾選的項目名稱換成實際路徑；include 是 None 就是整批全要。
+
+    只認第一層項目的名稱，不接受路徑分隔符——避免有人送 `..\別的資料夾` 進來。
+    """
+    entries = list_course_entries(folder)
+    if include is None:
+        return entries
+    if not isinstance(include, list):
+        raise ValueError("include 必須是陣列")
+    wanted = [str(name or "").strip() for name in include]
+    wanted = [name for name in wanted if name]
+    if not wanted:
+        raise ValueError("一項都沒有勾選，請至少勾一項再建立任務")
+    by_name = {item.name: item for item in entries}
+    picked, missing = [], []
+    for name in wanted:
+        item = by_name.get(name)
+        if item is None:
+            missing.append(name)
+        elif item not in picked:
+            picked.append(item)
+    if missing:
+        raise ValueError("這幾項在資料夾第一層找不到（可能已被改名或移走）："
+                         + "、".join(missing))
+    return picked
+
+
 def create_course_batch(source_type: str, source_val: str, course_name: str = "",
-                        options: dict | None = None, output_root: str | None = None) -> list:
+                        options: dict | None = None, output_root: str | None = None,
+                        include=None) -> list:
     """一次建立多份 manifest。
 
-    `mp3_folder`＝資料夾內每個媒體檔各一堂課，回傳 N 份；
-    其他來源型別各自只有一堂課（`mp3_parts` 是整個資料夾合成一堂），回傳 1 份。
-    整批共用同一組 options（產物勾選、轉錄引擎等）。
+    使用者選到**資料夾**（mp3_folder）＝容器：第一層的每個媒體檔各一堂課，
+    第一層的每個子資料夾也各一堂課（子資料夾內的媒體遞迴合併成同一堂），回傳 N 份。
+    網址與單一檔案各自只有一堂課，回傳 1 份。整批共用同一組 options。
+
+    `include` 是網頁上勾選的第一層項目名稱；None 代表整批全要。
     """
-    if source_type != "mp3_folder":
+    source_val = str(source_val or "").strip()
+    source_type = resolve_course_source_type(source_type, source_val)
+    if source_type != BATCH_SOURCE:
         if not str(course_name or "").strip():
             course_name = derive_course_name(source_type, source_val)
         return [create_course_manifest(source_type, source_val, course_name,
                                        options=options, output_root=output_root)]
 
-    media = list_batch_media(source_val)
-    if not media:
+    entries = select_course_entries(source_val, include)
+    if not entries:
         raise ValueError("資料夾裡沒有可處理的音訊或影片檔")
 
     results = []
-    for item in media:
-        # 逐檔各自成課：型別依副檔名分流；legacy local_mp3 key 承載非影片媒體。
-        per_type = "local_video" if item.suffix.lower() in VIDEO_EXTENSIONS else "local_mp3"
+    for item in entries:
+        # 子資料夾＝一堂課（裡面的媒體合併）；媒體檔＝一堂課，型別依副檔名分流
+        # （legacy local_mp3 key 承載非影片媒體）。
+        if item.is_dir():
+            per_type, per_name = MULTI_PART_SOURCE, item.name
+        else:
+            per_type = "local_video" if item.suffix.lower() in VIDEO_EXTENSIONS else "local_mp3"
+            per_name = item.stem
         try:
             results.append(create_course_manifest(
-                per_type, str(item), item.stem, options=options, output_root=output_root))
+                per_type, str(item), per_name, options=options, output_root=output_root))
         except (ValueError, OSError) as exc:
             # 全有全無：一個檔搬不動，這批已經建好的課程也全部撤回，不留下半批。
             leftovers = []
@@ -921,39 +1143,68 @@ def decode_console(data: bytes) -> str:
     return data.decode("utf-8", "replace")
 
 
-def fetch_youtube_title(url: str) -> str:
-    """用本機 yt-dlp 讀影片標題，不下載媒體，也不呼叫外部 AI API。"""
-    if not validate_course_source("youtube", url):
-        raise ValueError("YouTube 網址無效")
+# 需要登入才看得到內容的站台：抓標題與下載都自動帶 Chrome cookies
+# （2026-09-10 使用者裁定）。YouTube 刻意不帶——匿名本來就抓得到，
+# 帶著自己的帳號 cookie 反而容易被判成機器人而擋下來。
+COOKIE_BROWSER = "chrome"
+COOKIE_REQUIRED_HOSTS = (
+    "facebook.com", "fb.watch", "fb.com", "instagram.com",
+    "threads.net", "threads.com", "x.com", "twitter.com", "t.co",
+    "tiktok.com", "linkedin.com", "vimeo.com",
+)
+
+
+def ytdl_cookie_args(url: str) -> list:
+    """需要登入的站台才帶瀏覽器 cookie；讀不到 cookie 時 yt-dlp 自己會報錯。"""
+    host = (urlparse(str(url or "")).hostname or "").lower()
+    if host.startswith("www."):
+        host = host[4:]
+    if any(host == item or host.endswith("." + item) for item in COOKIE_REQUIRED_HOSTS):
+        return ["--cookies-from-browser", COOKIE_BROWSER]
+    return []
+
+
+def fetch_media_title(url: str) -> str:
+    """用本機 yt-dlp 讀影片標題，不下載媒體，也不呼叫外部 AI API。
+
+    2026-09-10 起不限 YouTube：Facebook、Instagram、X 等 yt-dlp 支援的站台都走這裡，
+    需要登入的站台自動帶 Chrome cookies。
+    """
+    if not validate_course_source(URL_SOURCE, url):
+        raise ValueError("網址無效，請貼上 http(s) 開頭的完整網址")
     try:
         result = subprocess.run(
-            ytdl_base() + [
+            ytdl_base() + ytdl_cookie_args(url) + [
                 "--no-playlist", "--skip-download", "--no-warnings",
                 "--print", "%(title)s", url,
             ],
             capture_output=True,          # 收 bytes，解碼交給 decode_console
-            creationflags=NO_WINDOW, timeout=60,
+            creationflags=NO_WINDOW, timeout=120,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
-        raise ValueError(f"無法取得 YouTube 影片標題：{exc}") from exc
+        raise ValueError(f"無法取得影片標題：{exc}") from exc
     stdout = decode_console(result.stdout)
     title = next((line.strip() for line in stdout.splitlines() if line.strip()), "")
     if result.returncode != 0 or not title:
         stderr = decode_console(result.stderr).strip()
         detail = stderr.splitlines()[-1] if stderr else "yt-dlp 沒有回傳標題"
-        raise ValueError(f"無法取得 YouTube 影片標題：{detail}")
+        raise ValueError(f"無法取得影片標題：{detail}")
     return title
 
 
+# 舊名保留：既有呼叫端與測試還指名這個函式。
+fetch_youtube_title = fetch_media_title
+
+
 def derive_course_name(source_type: str, source: str, youtube_title_loader=None) -> str:
-    """由 YouTube 標題、本機檔名或資料夾名推導安全課程名稱。"""
+    """由網址的影片標題、本機檔名或資料夾名推導安全課程名稱。"""
     if source_type not in COURSE_SOURCE_TYPES:
         raise ValueError("不支援的課程來源類型")
     source = str(source or "").strip().rstrip("\\/")
-    if source_type == "youtube":
-        loader = youtube_title_loader or fetch_youtube_title
+    if is_url_source(source_type):
+        loader = youtube_title_loader or fetch_media_title
         candidate = loader(source)
-    elif source_type in {"mp3_folder", MULTI_PART_SOURCE}:
+    elif source_type in {BATCH_SOURCE, MULTI_PART_SOURCE}:
         candidate = Path(source).name
     else:
         candidate = Path(source).stem
@@ -1189,7 +1440,7 @@ def worker_ytdl(job: Job):
             continue
 
         item["status"] = "running"
-        cmd = ytdl_base() + [
+        cmd = ytdl_base() + ytdl_cookie_args(item["url"]) + [
             "--newline", "--no-playlist", "--no-warnings", "--windows-filenames",
             "--ffmpeg-location", str(Path(FFMPEG).parent),
             "-o", str(out_dir / "%(title)s.%(ext)s"),
@@ -1335,23 +1586,26 @@ from tkinter import filedialog
 
 out_path, mode, source_type, initial = sys.argv[1:5]
 root = tk.Tk()
-root.withdraw()
+# 不能用 withdraw()：父視窗被藏起來時，對話框會開在其他視窗後面又不進工作列，
+# 從網頁按下去就像「完全沒反應」（2026-09-10 實測，選資料夾那顆特別明顯）。
+# 改成 1x1 全透明視窗——看不見但搶得到前景，對話框才會蓋在瀏覽器上面。
+root.geometry("1x1+0+0")
+root.attributes("-alpha", 0.0)
 root.attributes("-topmost", True)
+root.update()
+root.lift()
+root.focus_force()
 kwargs = {"initialdir": initial} if initial and os.path.isdir(initial) else {}
 if mode == "folder":
     title = "選擇課程歸檔目錄" if source_type == "output" else "選擇課程媒體資料夾"
-    picked = filedialog.askdirectory(title=title, mustexist=True, **kwargs)
-elif source_type == "local_video":
-    picked = filedialog.askopenfilename(
-        title="選擇課程影片",
-        filetypes=[("影片檔", "*.mp4 *.mov *.mkv *.avi *.webm *.m4v *.flv *.wmv *.ts"),
-                   ("所有檔案", "*.*")],
-        **kwargs,
-    )
+    picked = filedialog.askdirectory(parent=root, title=title, mustexist=True, **kwargs)
 else:
     picked = filedialog.askopenfilename(
-        title="選擇課程音訊",
-        filetypes=[("支援的音訊檔", "*.mp3 *.m4a *.wav *.ogg"),
+        parent=root,
+        title="選擇課程音訊或影片",
+        filetypes=[("支援的音訊或影片",
+                    "*.mp3 *.m4a *.wav *.aac *.flac *.ogg *.opus *.wma "
+                    "*.mp4 *.mov *.mkv *.avi *.webm *.m4v *.flv *.wmv *.ts"),
                    ("所有檔案", "*.*")],
         **kwargs,
     )
@@ -1362,17 +1616,22 @@ with open(out_path, "w", encoding="utf-8") as handle:
 
 
 def course_picker_options(kind: str, source_type: str) -> dict:
-    """決定課程欄位要開檔案或資料夾選擇器。"""
+    """決定課程欄位要開檔案或資料夾選擇器。
+
+    來源欄位現在只有一格、兩顆按鈕，前端直接送 "file" 或 "folder"；
+    舊的型別名稱一併收下，既有呼叫端與 manifest 都不必改。
+    """
     if kind == "output":
         return {"mode": "folder", "sourceType": "output"}
-    if kind != "source" or source_type not in COURSE_SOURCE_TYPES:
+    if kind != "source":
         raise ValueError("不支援的選擇器類型")
-    if source_type == "youtube":
-        raise ValueError("YouTube 來源請貼上網址後抓取標題")
-    return {
-        "mode": "folder" if source_type in {"mp3_folder", MULTI_PART_SOURCE} else "file",
-        "sourceType": source_type,
-    }
+    if source_type in {"folder", BATCH_SOURCE, MULTI_PART_SOURCE}:
+        return {"mode": "folder", "sourceType": source_type}
+    if source_type in {"file", "local_video", "local_mp3"}:
+        return {"mode": "file", "sourceType": source_type}
+    if is_url_source(source_type):
+        raise ValueError("網址來源直接貼上網址就好，不用開選擇器")
+    raise ValueError("不支援的選擇器類型")
 
 
 def pick_course_path(kind: str, source_type: str, initial: str = "") -> str:
@@ -1995,9 +2254,19 @@ PAGE = r"""<!doctype html>
                     border-radius: 8px; background: #0d1117; font-size: 12px; }
   .course-preview ul { list-style: none; margin: 7px 0 0; padding: 0; max-height: 220px;
                        overflow-y: auto; }
-  .course-preview li { display: flex; justify-content: space-between; gap: 12px;
+  .course-preview li { display: flex; align-items: center; gap: 10px;
                        padding: 5px 0; border-top: 1px solid var(--line); }
+  .course-preview li input[type=checkbox] { flex: none; margin: 0; cursor: pointer; }
+  .course-preview li label { display: flex; align-items: center; gap: 10px;
+                             flex: 1; min-width: 0; cursor: pointer; }
+  .course-preview .nm { flex: 1; min-width: 0; overflow: hidden;
+                        text-overflow: ellipsis; white-space: nowrap; }
   .course-preview .kind { color: var(--muted); white-space: nowrap; }
+  .course-preview li.off .nm, .course-preview li.off .kind { opacity: .45; }
+  .course-preview .tools { display: flex; gap: 8px; align-items: center;
+                           margin-top: 8px; flex-wrap: wrap; }
+  .course-preview .tools button { padding: 4px 10px; font-size: 12px; }
+  .course-preview .tally { color: var(--accent); }
 </style>
 </head>
 <body>
@@ -2054,28 +2323,32 @@ PAGE = r"""<!doctype html>
   </div>
 
   <div class="card" id="courseCard">
-    <div class="label">來源類型</div>
-    <select id="courseType" onchange="courseSourceTypeChanged()">
-      <option value="youtube">YouTube 網址</option>
-      <option value="local_video">本機錄影檔</option>
-      <option value="local_mp3">本機音訊檔</option>
-      <option value="mp3_folder">媒體資料夾批次（每個檔各是一堂課）</option>
-      <option value="mp3_parts">同一堂課的多個檔案（分段錄音）</option>
-    </select>
-    <div class="label" style="margin-top:12px">來源網址或完整路徑</div>
+    <div class="label">來源（貼網址，或選本機檔案／資料夾）</div>
     <div class="row">
-      <input type="text" id="courseSource" spellcheck="false" placeholder="https://www.youtube.com/watch?v=..." oninput="clearCoursePreview(); syncCourseArtifacts()" onblur="suggestCourseName(); previewCourseSource()">
-      <button id="courseSourcePick" onclick="pickCourseSource()">抓影片標題</button>
+      <input type="text" id="courseSource" spellcheck="false" placeholder="https://... 或 D:\錄影\某堂課.mp4" oninput="clearCoursePreview(); markCourseSourceDirty()" onblur="resolveCourseSource()">
+      <button id="coursePickFolder" onclick="pickCourseSource('folder')">選資料夾</button>
+    </div>
+    <input type="hidden" id="courseType" value="">
+    <div class="note" id="courseSourceNote">
+      <b>網址</b>：YouTube、Facebook、Instagram、X 等 yt-dlp 支援的站台都吃，需要登入的站台會自動帶 Chrome cookies。<br>
+      <b>資料夾</b>：選好之後下面會把第一層的東西全部列出來，勾哪幾項就建幾堂課。
+      子資料夾算一堂（裡面的檔案依檔名排序合併成同一堂）。<br>
+      <b>單一檔案</b>：直接貼完整路徑也可以，那個檔就是一堂課；任何音檔或影片檔都吃。
     </div>
     <div class="course-preview hide" id="coursePreview" aria-live="polite">
       <div id="coursePreviewSummary"></div>
       <ul id="coursePreviewList"></ul>
+      <div class="tools hide" id="coursePreviewTools">
+        <button onclick="courseEntryPickAll(true)">全選</button>
+        <button onclick="courseEntryPickAll(false)">全不選</button>
+        <span class="tally" id="coursePreviewTally"></span>
+      </div>
     </div>
     <div class="label" style="margin-top:12px">課程名稱（自動帶入後仍可修改）</div>
     <input type="text" id="courseName" spellcheck="false" placeholder="會自動抓影片標題、檔名或資料夾名">
     <div class="label" style="margin-top:16px">要產出哪些東西（沒勾的 AI 就不做）</div>
     <div class="picks">
-      <label class="pick" id="w-video"><input type="checkbox" id="a-video" checked onchange="syncCourseArtifacts()"> 🎬 下載 MP4</label>
+      <label class="pick" id="w-video"><input type="checkbox" id="a-video" checked onchange="courseVideoToggle(this)"> 🎬 下載 MP4</label>
       <label class="pick" id="w-mp3"><input type="checkbox" id="a-mp3" checked onchange="syncCourseArtifacts()"> 🎵 轉檔 MP3</label>
       <label class="pick" id="w-transcript"><input type="checkbox" id="a-transcript" checked onchange="syncCourseArtifacts()"> 📝 逐字稿</label>
       <label class="pick" id="w-review" title="用 agy（Gemini）校對專有名詞與人名，raw 稿保留不覆蓋"><input type="checkbox" id="a-review" checked onchange="syncCourseArtifacts()"> 🔍 校對逐字稿</label>
@@ -2109,7 +2382,7 @@ PAGE = r"""<!doctype html>
         <option value="groq">Groq whisper-large-v3（免費額度，有 SRT）</option>
         <option value="assemblyai">💲 AssemblyAI 說話者辨識（付費，無 SRT）</option>
         <option value="local_whisper">本機 whisper（不花額度，很慢）</option>
-        <option value="subtitle_only">只用現成字幕（限 YouTube）</option>
+        <option value="subtitle_only">只用現成字幕（限網址來源）</option>
       </select>
       <span class="hintx" id="courseEngineHint"></span>
     </div>
@@ -2123,10 +2396,6 @@ PAGE = r"""<!doctype html>
       <input type="text" id="courseOut" spellcheck="false">
       <button id="courseOutPick" onclick="pickCourseOutput()">選擇資料夾</button>
     </div>
-    <label class="pick" id="courseBatchWrap" style="margin-top:14px; display:none">
-      <input type="checkbox" id="courseBatch" onchange="syncCourseArtifacts()">
-      📚 批次：資料夾內每個媒體檔各建一堂課
-    </label>
     <div class="row" style="margin-top:14px">
       <button class="go" id="courseCreate" onclick="startCourseCreate()">🚀 建立任務並送 agy</button>
       <button class="ghost hide" id="courseCopyPrompt" onclick="copyCoursePrompt()">複製指令（備援）</button>
@@ -2175,6 +2444,9 @@ let timer = null;
 let lastCoursePrompt = '';
 let courseRows = [];        // 進度清單目前這批資料，開資料夾／刪除都用索引取，避免把路徑塞進 onclick
 let coursePendingDelete = -1;   // 刪除鍵要按兩下：第一下先變成「確定刪？」
+let courseWantVideo = true;     // 使用者對「下載 MP4」的本意；本機來源會強制關掉那顆，不能當成使用者取消
+let courseEntries = [];         // 來源資料夾第一層列出來的項目（每項＝一堂課）
+let courseEntryChecked = new Set();   // 其中被勾起來的項目名稱，建立任務時只送這些
 
 const DEFAULTS = { video: %DEFAULT_VIDEO%, audio: %DEFAULT_AUDIO%, ytdl: %DEFAULT_YTDL%, course: %DEFAULT_COURSE% };
 const $ = id => document.getElementById(id);
@@ -2194,7 +2466,7 @@ document.querySelectorAll('.tab').forEach(tab => tab.onclick = () => {
   if (mode === 'ytdl') { $('ytOut').value = $('ytOut').value || DEFAULTS.ytdl; return; }
   if (mode === 'course') {
     $('courseOut').value = $('courseOut').value || DEFAULTS.course;
-    courseSourceTypeChanged();
+    syncCourseArtifacts();
     refreshCourseProgress();
     return;
   }
@@ -2212,32 +2484,58 @@ async function coursePost(path, payload) {
   return data;
 }
 
-function courseSourceTypeChanged() {
-  const type = $('courseType').value;
-  const source = $('courseSource');
-  const button = $('courseSourcePick');
-  const settings = {
-    youtube: ['https://www.youtube.com/watch?v=...', '抓影片標題'],
-    local_video: ['選擇影片或輸入完整路徑', '選擇影片'],
-    local_mp3: ['選擇音訊檔或輸入完整路徑', '選擇音訊'],
-    mp3_folder: ['選擇含支援音訊或影片的資料夾，每個檔各建一堂課', '選擇資料夾'],
-    mp3_parts: ['選擇資料夾，裡面的支援音訊或影片依檔名排序合成同一堂課', '選擇資料夾']
-  }[type];
-  source.placeholder = settings[0];
-  button.textContent = settings[1];
-  clearCoursePreview();
+// 來源型別不再由使用者挑，由來源字串自己決定（2026-09-10 使用者裁定）。
+// #courseType 變成隱藏欄位，只是把判定結果留給其他函式讀。
+const COURSE_TYPE_LABELS = {
+  url: '網址來源',
+  youtube: '網址來源',
+  local_video: '本機影片（這個檔就是一堂課）',
+  local_mp3: '本機音訊（這個檔就是一堂課）',
+  mp3_folder: '資料夾（第一層每個項目各一堂課）',
+  mp3_parts: '資料夾（裡面的檔案合併成一堂課）'
+};
+
+function courseTypeLabel(type) { return COURSE_TYPE_LABELS[type] || '未判定的來源'; }
+
+function setCourseType(type) { $('courseType').value = type || ''; }
+
+// 貼上網址時先在前端就地判定，UI（下載 MP4、字幕引擎）立刻跟著開；
+// 本機路徑要問後端才知道是檔案還是資料夾，等 blur 或選擇器回來再定。
+function markCourseSourceDirty() {
+  const source = $('courseSource').value.trim();
+  setCourseType(/^https?:\/\//i.test(source) ? 'url' : '');
   syncCourseArtifacts();
-  if (type === 'mp3_folder' && source.value.trim()) previewCourseSource();
+}
+
+async function resolveCourseSource() {
+  const source = $('courseSource').value.trim();
+  if (!source) { setCourseType(''); clearCoursePreview(); syncCourseArtifacts(); return; }
+  const result = $('courseResult');
+  $('coursePickFolder').disabled = true;
+  result.textContent = '正在判斷來源並帶入課程名稱…';
+  try {
+    const data = await coursePost('/api/course/name', { sourceType: 'auto', source });
+    if ($('courseSource').value.trim() !== source) return;
+    setCourseType(data.sourceType);
+    $('courseName').value = data.courseName;
+    result.textContent = `✅ ${courseTypeLabel(data.sourceType)}；課程名稱已帶入：${data.courseName}`;
+  } catch (error) {
+    result.textContent = `❌ ${error.message}`;
+  } finally {
+    $('coursePickFolder').disabled = false;
+  }
+  syncCourseArtifacts();
+  await previewCourseSource();
 }
 
 // 產物勾選：把相依前置自動補上並鎖住，順便回推 skillTreeMode。
 // artifact keys 保持在函式內；hash 自動路由則必須等下列模組級狀態初始化完成。
 const ENGINE_LABELS = {
-  subtitle_manual: '作者上傳字幕（最準，限 YouTube）',
+  subtitle_manual: '作者上傳字幕（最準，限網址來源）',
   groq: 'Groq whisper-large-v3（免費額度，有 SRT）',
   local_whisper: '本機 whisper（不花額度，很慢）',
   web: 'ChatEverywhere 網頁（自動化較脆弱）',
-  subtitle_auto: 'YouTube 自動生成字幕（沒標點，品質最差）'
+  subtitle_auto: '平台自動生成字幕（沒標點，品質最差）'
 };
 // 預設只走作者上傳字幕與 Groq；其餘要自己勾（很慢／脆弱／品質差）。
 let coursePrio = [
@@ -2290,10 +2588,14 @@ function courseArtifactState() {
                 'summary', 'report', 'mindmap', 'skillTree'];
   const type = $('courseType').value;
   const source = $('courseSource').value.trim().toLowerCase();
+  const isUrl = type === 'url' || type === 'youtube';
   // 前端不掃資料夾：只有明確選到單一 .mp3 才關掉轉檔，資料夾交由後端逐檔判斷。
   const mp3Source = type === 'local_mp3' && source.endsWith('.mp3');
   const want = {};
   keys.forEach(k => want[k] = $('a-' + k).checked);
+  // 下載 MP4 會因為來源是本機檔而被強制關掉，所以要記使用者的本意，
+  // 換回網址來源時才不會莫名其妙留在關閉狀態。
+  want.video = courseWantVideo;
   const needTranscript = want.summary || want.report || want.mindmap
     || want.skillTree || want.review || want.rawSegments;
   const transcript = want.transcript || needTranscript;
@@ -2304,9 +2606,10 @@ function courseArtifactState() {
   const quality = $('courseQuality').value;
   const summaryStyle = $('s-dense').checked ? 'dense' : 'standard';
   const priority = coursePrio.filter(e => e.on).map(e => e.key);
-  const batch = $('courseType').value === 'mp3_folder' && $('courseBatch').checked;
+  // 資料夾一律逐項成課，不再有「要不要批次」的選項（2026-09-10 使用者裁定）。
+  const batch = type === 'mp3_folder';
   return { mp3Source, want, needTranscript, transcript, mp3, mode, engine, priority,
-           batch, quality, summaryStyle, isYoutube: $('courseType').value === 'youtube' };
+           batch, quality, summaryStyle, isUrl };
 }
 
 function syncCourseArtifacts() {
@@ -2318,10 +2621,10 @@ function syncCourseArtifacts() {
 
   courseSetBox('mp3', st.mp3, false, st.mp3Source);
   courseSetBox('transcript', st.transcript, st.needTranscript, false);
-  courseSetBox('video', st.isYoutube && st.want.video, false, !st.isYoutube);
+  courseSetBox('video', st.isUrl && st.want.video, false, !st.isUrl);
   ['summary', 'report', 'mindmap', 'skillTree', 'review', 'rawSegments']
     .forEach(k => courseSetBox(k, st.want[k], false, false));
-  $('courseQualityRow').style.display = (st.isYoutube && st.want.video) ? 'flex' : 'none';
+  $('courseQualityRow').style.display = (st.isUrl && st.want.video) ? 'flex' : 'none';
   $('courseSummarySub').style.display = st.want.summary ? 'flex' : 'none';
   if (!st.want.summary) { $('s-dense').checked = false; }
   $('s-teach').disabled = lockTeach;
@@ -2330,8 +2633,9 @@ function syncCourseArtifacts() {
   const notes = [];
   if (st.mp3Source) notes.push('來源已經是 MP3，不需要轉檔這一步。');
   if (st.needTranscript) notes.push('🔒 的是下游需要而自動帶進來的前置，不能單獨取消。');
-  if ($('courseType').value === 'mp3_folder' || $('courseType').value === 'mp3_parts') {
-    notes.push('資料夾會只處理支援的音訊與影片；若全部來源已是 MP3，後端會自動略過轉檔。');
+  if (st.batch) {
+    notes.push('資料夾來源：第一層每個媒體檔各一堂課、每個子資料夾各一堂課（子資料夾內依檔名排序合併成同一堂）。'
+      + '每堂課各自用檔名或子資料夾名當課程名，上面那格「課程名稱」不會套用。');
   }
   if (lockTeach) notes.push('「含最小案例」要先有教學，已自動帶上「含教學」。');
   if (st.want.review) notes.push('🔍 校對會呼叫 agy（Gemini）逐段修專有名詞，會吃額度；raw 稿保留不覆蓋，下游改吃校對版。');
@@ -2342,10 +2646,9 @@ function syncCourseArtifacts() {
     notes.push('⚠️ 至少要勾一項產物才能建立任務。');
   }
   $('courseEngineRow').style.display = st.transcript ? 'flex' : 'none';
-  const isYt = $('courseType').value === 'youtube';
   const subOnly = $('courseEngine').querySelector('option[value="subtitle_only"]');
-  subOnly.disabled = !isYt;
-  if (!isYt && st.engine === 'subtitle_only') { $('courseEngine').value = 'auto'; }
+  subOnly.disabled = !st.isUrl;
+  if (!st.isUrl && st.engine === 'subtitle_only') { $('courseEngine').value = 'auto'; }
   const hints = {
     auto: '沒有作者字幕就用 Groq，都不行才退本機 whisper。',
     groq: '每天約 8 小時音訊免費額度，可中斷續跑，會產出 SRT。',
@@ -2354,7 +2657,6 @@ function syncCourseArtifacts() {
     subtitle_only: '抓不到作者上傳字幕就停下來標 blocked，不會自己改用轉錄。'
   };
   $('courseEngineHint').textContent = hints[$('courseEngine').value] || '';
-  $('courseBatchWrap').style.display = ($('courseType').value === 'mp3_folder') ? 'flex' : 'none';
   $('coursePrioBox').style.display = (st.transcript && st.engine === 'auto') ? 'block' : 'none';
   coursePrioRender();
   if (st.engine === 'auto' && !st.priority.length) {
@@ -2362,6 +2664,8 @@ function syncCourseArtifacts() {
   }
   $('courseDepNote').innerHTML = notes.join('<br>');
 }
+
+function courseVideoToggle(box) { courseWantVideo = box.checked; syncCourseArtifacts(); }
 
 function courseSetBox(key, checked, locked, disabled) {
   const box = $('a-' + key), wrap = $('w-' + key);
@@ -2380,8 +2684,43 @@ function clearCoursePreview() {
   const preview = $('coursePreview');
   const list = $('coursePreviewList');
   preview.classList.add('hide');
+  $('coursePreviewTools').classList.add('hide');
   $('coursePreviewSummary').textContent = '';
+  $('coursePreviewTally').textContent = '';
   list.replaceChildren();
+  courseEntries = [];
+  courseEntryChecked = new Set();
+}
+
+// 勾選狀態改變只重算計數，不重畫清單（重畫會把捲動位置吃掉）。
+function courseEntryToggle(name, on) {
+  if (on) courseEntryChecked.add(name); else courseEntryChecked.delete(name);
+  const row = $('coursePreviewList').querySelector(`li[data-name="${cssEscape(name)}"]`);
+  if (row) row.classList.toggle('off', !on);
+  renderCourseTally();
+}
+
+function courseEntryPickAll(on) {
+  courseEntryChecked = on ? new Set(courseEntries.map(item => item.name)) : new Set();
+  $('coursePreviewList').querySelectorAll('li').forEach(row => {
+    const box = row.querySelector('input[type=checkbox]');
+    box.checked = on;
+    row.classList.toggle('off', !on);
+  });
+  renderCourseTally();
+}
+
+function renderCourseTally() {
+  const n = courseEntryChecked.size;
+  $('coursePreviewTally').textContent = n
+    ? `已勾 ${n} 項 → 建 ${n} 堂課`
+    : '⚠️ 一項都沒勾，建不了任務';
+}
+
+// querySelector 用的字串跳脫；CSS.escape 舊瀏覽器沒有，補一個最小版本。
+function cssEscape(value) {
+  return window.CSS && CSS.escape ? CSS.escape(value)
+    : String(value).replace(/["\\]/g, '\\$&');
 }
 
 async function previewCourseSource() {
@@ -2400,22 +2739,38 @@ async function previewCourseSource() {
     list.replaceChildren();
     if (!data.files.length) {
       $('coursePreviewSummary').textContent =
-        `沒有找到支援的音訊或影片；略過 ${data.ignoredCount} 個非支援檔。`;
+        `沒有找到支援的音訊或影片；略過 ${data.ignoredCount} 個項目。`;
       return;
     }
+    // 預設全勾：多數情況就是整個資料夾都要，不想要的再取消。
+    courseEntries = data.files;
+    courseEntryChecked = new Set(data.files.map(item => item.name));
     $('coursePreviewSummary').textContent =
-      `共 ${data.supportedCount} 個可處理檔案；略過 ${data.ignoredCount} 個非支援檔。`;
+      `第一層有 ${data.supportedCount} 項可以各建一堂課；略過 ${data.ignoredCount} 個非支援項目。勾哪幾項就建幾堂。`;
     data.files.forEach(item => {
       const row = document.createElement('li');
+      row.dataset.name = item.name;
+      const label = document.createElement('label');
+      const box = document.createElement('input');
+      box.type = 'checkbox';
+      box.checked = true;
+      box.onchange = () => courseEntryToggle(item.name, box.checked);
       const name = document.createElement('span');
       const kind = document.createElement('span');
-      name.textContent = item.name;
+      name.className = 'nm';
+      name.textContent = item.type === 'folder' ? item.name + '\\' : item.name;
       kind.className = 'kind';
-      kind.textContent = item.type === 'video' ? '影片' : '音訊';
-      row.appendChild(name);
-      row.appendChild(kind);
+      kind.textContent = item.type === 'folder'
+        ? `子資料夾｜${item.partCount} 段合併成一堂`
+        : (item.type === 'video' ? '影片' : '音訊');
+      label.appendChild(box);
+      label.appendChild(name);
+      label.appendChild(kind);
+      row.appendChild(label);
       list.appendChild(row);
     });
+    $('coursePreviewTools').classList.remove('hide');
+    renderCourseTally();
   } catch (error) {
     if ($('courseType').value !== sourceType || $('courseSource').value.trim() !== source) return;
     list.replaceChildren();
@@ -2423,46 +2778,25 @@ async function previewCourseSource() {
   }
 }
 
-async function suggestCourseName() {
-  const source = $('courseSource').value.trim();
-  if (!source) return;
-  const button = $('courseSourcePick');
-  const result = $('courseResult');
-  button.disabled = true;
-  result.textContent = $('courseType').value === 'youtube' ? '正在讀取影片標題…' : '正在帶入課程名稱…';
-  try {
-    const data = await coursePost('/api/course/name', {
-      sourceType: $('courseType').value, source
-    });
-    $('courseName').value = data.courseName;
-    result.textContent = `✅ 課程名稱已帶入：${data.courseName}`;
-  } catch (error) {
-    result.textContent = `❌ ${error.message}；也可以直接手動輸入課程名稱。`;
-  } finally {
-    button.disabled = false;
-  }
-}
-
-async function pickCourseSource() {
-  if ($('courseType').value === 'youtube') {
-    await suggestCourseName();
-    return;
-  }
-  const button = $('courseSourcePick');
+// mode 只有 'file' 與 'folder' 兩種：選到檔案就是一堂課，
+// 選到資料夾就由後端展開成第一層的 N 堂課。
+async function pickCourseSource(mode) {
+  const button = $('coursePickFolder');
   const result = $('courseResult');
   button.disabled = true;
   result.textContent = '請在本機視窗選擇來源…';
   try {
     const data = await coursePost('/api/course/pick', {
-      kind: 'source', sourceType: $('courseType').value,
+      kind: 'source', sourceType: mode,
       initial: $('courseSource').value.trim()
     });
     if (data.cancelled) { result.textContent = '已取消選擇。'; return; }
     $('courseSource').value = data.picked;
+    setCourseType(data.sourceType);
     $('courseName').value = data.courseName;
     syncCourseArtifacts();
     await previewCourseSource();
-    result.textContent = `✅ 已選擇：${data.picked}\n課程名稱：${data.courseName}`;
+    result.textContent = `✅ 已選擇：${data.picked}\n${courseTypeLabel(data.sourceType)}　課程名稱：${data.courseName}`;
   } catch (error) {
     result.textContent = `❌ ${error.message}`;
   } finally {
@@ -2477,7 +2811,7 @@ async function pickCourseOutput() {
   result.textContent = '請在本機視窗選擇歸檔目錄…';
   try {
     const data = await coursePost('/api/course/pick', {
-      kind: 'output', sourceType: $('courseType').value,
+      kind: 'output', sourceType: 'output',
       initial: $('courseOut').value.trim() || DEFAULTS.course
     });
     if (data.cancelled) { result.textContent = '已取消選擇。'; return; }
@@ -2523,7 +2857,7 @@ async function copyCoursePrompt() {
 function buildCoursePrompt(manifestPaths, st) {
   const paths = Array.isArray(manifestPaths) ? manifestPaths : [manifestPaths];
   const wanted = [];
-  if (st.want.video && st.isYoutube) {
+  if (st.want.video && st.isUrl) {
     wanted.push('下載 MP4' + (st.quality === 'best' ? '（最佳畫質）' : `（${st.quality}）`));
   }
   if (st.mp3) wanted.push('轉檔 MP3');
@@ -2545,8 +2879,9 @@ function buildCoursePrompt(manifestPaths, st) {
   if (st.want.mindmap) wanted.push('心智圖（MD 與 Markmap HTML）');
   if (st.want.review) wanted.push('逐字稿校對版（呼叫 agy，只修專有名詞與同音誤字，raw 稿不覆蓋，下游吃校對版）');
   if (st.want.skillTree) wanted.push('技能樹模式 ' + st.mode);
-  const multi = $('courseType').value === 'mp3_parts'
-    ? '\n這是同一堂課切成多段的錄音：每段各自轉逐字稿，再依檔名順序合併成單一份完整逐字稿，之後的產物都只做一份，涵蓋整堂課。'
+  // 分段合併現在多半是「資料夾裡的子資料夾」變出來的，所以批次時也要講這段規則。
+  const multi = ($('courseType').value === 'mp3_parts' || st.batch)
+    ? '\n若某個 manifest 的 options.multiPart 是 true，那堂課是同一堂切成多段的錄音：每段各自轉逐字稿，再依檔名順序合併成單一份完整逐字稿，之後的產物都只做一份，涵蓋整堂課。'
     : '';
   const head = paths.length > 1
     ? '執行 course-content-pipeline，以下 ' + paths.length + ' 個任務請**依序**處理，'
@@ -2672,16 +3007,25 @@ function resetDeleteButtons() {
 async function startCourseCreate() {
   const button = $('courseCreate');
   const result = $('courseResult');
+  // 使用者可能貼完網址就直接按，還沒觸發過 blur 判定；先補判一次再送。
+  if (!$('courseType').value && $('courseSource').value.trim()) await resolveCourseSource();
+  const st = courseArtifactState();
+  if (st.batch && !courseEntryChecked.size) {
+    result.textContent = '❌ 清單裡一項都沒勾，請至少勾一項再建立任務。';
+    return;
+  }
   button.disabled = true;
   result.textContent = '建立中…';
-  const st = courseArtifactState();
   try {
-    const response = await fetch(st.batch ? '/api/course/batch' : '/api/course/create', {
+    // 一律走 batch：單一網址或單一檔案回 1 份，資料夾回第一層 N 份，前端不必自己分。
+    const response = await fetch('/api/course/batch', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        sourceType: $('courseType').value,
+        sourceType: 'auto',
         source: $('courseSource').value.trim(),
         courseName: $('courseName').value.trim(),
+        // 資料夾來源只建被勾起來的那幾項；網址與單一檔案不送這個欄位
+        include: st.batch ? [...courseEntryChecked] : undefined,
         outputRoot: $('courseOut').value.trim() || DEFAULTS.course,
         options: {
           artifacts: {
@@ -2971,11 +3315,13 @@ class Handler(BaseHTTPRequestHandler):
                 source = payload.get("source", "")
                 if not isinstance(source_type, str) or not isinstance(source, str):
                     raise ValueError("sourceType 與 source 必須是字串")
-                course_name = derive_course_name(source_type.strip(), source.strip())
+                # sourceType 送 "auto"（或空字串）就由後端自己判斷是網址、檔案還是資料夾。
+                resolved_type = resolve_course_source_type(source_type.strip(), source.strip())
+                course_name = derive_course_name(resolved_type, source.strip())
             except (json.JSONDecodeError, ValueError, TypeError, OSError) as exc:
                 self._json({"error": str(exc)}, 400)
                 return
-            self._json({"courseName": course_name})
+            self._json({"courseName": course_name, "sourceType": resolved_type})
 
         elif url.path == "/api/course/pick":
             length = int(self.headers.get("Content-Length", 0))
@@ -2997,7 +3343,20 @@ class Handler(BaseHTTPRequestHandler):
                 return
             response = {"picked": picked}
             if kind == "source":
-                response["courseName"] = derive_course_name(source_type, picked)
+                try:
+                    resolved_type = detect_course_source(picked)
+                except (ValueError, OSError):
+                    # 選擇器剛回傳的路徑理論上一定存在；真判不出來就照當初開的模式退一步，
+                    # 不要因為判型失敗就讓使用者選了半天的路徑掉在地上。
+                    resolved_type = (BATCH_SOURCE
+                                     if source_type in {"folder", BATCH_SOURCE, MULTI_PART_SOURCE}
+                                     else "local_mp3")
+                try:
+                    response["sourceType"] = resolved_type
+                    response["courseName"] = derive_course_name(resolved_type, picked)
+                except (ValueError, OSError) as exc:
+                    self._json({"error": str(exc)}, 400)
+                    return
             self._json(response)
 
         elif url.path == "/api/course/open":
@@ -3041,12 +3400,16 @@ class Handler(BaseHTTPRequestHandler):
                         raise ValueError(f"{field} 必須是字串")
                 if not isinstance(payload.get("options", {}), dict):
                     raise ValueError("options 必須是 object")
+                include = payload.get("include")
+                if include is not None and not isinstance(include, list):
+                    raise ValueError("include 必須是陣列")
                 results = create_course_batch(
                     (payload.get("sourceType") or "").strip(),
                     (payload.get("source") or "").strip(),
                     (payload.get("courseName") or "").strip(),
                     options=payload.get("options") or {},
                     output_root=(payload.get("outputRoot") or COURSE_ROOT).strip(),
+                    include=include,
                 )
             except (json.JSONDecodeError, ValueError, TypeError, OSError) as exc:
                 self._json({"error": str(exc)}, 400)

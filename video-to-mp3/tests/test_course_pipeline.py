@@ -91,10 +91,42 @@ class TestCoursePipeline(unittest.TestCase):
         valid = server.validate_course_source("local_video", fake_path)
         self.assertFalse(valid)
 
-    def test_deceptive_youtube_hostname_rejection(self):
-        self.assertFalse(server.validate_course_source(
-            "youtube", "https://notyoutube.com/watch?v=bad"
-        ))
+    def test_url_source_accepts_any_site_but_rejects_non_http(self):
+        """2026-09-10 起網址來源通吃各站台，只擋非 http(s) 與殘缺網址。"""
+        for url in (
+            "https://www.youtube.com/watch?v=abc",
+            "https://www.facebook.com/watch/?v=123",
+            "https://www.instagram.com/reel/abc/",
+            "https://x.com/someone/status/123",
+        ):
+            self.assertTrue(server.validate_course_source(server.URL_SOURCE, url), url)
+            self.assertTrue(server.validate_course_source("youtube", url), url)
+            self.assertEqual(server.detect_course_source(url), server.URL_SOURCE)
+        for bad in ("ftp://example.com/a.mp4", "javascript:alert(1)",
+                    "https://", "隨便打的字"):
+            self.assertFalse(server.validate_course_source(server.URL_SOURCE, bad), bad)
+
+    def test_detect_course_source_tells_url_file_and_folder_apart(self):
+        """來源型別由字串自己決定，使用者不必再挑下拉選單。"""
+        base = Path(self.temp_dir.name) / "自動判斷"
+        base.mkdir()
+        video = base / "一堂課.mp4"
+        video.write_bytes(b"fake")
+        audio = base / "一堂課.flac"          # 非 transcribe.py 原生格式也要吃得下
+        audio.write_bytes(b"fake")
+        self.assertEqual(server.detect_course_source(str(video)), "local_video")
+        self.assertEqual(server.detect_course_source(str(audio)), "local_mp3")
+        self.assertEqual(server.detect_course_source(str(base)), server.BATCH_SOURCE)
+        self.assertEqual(
+            server.resolve_course_source_type("auto", "https://x.com/a/status/1"),
+            server.URL_SOURCE,
+        )
+        with self.assertRaises(ValueError):
+            server.detect_course_source(str(base / "沒有這個檔.mp4"))
+        note = base / "說明.txt"
+        note.write_text("不是媒體", encoding="utf-8")
+        with self.assertRaises(ValueError):
+            server.detect_course_source(str(note))
 
     def test_invalid_skill_mode_leaves_no_orphan_directory(self):
         with self.assertRaises(ValueError):
@@ -281,21 +313,68 @@ class TestCoursePipeline(unittest.TestCase):
     def test_course_page_contract(self):
         self.assertIn('data-mode="course"', server.PAGE)
         self.assertIn('id="courseCard"', server.PAGE)
-        self.assertIn("/api/course/create", server.PAGE)
+        # 網頁一律走 batch（單一來源回 1 份，資料夾回 N 份）
+        self.assertIn("/api/course/batch", server.PAGE)
         self.assertIn("#course", server.PAGE)
 
     def test_course_page_has_pickers_and_automatic_name(self):
         for token in (
-            'id="courseSourcePick"',
+            'id="coursePickFolder"',
             'id="courseOutPick"',
             "/api/course/pick",
             "/api/course/name",
-            "pickCourseSource()",
+            "pickCourseSource('folder')",
             "pickCourseOutput()",
-            "suggestCourseName()",
-            "courseSourceTypeChanged()",
+            "resolveCourseSource()",
         ):
             self.assertIn(token, server.PAGE)
+        # 2026-09-10 使用者裁定：只留一顆「選資料夾」，檔案改在頁內清單勾選
+        self.assertNotIn('id="coursePickFile"', server.PAGE)
+
+    def test_every_dollar_id_in_js_exists_in_html(self):
+        """JS 裡 $('xxx') 取的 id 一定要真的在 HTML 裡。
+
+        2026-09-10 踩到：拿掉「選檔案」按鈕後，resolveCourseSource() 還在寫
+        $('coursePickFile').disabled，整個 onblur 直接 TypeError 掛掉，
+        課程名不會帶入、資料夾清單也不會出現，畫面上完全看不出哪裡壞了。
+        """
+        import re as _re
+
+        html_ids = set(_re.findall(r'id="([^"]+)"', server.PAGE))
+        used = set(_re.findall(r"\$\('([^']+)'\)", server.PAGE))
+        missing = sorted(used - html_ids)
+        self.assertEqual(missing, [], f"JS 取用了 HTML 裡不存在的 id：{missing}")
+
+    def test_course_page_lists_folder_entries_with_checkboxes(self):
+        """選完資料夾要把第一層列出來逐項打勾，不是選了就整批建。"""
+        for token in (
+            'id="coursePreviewTools"',
+            'id="coursePreviewTally"',
+            "courseEntryPickAll(true)",
+            "courseEntryPickAll(false)",
+            "courseEntryToggle(",
+            "courseEntryChecked",
+            "全選",
+            "全不選",
+        ):
+            self.assertIn(token, server.PAGE, f"勾選清單缺少契約：{token}")
+        # 勾選結果要真的送到後端，不能只是好看的
+        self.assertIn("include: st.batch ? [...courseEntryChecked] : undefined", server.PAGE)
+
+    def test_course_page_has_one_source_field_without_type_dropdown(self):
+        """來源簡化：只留一格來源欄位，型別由後端判斷，沒有下拉選單也沒有批次勾選框。"""
+        self.assertIn('<input type="hidden" id="courseType"', server.PAGE)
+        for stale in (
+            '<select id="courseType"',
+            'value="mp3_parts"',
+            'id="courseBatch"',
+            "只用現成字幕（限 YouTube）",
+        ):
+            self.assertNotIn(stale, server.PAGE, f"來源區仍殘留舊 UI：{stale}")
+        # 三種來源的說明都要講清楚
+        for token in ("Facebook", "Instagram", "Chrome cookies",
+                      "第一層每個媒體檔各一堂課"):
+            self.assertIn(token, server.PAGE, f"來源說明缺少：{token}")
 
     def test_course_page_explains_and_copies_ai_handoff(self):
         for token in (
@@ -369,12 +448,10 @@ class TestCoursePipeline(unittest.TestCase):
         self.assertNotIn("合併", manifest["stages"]["transcription"]["completion_criteria"])
 
     def test_course_page_offers_multi_part_source(self):
-        self.assertIn('value="mp3_parts"', server.PAGE)
-        self.assertTrue(
-            "同一堂課的多個檔案" in server.PAGE,
-            "多段來源標籤仍未改成『同一堂課的多個檔案』",
-        )
-        self.assertIn("mp3_parts:", server.PAGE)
+        """分段合併現在由「資料夾裡的子資料夾」表達，UI 要說得出這件事。"""
+        self.assertIn("mp3_parts:", server.PAGE)          # COURSE_TYPE_LABELS 仍認得這個型別
+        self.assertIn("子資料夾", server.PAGE)
+        self.assertIn("依檔名排序合併成同一堂", server.PAGE)
 
     def test_review_is_opt_in_and_needs_transcript(self):
         """校對預設不做；勾了就自動補上逐字稿前置。"""
@@ -529,20 +606,26 @@ class TestCoursePipeline(unittest.TestCase):
         (folder / "課程說明.txt").write_text("不是媒體檔", encoding="utf-8")
         nested = folder / "子資料夾"
         nested.mkdir()
-        (nested / "不應出現.mp3").write_bytes(b"nested media")
+        (nested / "第一段.mp3").write_bytes(b"nested media")
+        (nested / "第二段.mp3").write_bytes(b"nested media")
+        empty = folder / "空資料夾"
+        empty.mkdir()
 
         preview = server.preview_course_folder(str(folder))
 
-        self.assertEqual(preview["supportedCount"], 3)
-        self.assertEqual(preview["ignoredCount"], 1)
+        # 第一層 3 個媒體檔各一堂，含媒體的子資料夾再一堂＝4 堂；
+        # txt 與沒有媒體的空資料夾都算略過。
+        self.assertEqual(preview["supportedCount"], 4)
+        self.assertEqual(preview["ignoredCount"], 2)
         self.assertEqual(
             [item["name"] for item in preview["files"]],
-            ["01-開場.m4a", "02-畫面.mp4", "03-結尾.mp3"],
+            ["01-開場.m4a", "02-畫面.mp4", "03-結尾.mp3", "子資料夾"],
         )
         self.assertEqual(
             [item["type"] for item in preview["files"]],
-            ["audio", "video", "audio"],
+            ["audio", "video", "audio", "folder"],
         )
+        self.assertEqual(preview["files"][-1]["partCount"], 2)
         for item in preview["files"]:
             self.assertIn("name", item)
             self.assertIn("type", item)
@@ -556,6 +639,31 @@ class TestCoursePipeline(unittest.TestCase):
         self.assertEqual(preview["files"], [])
         self.assertEqual(preview["supportedCount"], 0)
         self.assertEqual(preview["ignoredCount"], 0)
+
+    def test_batch_counts_first_level_files_and_subfolders(self):
+        """使用者裁定：3 個檔＋1 個子資料夾＝4 堂課，子資料夾內的檔案合併成同一堂。"""
+        folder = Path(self.temp_dir.name) / "第一層四堂課"
+        folder.mkdir()
+        for name in ("A課.mp3", "B課.mp4", "C課.m4a"):
+            (folder / name).write_bytes(b"fake media")
+        merged = folder / "D課分段"
+        merged.mkdir()
+        for i in range(1, 4):
+            (merged / f"part{i}.mp3").write_bytes(b"fake media")
+        (folder / "講義.pdf").write_bytes(b"not media")
+
+        results = server.create_course_batch(
+            "auto", str(folder), output_root=self.output_root)
+
+        self.assertEqual(len(results), 4)
+        names = sorted(manifest["courseName"] for manifest, _ in results)
+        self.assertEqual(names, ["A課", "B課", "C課", "D課分段"])
+        merged_manifest = next(m for m, _ in results if m["courseName"] == "D課分段")
+        self.assertTrue(merged_manifest["options"]["multiPart"])
+        self.assertEqual(len(merged_manifest["source"]["movedFiles"]), 3)
+        for manifest, _ in results:
+            if manifest["courseName"] != "D課分段":
+                self.assertFalse(manifest["options"]["multiPart"])
 
     def test_batch_creates_one_manifest_per_media(self):
         """資料夾批次要每個媒體檔各建一份 manifest，不是只建一份。"""
@@ -695,7 +803,7 @@ class TestCoursePipeline(unittest.TestCase):
         self.assertEqual(row["percent"], 100)
 
     def test_course_page_has_batch_and_progress_ui(self):
-        for token in ('id="courseBatch"', 'id="courseProgressBox"',
+        for token in ('id="courseProgressBox"',
                       "refreshCourseProgress()", "/api/course/progress",
                       "/api/course/batch"):
             self.assertIn(token, server.PAGE)
@@ -802,22 +910,25 @@ class TestCoursePipeline(unittest.TestCase):
         self.assertEqual(keys, set(server.ARTIFACT_KEYS))
 
     def test_course_page_media_folder_copy_is_not_mp3_only(self):
-        """資料夾來源的選項與提示不能再誤導成只收 MP3。"""
+        """來源文案與選擇器不能再誤導成只收 MP3 或只收 YouTube。"""
         for token in (
-            "媒體資料夾批次（每個檔各是一堂課）",
-            "同一堂課的多個檔案（分段錄音）",
+            "任何音檔或影片檔都吃",
+            "第一層每個媒體檔各一堂課",
         ):
             self.assertTrue(token in server.PAGE, f"UI 缺少媒體來源文案：{token}")
         for stale in (
             "MP3 資料夾批次（每個檔各是一堂課）",
             "選擇含 MP3 的資料夾，每個檔各建一堂課",
             "選擇資料夾，裡面的 MP3 依檔名排序合成同一堂課",
+            "媒體資料夾批次（每個檔各是一堂課）",
         ):
-            self.assertTrue(stale not in server.PAGE, f"UI 仍殘留 MP3-only 文案：{stale}")
-        self.assertTrue(
-            "選擇 MP3 資料夾" not in server.COURSE_PICK_DIALOG_CODE,
-            "資料夾選擇器仍顯示 MP3-only 標題",
-        )
+            self.assertTrue(stale not in server.PAGE, f"UI 仍殘留舊來源文案：{stale}")
+        for stale in ("選擇 MP3 資料夾", "選擇課程音訊\"", "選擇課程影片"):
+            self.assertTrue(
+                stale not in server.COURSE_PICK_DIALOG_CODE,
+                f"檔案選擇器仍分音訊／影片或寫死 MP3：{stale}",
+            )
+        self.assertIn("選擇課程音訊或影片", server.COURSE_PICK_DIALOG_CODE)
 
     def test_course_page_has_independent_folder_preview_flow(self):
         """選資料夾或手填路徑都會預覽；舊結果區不能兼任預覽容器。"""
@@ -834,11 +945,16 @@ class TestCoursePipeline(unittest.TestCase):
 
         source_tag = _re.search(r'<input[^>]+id="courseSource"[^>]*>', server.PAGE)
         self.assertIsNotNone(source_tag, "找不到來源路徑 input")
-        self.assertRegex(source_tag.group(0), r'onblur="[^"]*previewCourseSource\(\)')
+        # 失焦時先判定來源型別，resolveCourseSource() 內部才接著跑預覽
+        self.assertRegex(source_tag.group(0), r'onblur="[^"]*resolveCourseSource\(\)')
         self.assertRegex(source_tag.group(0), r'oninput="[^"]*clearCoursePreview\(\)')
+        resolver = _re.search(
+            r"async function resolveCourseSource\(\) \{(.*?)\n\}", server.PAGE, _re.S)
+        self.assertIsNotNone(resolver, "找不到 resolveCourseSource()")
+        self.assertIn("previewCourseSource()", resolver.group(1))
 
         picker = _re.search(
-            r"async function pickCourseSource\(\) \{(.*?)"
+            r"async function pickCourseSource\(mode\) \{(.*?)"
             r"\nasync function pickCourseOutput\(\)",
             server.PAGE,
             _re.S,
@@ -936,13 +1052,41 @@ class TestCoursePipeline(unittest.TestCase):
             server.PAGE,
         )
 
+    def test_batch_include_builds_only_checked_entries(self):
+        """網頁勾了哪幾項就只建哪幾堂；沒勾的原檔不准被搬走。"""
+        folder = Path(self.temp_dir.name) / "只建勾選的"
+        folder.mkdir()
+        for name in ("要的A.mp3", "不要的B.mp3", "要的C.mp4"):
+            (folder / name).write_bytes(b"fake media")
+
+        results = server.create_course_batch(
+            "auto", str(folder), output_root=self.output_root,
+            include=["要的A.mp3", "要的C.mp4"])
+
+        self.assertEqual(len(results), 2)
+        self.assertEqual(sorted(m["courseName"] for m, _ in results), ["要的A", "要的C"])
+        self.assertTrue((folder / "不要的B.mp3").is_file(), "沒勾的檔案不該被搬走")
+
+    def test_batch_include_rejects_empty_and_unknown_entries(self):
+        folder = Path(self.temp_dir.name) / "勾選驗證"
+        folder.mkdir()
+        (folder / "A.mp3").write_bytes(b"fake media")
+        for bad in ([], ["不存在.mp3"], [r"..\別的資料夾"]):
+            with self.assertRaises(ValueError):
+                server.create_course_batch(
+                    "auto", str(folder), output_root=self.output_root, include=bad)
+
     def test_course_picker_options_use_file_or_folder_by_source(self):
+        # 前端只送 file / folder；舊型別名稱仍然收得下
+        self.assertEqual(server.course_picker_options("source", "file")["mode"], "file")
+        self.assertEqual(server.course_picker_options("source", "folder")["mode"], "folder")
         self.assertEqual(server.course_picker_options("source", "local_video")["mode"], "file")
         self.assertEqual(server.course_picker_options("source", "local_mp3")["mode"], "file")
         self.assertEqual(server.course_picker_options("source", "mp3_folder")["mode"], "folder")
         self.assertEqual(server.course_picker_options("output", "youtube")["mode"], "folder")
-        with self.assertRaises(ValueError):
-            server.course_picker_options("source", "youtube")
+        for bad in ("youtube", "url", "亂打的"):
+            with self.assertRaises(ValueError):
+                server.course_picker_options("source", bad)
 
 
 class TestCourseAPI(unittest.TestCase):
