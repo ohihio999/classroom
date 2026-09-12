@@ -1,6 +1,7 @@
 <!--
-  版本：v6.15
+  版本：v6.16
   版更記錄：
+  v6.16 (2026-09-12) - 長回覆做成網頁卡片加上 claude-html 索引頁超連結（claudehtml://open），點擊卡片直接開啟本機索引頁，右上 📖 查看說明書；說明書 modal 內亦補上「開啟本機索引頁」按鈕與複製路徑功能。CARD_CONTENT_VERSION 15→16 讓 Firestore 同步更新
   v6.15 (2026-09-12) - html-visualizer 那包的三個 skill 各補一張說明書卡片（📰 網頁產生器／📈 資料圖表 chart／🧩 結構圖 diagram-design，order 23-25），原本的「長回覆做成網頁」卡片保留當整套介紹。三張卡各寫單獨觸發方式：主入口講版型骨架與自檢，chart 講七種圖型決策與 @unovis，diagram-design 講 39 種圖型與何時該畫圖而不是塞表格。同日把三個 skill 登記進 C:\Users\admin\.codex\config.toml（45 筆 [[skills.config]]），Codex 從此叫得動；Claude／Hermes／agy 走 .codex\skills 接合點本來就吃得到。CARD_CONTENT_VERSION 14→15 讓 Firestore 同步更新
   v6.14 (2026-09-11) - 新增「長回覆做成網頁」卡片（📄 → modal 說明書）：安裝 github.com/chenjackle45/html-visualizer（MIT），三個 skill（html-visualizer 主入口／chart 走 @unovis 的圖表／diagram-design 手工 SVG 結構圖 39 型）已複製進 C:\Users\admin\.codex\skills\，Claude／Codex／Hermes／agy 共用。不用背指令：內容超過 50 行或屬報告／教學／規格／盤點／選項拍板時自動觸發，產出存 C:\Users\admin\Documents\claude-html\ 並建索引頁；不想要就說「給我純文字就好」。版面自檢用的 Playwright 裝在 C:\Users\admin\.agents\playwright\，靠使用者環境變數 HTML_VISUALIZER_PLAYWRIGHT_ROOT 指過去。原始碼在 C:\Code\html-visualizer，更新走 git pull＋重跑 install.sh。CARD_CONTENT_VERSION 13→14 讓 Firestore 同步更新
   v6.13 (2026-09-11) - 新增「訂飲料（你訂 nidin）」卡片（🧋 → modal 說明書）：貼 order.nidin.shop 菜單網址＋一行一杯的名單，AI 從瀏覽器 localStorage 的 Nidin_<store_id>_menu 讀整份菜單（不打 API），把品項／甜度／冰塊／加料反查成 product_id / adjust_id / option_id，先列「姓名｜品項｜規格｜金額＋總計」確認表，確認後一杯一次呼叫逐杯加入購物車並比對送出內容；杯貼姓名 = sticker_memo。邊界寫死：只加購物車，結帳付款送單一律不碰。modal 內含店家 id 搞錯的實例警語（1521 路易莎 vs 16849 五桐號）。技能正本 C:\Users\admin\.claude\skills\drink-order\SKILL.md。CARD_CONTENT_VERSION 12→13 讓 Firestore 同步更新
@@ -1170,11 +1171,15 @@ D:\本機MD檔\30_研究\課程逐字稿整理\&lt;同名&gt;\　課程包 MD �
     <hr class="divider">
 
     <div class="step">
-      <div class="step-label">③ 產出存哪裡</div>
-      <div class="cmd-box">C:\Users\admin\Documents\claude-html\</div>
-      <div style="font-size:12px;color:#aaa;margin-top:6px">
+      <div class="step-label">③ 產出存哪裡與索引頁</div>
+      <div class="cmd-box">C:\Users\admin\Documents\claude-html\index.html</div>
+      <div style="margin-top:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <a href="claudehtml://open" class="copy-btn" style="background:#d97757;text-decoration:none;display:inline-block">🌐 開啟本機索引頁</a>
+        <button class="copy-btn" style="background:#607D8B" onclick="navigator.clipboard.writeText('C:\\Users\\admin\\Documents\\claude-html\\index.html'); showToast('已複製索引頁路徑')">📋 複製檔案路徑</button>
+      </div>
+      <div style="font-size:12px;color:#aaa;margin-top:8px">
         產完自動在瀏覽器打開，同時建一份索引頁，方便回頭找「上禮拜那份」。
-        要換位置就設環境變數 <code>HTML_VISUALIZER_ARCHIVE_DIR</code>。
+        點擊上方按鈕可直接以 <code>claudehtml://</code> 協定開出索引頁。要換位置就設環境變數 <code>HTML_VISUALIZER_ARCHIVE_DIR</code>。
       </div>
     </div>
 
@@ -1416,7 +1421,7 @@ const getGroqKeyFn = httpsCallable(functions, 'getGroqKey');
 const getAssemblyAIKeyFn = httpsCallable(functions, 'getAssemblyAIKey');
 const ALLOWED_EMAIL = 'ohihio@gmail.com';
 const TOOLS_COL = 'admin_tools';
-const CARD_CONTENT_VERSION = 15;
+const CARD_CONTENT_VERSION = 16;
 const ICON_OPTIONS = ['🗂️','🎙️','📝','📚','📌','📎','📦','⚙️','🛠️','💡','📊','🧾','📁','🔧','🔍','🚀','⭐','✅','⚖️'];
 const DEFAULT_TOOLS = [
   // order -1：Firestore 裡既有卡片的 order 是 0 起跳，給 -1 才排得到第一格（normalizeOrder 會重編成 0）
@@ -1446,7 +1451,7 @@ const DEFAULT_TOOLS = [
   { id: 'yt-summary', title: 'YouTube 極速摘要（本機）', description: '貼網址免下影片30秒出摘要、留言正反批判檢驗與心智圖HTML；對 AI 說「YT摘要」', icon: '⚡', actionType: 'modal', modalFn: 'openYtSummary', order: 19, createdAt: '2026-09-09T00:00:00+08:00' },
   { id: 'seminar-organizer', title: '研討會資料整理', description: '點一下開 agy 並送出「研討會整理」，AI 會問你要整理哪個資料夾；📖 看說明書', icon: '🎪', actionType: 'link', href: 'ytcli://agy/56CU6KiO5pyD5pW055CG', infoFn: 'openSeminarOrganizer', order: 20, createdAt: '2026-09-10T00:00:00+08:00' },
   { id: 'drink-order', title: '訂飲料（你訂 nidin）', description: '貼菜單網址＋一行一杯名單，AI 逐杯加購物車；結帳自己按', icon: '🧋', actionType: 'modal', modalFn: 'openDrinkOrder', order: 21, createdAt: '2026-09-11T00:00:00+08:00' },
-  { id: 'html-visualizer', title: '長回覆做成網頁', description: 'AI 的長回覆自動變成能跳目錄、有表格圖表的網頁，存 Documents\\claude-html', icon: '📄', actionType: 'modal', modalFn: 'openHtmlVisualizer', order: 22, createdAt: '2026-09-11T00:00:00+08:00' },
+  { id: 'html-visualizer', title: '長回覆做成網頁', description: '點一下開本機 Documents\\claude-html 索引頁；AI 長回覆自動變網頁；📖 看說明書', icon: '📄', actionType: 'link', href: 'claudehtml://open', launchHref: 'claudehtml://open', infoFn: 'openHtmlVisualizer', order: 22, createdAt: '2026-09-11T00:00:00+08:00' },
   { id: 'hv-skill-main', title: '網頁產生器（主入口）', description: '整頁報告、教學、規格、選項拍板；挑版型、跑自檢、存檔開檔都它負責', icon: '📰', actionType: 'modal', modalFn: 'openHvMain', order: 23, createdAt: '2026-09-12T00:00:00+08:00' },
   { id: 'hv-skill-chart', title: '資料圖表（chart）', description: '只要一張圖表就找它：趨勢、占比、分組、目標對實際，用 @unovis 畫', icon: '📈', actionType: 'modal', modalFn: 'openHvChart', order: 24, createdAt: '2026-09-12T00:00:00+08:00' },
   { id: 'hv-skill-diagram', title: '結構圖（diagram-design）', description: '流程、架構、時序、狀態機等 39 型，手工排版 SVG，不用 Mermaid', icon: '🧩', actionType: 'modal', modalFn: 'openHvDiagram', order: 25, createdAt: '2026-09-12T00:00:00+08:00' }
