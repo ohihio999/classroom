@@ -1,6 +1,7 @@
 <!--
-  版本：v6.16
+  版本：v6.18
   版更記錄：
+  v6.18 (2026-09-12) - 依使用者指定將「🤖 一鍵生成三 Tab 全景學習手冊（AGY）」按鈕改放至「長回覆做成網頁（html-visualizer）」卡片內：說明書 modal 頂部新增顯著啟動按鈕，卡片右上動作列亦加入 🤖 快捷按鈕（走 ytcli://agy/ 協定開 AGY，AI 先問「要抓哪個資料夾？」，接著讀取摘要/培訓報告/技能樹自動編譯三 Tab 全景手冊）。CARD_CONTENT_VERSION 17→18 讓 Firestore 同步更新
   v6.16 (2026-09-12) - 長回覆做成網頁卡片加上 claude-html 索引頁超連結（claudehtml://open），點擊卡片直接開啟本機索引頁，右上 📖 查看說明書；說明書 modal 內亦補上「開啟本機索引頁」按鈕與複製路徑功能。CARD_CONTENT_VERSION 15→16 讓 Firestore 同步更新
   v6.15 (2026-09-12) - html-visualizer 那包的三個 skill 各補一張說明書卡片（📰 網頁產生器／📈 資料圖表 chart／🧩 結構圖 diagram-design，order 23-25），原本的「長回覆做成網頁」卡片保留當整套介紹。三張卡各寫單獨觸發方式：主入口講版型骨架與自檢，chart 講七種圖型決策與 @unovis，diagram-design 講 39 種圖型與何時該畫圖而不是塞表格。同日把三個 skill 登記進 C:\Users\admin\.codex\config.toml（45 筆 [[skills.config]]），Codex 從此叫得動；Claude／Hermes／agy 走 .codex\skills 接合點本來就吃得到。CARD_CONTENT_VERSION 14→15 讓 Firestore 同步更新
   v6.14 (2026-09-11) - 新增「長回覆做成網頁」卡片（📄 → modal 說明書）：安裝 github.com/chenjackle45/html-visualizer（MIT），三個 skill（html-visualizer 主入口／chart 走 @unovis 的圖表／diagram-design 手工 SVG 結構圖 39 型）已複製進 C:\Users\admin\.codex\skills\，Claude／Codex／Hermes／agy 共用。不用背指令：內容超過 50 行或屬報告／教學／規格／盤點／選項拍板時自動觸發，產出存 C:\Users\admin\Documents\claude-html\ 並建索引頁；不想要就說「給我純文字就好」。版面自檢用的 Playwright 裝在 C:\Users\admin\.agents\playwright\，靠使用者環境變數 HTML_VISUALIZER_PLAYWRIGHT_ROOT 指過去。原始碼在 C:\Code\html-visualizer，更新走 git pull＋重跑 install.sh。CARD_CONTENT_VERSION 13→14 讓 Firestore 同步更新
@@ -1145,6 +1146,16 @@ D:\本機MD檔\30_研究\課程逐字稿整理\&lt;同名&gt;\　課程包 MD �
     <div class="modal-title">📄 長回覆做成網頁（html-visualizer）</div>
     <div class="modal-sub">AI 回你三百行文字很難讀；裝了這個之後同樣的問題會得到<strong>一頁網頁</strong>：有目錄可跳、有表格可對照、該畫圖的地方真的畫成圖</div>
 
+    <div class="step" style="background:#fff9f0;border:1px solid #ffd599;padding:12px;border-radius:8px;margin-bottom:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
+        <div>
+          <div style="font-weight:600;font-size:14px;color:#d97757">🌟 一鍵生成「三 Tab 全景學習手冊」HTML</div>
+          <div style="font-size:12px;color:#666;margin-top:2px">點擊開 AGY，AI 會問「要抓哪個資料夾？」，自動讀取摘要/培訓報告/技能樹合併為互動全景手冊</div>
+        </div>
+        <button class="primary-btn" style="background:#d97757;white-space:nowrap;padding:6px 14px;font-size:13px;border:none;cursor:pointer;border-radius:6px;color:#fff;font-weight:600" onclick="launchAgyPanorama()">🤖 啟動 AGY</button>
+      </div>
+    </div>
+
     <div class="step">
       <div class="step-label">① 怎麼用：不用背指令，照平常講話</div>
       <div class="cmd-box">幫我整理這份會議記錄
@@ -1421,7 +1432,7 @@ const getGroqKeyFn = httpsCallable(functions, 'getGroqKey');
 const getAssemblyAIKeyFn = httpsCallable(functions, 'getAssemblyAIKey');
 const ALLOWED_EMAIL = 'ohihio@gmail.com';
 const TOOLS_COL = 'admin_tools';
-const CARD_CONTENT_VERSION = 16;
+const CARD_CONTENT_VERSION = 18;
 const ICON_OPTIONS = ['🗂️','🎙️','📝','📚','📌','📎','📦','⚙️','🛠️','💡','📊','🧾','📁','🔧','🔍','🚀','⭐','✅','⚖️'];
 const DEFAULT_TOOLS = [
   // order -1：Firestore 裡既有卡片的 order 是 0 起跳，給 -1 才排得到第一格（normalizeOrder 會重編成 0）
@@ -1451,7 +1462,7 @@ const DEFAULT_TOOLS = [
   { id: 'yt-summary', title: 'YouTube 極速摘要（本機）', description: '貼網址免下影片30秒出摘要、留言正反批判檢驗與心智圖HTML；對 AI 說「YT摘要」', icon: '⚡', actionType: 'modal', modalFn: 'openYtSummary', order: 19, createdAt: '2026-09-09T00:00:00+08:00' },
   { id: 'seminar-organizer', title: '研討會資料整理', description: '點一下開 agy 並送出「研討會整理」，AI 會問你要整理哪個資料夾；📖 看說明書', icon: '🎪', actionType: 'link', href: 'ytcli://agy/56CU6KiO5pyD5pW055CG', infoFn: 'openSeminarOrganizer', order: 20, createdAt: '2026-09-10T00:00:00+08:00' },
   { id: 'drink-order', title: '訂飲料（你訂 nidin）', description: '貼菜單網址＋一行一杯名單，AI 逐杯加購物車；結帳自己按', icon: '🧋', actionType: 'modal', modalFn: 'openDrinkOrder', order: 21, createdAt: '2026-09-11T00:00:00+08:00' },
-  { id: 'html-visualizer', title: '長回覆做成網頁', description: '點一下開本機 Documents\\claude-html 索引頁；AI 長回覆自動變網頁；📖 看說明書', icon: '📄', actionType: 'link', href: 'claudehtml://open', launchHref: 'claudehtml://open', infoFn: 'openHtmlVisualizer', order: 22, createdAt: '2026-09-11T00:00:00+08:00' },
+  { id: 'html-visualizer', title: '長回覆做成網頁', description: '點一下開本機 Documents\\claude-html 索引頁；可開 AGY 產出全景手冊；📖 看說明書', icon: '📄', actionType: 'link', href: 'claudehtml://open', launchHref: 'claudehtml://open', agyHref: 'ytcli://agy/6KuL5pOU5Lu75YWo5pmv5a2457-S5omL5YaK6KO95L2c5bCI5a6244CC54--5Zyo6KuL5YWI5ZWP5oiR77ya44CM6KuL5ZWP6KaB5oqT5ZOq5YCL6LOH5paZ5aS-55qE6LOH5paZ77yf44CNCuetieaIkeaPkOS-m-iqsueoi-izh-aWmeWkvui3r-W-keW-jO-8jOiri-iugOWPluipsuizh-aWmeWkvuWFp-eahOOAjOaRmOimgeOAgeWfueiok-WgseWRiuOAgeaKgOiDveaoueOAjeS4ieWAiyBNYXJrZG93biDmqpTmoYjvvIzkvb_nlKggaHRtbC12aXN1YWxpemVyIOimj-evhOWwh-WFtuWQiOS9teijveS9nOaIkOS4gOS7veOAjOS4iSBUYWIg5YWo5pmv5a2457-S5omL5YaK44CNSFRNTO-8iOmggumDqOe9rumggiBUYWIg5YiH5o-b44CBQW50aHJvcGljIOexs-eZvemiqOagvOOAgeaKgOiDveaoueW4tuWPr-aJk-WLvumAsuW6puaineiIhyBMb2NhbFN0b3JhZ2Ug6KiY5oa244CB5rWB56iL5ZyW6IiH6Kqy5b6M6KmV6YeP5LqS5YuV5bGV6ZaL77yJ77yM5a6M5oiQ5b6M5a2Y5pa86Kmy6Kqy56iL6LOH5paZ5aS-5LiL5Lim5Zue5aCx5a6M5pW057WV5bCN6Lev5b6R44CC', infoFn: 'openHtmlVisualizer', order: 22, createdAt: '2026-09-11T00:00:00+08:00' },
   { id: 'hv-skill-main', title: '網頁產生器（主入口）', description: '整頁報告、教學、規格、選項拍板；挑版型、跑自檢、存檔開檔都它負責', icon: '📰', actionType: 'modal', modalFn: 'openHvMain', order: 23, createdAt: '2026-09-12T00:00:00+08:00' },
   { id: 'hv-skill-chart', title: '資料圖表（chart）', description: '只要一張圖表就找它：趨勢、占比、分組、目標對實際，用 @unovis 畫', icon: '📈', actionType: 'modal', modalFn: 'openHvChart', order: 24, createdAt: '2026-09-12T00:00:00+08:00' },
   { id: 'hv-skill-diagram', title: '結構圖（diagram-design）', description: '流程、架構、時序、狀態機等 39 型，手工排版 SVG，不用 Mermaid', icon: '🧩', actionType: 'modal', modalFn: 'openHvDiagram', order: 25, createdAt: '2026-09-12T00:00:00+08:00' }
@@ -1580,6 +1591,7 @@ async function loadToolOverrides() {
           href: tool.href || '',
           modalFn: tool.modalFn || '',
           launchHref: tool.launchHref || '',
+          agyHref: tool.agyHref || '',
           infoFn: tool.infoFn || '',
           contentVersion: CARD_CONTENT_VERSION
         });
@@ -1608,6 +1620,7 @@ async function seedDefaultTools() {
       href: tool.href || '',
       modalFn: tool.modalFn || '',
       launchHref: tool.launchHref || '',
+      agyHref: tool.agyHref || '',
       infoFn: tool.infoFn || '',
       contentVersion: CARD_CONTENT_VERSION,
       order: tool.order,
@@ -1629,6 +1642,7 @@ async function migrateCardContent(tools) {
     href: tool.href || '',
     modalFn: tool.modalFn || '',
     launchHref: tool.launchHref || '',
+    agyHref: tool.agyHref || '',
     infoFn: tool.infoFn || '',
     contentVersion: CARD_CONTENT_VERSION,
     updatedAt
@@ -1667,6 +1681,7 @@ function renderTools() {
       </div>
       <div class="tool-actions">
         ${tool.launchHref ? `<button class="tool-action-btn" onclick="event.stopPropagation(); launchLocalService('${tool.launchHref}')" title="啟動本機服務">🚀</button>` : ''}
+        ${tool.agyHref ? `<button class="tool-action-btn" onclick="event.stopPropagation(); launchAgyPanorama('${tool.agyHref}')" title="AGY 製作全景學習手冊">🤖</button>` : ''}
         ${tool.infoFn ? `<button class="tool-action-btn" onclick="event.stopPropagation(); ${tool.infoFn}()" title="說明書">📖</button>` : ''}
         <button class="tool-action-btn" onclick="event.stopPropagation(); openEditTool('${tool.id}')" title="編輯">✏️</button>
         <button class="tool-action-btn" onclick="event.stopPropagation(); moveToolLeft('${tool.id}')" title="左移" ${firstColumn ? 'disabled' : ''}>◀</button>
@@ -1701,6 +1716,12 @@ function highlightSelectedIcon() {
 window.launchLocalService = (href) => {
   showToast('正在啟動本機服務，請允許瀏覽器開啟外部程式');
   location.href = href;
+};
+
+window.launchAgyPanorama = (customHref) => {
+  const uri = customHref || 'ytcli://agy/6KuL5pOU5Lu75YWo5pmv5a2457-S5omL5YaK6KO95L2c5bCI5a6244CC54--5Zyo6KuL5YWI5ZWP5oiR77ya44CM6KuL5ZWP6KaB5oqT5ZOq5YCL6LOH5paZ5aS-55qE6LOH5paZ77yf44CNCuetieaIkeaPkOS-m-iqsueoi-izh-aWmeWkvui3r-W-keW-jO-8jOiri-iugOWPluipsuizh-aWmeWkvuWFp-eahOOAjOaRmOimgeOAgeWfueiok-WgseWRiuOAgeaKgOiDveaoueOAjeS4ieWAiyBNYXJrZG93biDmqpTmoYjvvIzkvb_nlKggaHRtbC12aXN1YWxpemVyIOimj-evhOWwh-WFtuWQiOS9teijveS9nOaIkOS4gOS7veOAjOS4iSBUYWIg5YWo5pmv5a2457-S5omL5YaK44CNSFRNTO-8iOmggumDqOe9rumggiBUYWIg5YiH5o-b44CBQW50aHJvcGljIOexs-eZvemiqOagvOOAgeaKgOiDveaoueW4tuWPr-aJk-WLvumAsuW6puaineiIhyBMb2NhbFN0b3JhZ2Ug6KiY5oa244CB5rWB56iL5ZyW6IiH6Kqy5b6M6KmV6YeP5LqS5YuV5bGV6ZaL77yJ77yM5a6M5oiQ5b6M5a2Y5pa86Kmy6Kqy56iL6LOH5paZ5aS-5LiL5Lim5Zue5aCx5a6M5pW057WV5bCN6Lev5b6R44CC';
+  showToast('正在喚醒 AGY 終端機...');
+  location.href = uri;
 };
 
 window.handleToolActivate = (event, toolId) => {
