@@ -1,6 +1,8 @@
 <!--
-  版本：v6.18
+  版本：v6.20
   版更記錄：
+  v6.21 (2026-09-15) - 整合影音與課程入口：影音處理卡片涵蓋 MP3、錄音／錄影合併與影片壓縮；課程入口改名「課程整理中心」；移除重複的逐字稿培訓包、課程入庫、網址下載與 YouTube 下載卡片；新增字幕詞庫入口。CARD_CONTENT_VERSION 19→20
+  v6.19 (2026-09-13) - 新增「研討會／課程行程總覽」卡片，進入 Google Calendar 週時間軸，直接查看申請狀態、上下班時段與參加優先級。
   v6.18 (2026-09-12) - 依使用者指定將「🤖 一鍵生成三 Tab 全景學習手冊（AGY）」按鈕改放至「長回覆做成網頁（html-visualizer）」卡片內：說明書 modal 頂部新增顯著啟動按鈕，卡片右上動作列亦加入 🤖 快捷按鈕（走 ytcli://agy/ 協定開 AGY，AI 先問「要抓哪個資料夾？」，接著讀取摘要/培訓報告/技能樹自動編譯三 Tab 全景手冊）。CARD_CONTENT_VERSION 17→18 讓 Firestore 同步更新
   v6.16 (2026-09-12) - 長回覆做成網頁卡片加上 claude-html 索引頁超連結（claudehtml://open），點擊卡片直接開啟本機索引頁，右上 📖 查看說明書；說明書 modal 內亦補上「開啟本機索引頁」按鈕與複製路徑功能。CARD_CONTENT_VERSION 15→16 讓 Firestore 同步更新
   v6.15 (2026-09-12) - html-visualizer 那包的三個 skill 各補一張說明書卡片（📰 網頁產生器／📈 資料圖表 chart／🧩 結構圖 diagram-design，order 23-25），原本的「長回覆做成網頁」卡片保留當整套介紹。三張卡各寫單獨觸發方式：主入口講版型骨架與自檢，chart 講七種圖型決策與 @unovis，diagram-design 講 39 種圖型與何時該畫圖而不是塞表格。同日把三個 skill 登記進 C:\Users\admin\.codex\config.toml（45 筆 [[skills.config]]），Codex 從此叫得動；Claude／Hermes／agy 走 .codex\skills 接合點本來就吃得到。CARD_CONTENT_VERSION 14→15 讓 Firestore 同步更新
@@ -611,7 +613,7 @@
   </div>
 </div>
 
-<!-- yt-summary modal（v6.0） -->
+<!-- yt-summary modal（v6.20） -->
 <div class="modal-overlay" id="ytSummaryModal" onclick="closeOnOverlay(event)">
   <div class="modal" style="max-height:90vh">
     <button class="modal-close" onclick="closeYtSummary()">✕</button>
@@ -657,7 +659,7 @@
         <strong>① 零影片下載</strong>：完全不下載臃腫的 MP4，0 MB 本機硬碟負擔。<br>
         <strong>② 音訊轉完即刪</strong>：字幕優先（1~2 秒抓取）；無字幕時以 yt-dlp 抓純音訊串流送 Groq 轉錄，<strong>轉完立即自動刪除暫存音訊</strong>，目標目錄絕不殘留任何 MP3/M4A 檔案。<br>
         <strong>③ 原片連結強制置頂</strong>：產出的所有 Markdown 檔案與 HTML 心智圖大標題下方，<strong>一律強制置頂原始 YouTube 連結</strong>，且必須是 <code>[標題](網址)</code> 的 Markdown 超連結、<strong>不可裸網址</strong>，方便隨時回溯原片。<br>
-        <strong>④ 正本直存與自動預覽</strong>：產出直接存入 Vault 課程逐字稿目錄，並自動使用預設瀏覽器跳出 Markmap 心智圖網頁版互動預覽。
+        <strong>④ 正本直存與雙 HTML 連結</strong>：產出直接存入 Vault 的 YouTube 目錄；完成摘要後呼叫 <code>html-visualizer</code> 產生分析報告。每個 Markdown 都必須連結同資料夾內全部 HTML。
       </div>
     </div>
 
@@ -666,9 +668,9 @@
     <div class="step">
       <div class="step-label">💬 精選留言與社群正反深度分析（核心亮點）</div>
       <div class="cmd-box" style="font-family:sans-serif;line-height:1.75">
-        <strong>① 智慧過濾清洗</strong>：擷取 Top 40 熱門留言，自動剔除沒頭沒尾、純符號貼圖、無實質脈絡的灌水留言。<br>
-        <strong>② 權重指標排序</strong>：高讚數、高互動、具實質論點爭議與深入探討的關鍵留言固定置頂。<br>
-        <strong>③ 逐條正反批判性檢驗（精選 Top 3~5 則代表性留言）</strong>：<br>
+        <strong>① 數量與清洗</strong>：擷取 Top 100，剔除沒頭沒尾、純符號貼圖、無實質脈絡的留言，最多保留 30 則。<br>
+        <strong>② 權重指標排序</strong>：依讚數、回覆數、文字完整度、具體理由與爭議性排序。<br>
+        <strong>③ 立場分類與深度檢驗（最多 5 則）</strong>：分類為支持、反對、混合、問題、個人經驗、無關。<br>
         &nbsp;&nbsp;• <strong>完整原話</strong>：保留留言者 ID、讚數、發表時間與原始全文。<br>
         &nbsp;&nbsp;• <strong>核心主張</strong>：凝練為一句話核心觀點。<br>
         &nbsp;&nbsp;• <strong>客觀判定</strong>：明確標註【判定：正確／部分正確／存在誤區／事實錯誤】。<br>
@@ -685,8 +687,9 @@
       <div class="step-label">交付產物清單（直存 Vault）</div>
       <div class="cmd-box" style="font-family:sans-serif;line-height:1.75">
         • <strong>&lt;影片名&gt;_摘要.md</strong>：置頂原片連結，含摘要總覽、待辦項目、重點記錄、建議行動、精選留言正反分析 5 大章節。<br>
-        • <strong>&lt;影片名&gt;_心智圖.md</strong>：知識模組化 Markdown 與結尾金句，最上方內建指向同資料夾 HTML 版的相對路徑超連結。<br>
+        • <strong>&lt;影片名&gt;_心智圖.md</strong>：知識模組化 Markdown 與結尾金句，並連結同資料夾內全部 HTML。<br>
         • <strong>&lt;影片名&gt;_心智圖網頁版.html</strong>：Markmap 獨立互動網頁，支援縮放、拖曳與節點展開收合。<strong>內容與 MD 版逐字一致</strong>（同一份 MD 嵌進 Markmap，改了 MD 就重產 HTML）。<br>
+        • <strong>&lt;影片名&gt;_分析報告.html</strong>：由 <code>html-visualizer</code> 讀取摘要、心智圖、metadata 與 comments 產生視覺化總表。<br>
         • <strong>metadata.json / comments.json / raw_transcript.txt</strong>：結構化元資料、清洗後熱門留言與逐字稿全文。
       </div>
     </div>
@@ -695,11 +698,11 @@
 
     <div class="step">
       <div class="step-label">預設儲存路徑</div>
-      <div class="cmd-box">D:\本機MD檔\30_研究\課程逐字稿整理\YT摘要\&lt;YYYYMMDD_影片名&gt;\</div>
+      <div class="cmd-box">D:\本機MD檔\30_研究\YouTube\&lt;YYYYMMDD_影片名&gt;\</div>
     </div>
 
     <div style="font-size:12px;color:#aaa;margin-top:16px">
-      技能正本：<code>C:\Users\admin\.gemini\config\skills\yt-summary\SKILL.md</code>（版本 v1.3.1，全 AI Junction 實時同步）。
+      技能正本：<code>C:\Users\admin\.codex\skills\yt-summary\SKILL.md</code>（版本 v1.4.0；完成摘要後呼叫 html-visualizer）。
     </div>
   </div>
 </div>
@@ -1432,27 +1435,25 @@ const getGroqKeyFn = httpsCallable(functions, 'getGroqKey');
 const getAssemblyAIKeyFn = httpsCallable(functions, 'getAssemblyAIKey');
 const ALLOWED_EMAIL = 'ohihio@gmail.com';
 const TOOLS_COL = 'admin_tools';
-const CARD_CONTENT_VERSION = 18;
+const CARD_CONTENT_VERSION = 20;
 const ICON_OPTIONS = ['🗂️','🎙️','📝','📚','📌','📎','📦','⚙️','🛠️','💡','📊','🧾','📁','🔧','🔍','🚀','⭐','✅','⚖️'];
 const DEFAULT_TOOLS = [
   // order -1：Firestore 裡既有卡片的 order 是 0 起跳，給 -1 才排得到第一格（normalizeOrder 會重編成 0）
   { id: 'ai-workbench', title: 'AI 工作台（本機）', description: '啟動 7 個 Hermes 分頁：3 AGY／2 Claude／2 Codex', icon: '🚀', actionType: 'link', href: 'aiwork://start', launchHref: 'aiwork://start', order: -1, createdAt: '2026-08-08T00:00:00+08:00' },
   { id: 'tool-manager', title: 'AI 工具分類管理', description: '收藏、分類、搜尋與批次分析常用 AI 工具', icon: '🗂️', actionType: 'link', href: '/tool-manager/', order: 0, createdAt: '2026-04-29T00:00:00+08:00' },
   { id: 'transcribe', title: '音檔轉逐字稿', description: 'Groq 快速轉錄；可選說話者辨識並自動壓縮大檔', icon: '🎙️', actionType: 'modal', modalFn: 'openTranscribe', order: 1, createdAt: '2026-05-01T00:00:00+08:00' },
-  { id: 'media-tools-local', title: '影音轉檔與錄音合併（本機）', description: '影片轉 MP3、錄音排序合併；需先啟動 8767 服務', icon: '🎬', actionType: 'link', href: 'http://127.0.0.1:8767/', launchHref: 'mediatools://open', order: 2, createdAt: '2026-07-31T00:00:00+08:00' },
-  { id: 'course-content-pipeline', title: '影音課程流水線', description: '建立可續跑任務，整合媒體處理與 AI 課程包；需先啟動 8767', icon: '🧭', actionType: 'link', href: 'http://127.0.0.1:8767/#course', launchHref: 'mediatools://open', order: 2.5, createdAt: '2026-08-17T00:00:00+08:00' },
-  { id: 'transcript-pack', title: '逐字稿培訓包', description: '將單一逐字稿整理成培訓報告、摘要與心智圖', icon: '📝', actionType: 'modal', modalFn: 'openTranscriptPack', order: 3, createdAt: '2026-05-02T00:00:00+08:00' },
-  { id: 'course-filing', title: '課程整理入 Obsidian', description: '整合筆記、逐字稿與心智圖，拆解知識點並更新日記', icon: '📚', actionType: 'modal', modalFn: 'openCourseFiling', order: 4, createdAt: '2026-05-02T00:00:00+08:00' },
+  { id: 'media-tools-local', title: '影音處理', description: '影片轉 MP3、錄音／錄影合併與影片壓縮；需先啟動 8767 服務', icon: '🎬', actionType: 'link', href: 'http://127.0.0.1:8767/#media', launchHref: 'mediatools://open', order: 2, createdAt: '2026-07-31T00:00:00+08:00' },
+  { id: 'course-content-pipeline', title: '課程整理中心', description: '從影音到逐字稿、摘要、心智圖、培訓報告、技能樹與全景學習手冊；可選知識入庫', icon: '🧭', actionType: 'link', href: 'http://127.0.0.1:8767/#course', launchHref: 'mediatools://open', order: 2.5, createdAt: '2026-08-17T00:00:00+08:00' },
   { id: 'course-collect', title: '課程散檔歸檔', description: '收齊課程檔案、統一命名後歸檔到 D:\\2026_已整理課程', icon: '🗃️', actionType: 'modal', modalFn: 'openCourseCollect', order: 10, createdAt: '2026-07-31T00:00:00+08:00' },
   { id: 'course-drive-sync-organizer', title: 'ECF課程下載整理器', description: '比對 Google Drive 課程連結、缺漏下載、解壓展平與對照更名', icon: '📁', actionType: 'modal', modalFn: 'openCourseDriveSync', order: 10.5, createdAt: '2026-08-31T00:00:00+08:00' },
   { id: 'pro-con-analysis', title: '正反比較決策分析器', description: '三代理正反辯論、社群評價與災情報告、價格通路比對、左右對照表', icon: '⚖️', actionType: 'modal', modalFn: 'openProConAnalysis', order: 10.8, createdAt: '2026-08-31T00:00:00+08:00' },
   { id: 'subtitle-archive', title: '課程字幕歸檔', description: '用 Arctime 校對版 SRT 取代自動字幕並保留整理結構', icon: '🔤', actionType: 'modal', modalFn: 'openSubtitleArchive', order: 11, createdAt: '2026-07-31T00:00:00+08:00' },
-  { id: 'yt-dlp', title: '網址下載批次檔', description: '產生 YouTube 影片／MP3 或 FB 照片下載 BAT', icon: '⬇️', actionType: 'modal', modalFn: 'openYtDlp', order: 5, createdAt: '2026-05-07T00:00:00+08:00' },
+  { id: 'subtitle-lexicon-local', title: '字幕詞庫', description: '字幕詞庫、專有名詞校正與逐字稿比對；需先啟動 8767 服務', icon: '🔤', actionType: 'link', href: 'http://127.0.0.1:8767/#lexicon', launchHref: 'mediatools://open', order: 5, createdAt: '2026-09-15T00:00:00+08:00' },
   { id: 'video-progress', title: '影片製作進度表', description: '依 9 個階段追蹤每支影片的狀態、進度與連結', icon: '🎞️', actionType: 'link', href: '/影片進度表/', order: 6, createdAt: '2026-05-31T00:00:00+08:00' },
   { id: 'ai-usage', title: 'AI 額度儀表板', description: '查看 Claude、Codex、Antigravity 即時額度與歷史趨勢', icon: '📊', actionType: 'link', href: '/ai-usage/', order: 7, createdAt: '2026-07-14T00:00:00+08:00' },
+  { id: 'calendar-dashboard', title: '研討會／課程行程總覽', description: 'Google Calendar 週時間軸：申請狀態、上下班時段與參加優先級', icon: '🗓️', actionType: 'link', href: '/calendar-dashboard/', order: 7.5, createdAt: '2026-09-13T00:00:00+08:00' },
   { id: 'skill-manager-local', title: 'AI Skill 管理器（本機）', description: '管理共用 Skills；需先啟動 127.0.0.1:8768', icon: '🛠️', actionType: 'link', href: 'http://127.0.0.1:8768/', order: 8, createdAt: '2026-07-14T00:00:00+08:00' },
   { id: 'line-digest-local', title: 'LINE 對話整理（本機）', description: '將 LINE 群組對話整理成 Obsidian 摘要；需先啟動 8766', icon: '💬', actionType: 'link', href: 'http://127.0.0.1:8766/', order: 9, createdAt: '2026-07-19T00:00:00+08:00' },
-  { id: 'yt-download', title: 'YouTube 下載（本機）', description: '貼多個網址直接下載 MP4／MP3 到 C:\\OBS；需啟動 8767', icon: '📥', actionType: 'modal', modalFn: 'openYtDownload', launchHref: 'mediatools://open', order: 12, createdAt: '2026-08-01T00:00:00+08:00' },
   { id: 'auto-screenshot', title: '自動翻頁截圖（本機）', description: 'F9 開始／暫停，自動翻頁存 PNG；按 🚀 啟動工具', icon: '📸', actionType: 'modal', modalFn: 'openAutoShot', launchHref: 'autoshot://start', order: 13, createdAt: '2026-08-08T00:00:00+08:00' },
   { id: 'image-to-pdf', title: '圖片合併 PDF（本機）', description: '整夾圖片合成 PDF 並依序編號歸檔；需啟動 8767', icon: '📄', actionType: 'modal', modalFn: 'openImgPdf', launchHref: 'mediatools://open', order: 14, createdAt: '2026-08-08T00:00:00+08:00' },
   { id: 'vote-admin', title: '投票管理', description: '開投票活動、換照片、改名單，看即時結果與明細', icon: '🗳️', actionType: 'link', href: '/admin/vote/', order: 15, createdAt: '2026-08-20T00:00:00+08:00' },

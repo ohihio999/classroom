@@ -3,6 +3,7 @@ Unit tests for course pipeline features in server.py
 """
 
 import json
+import os
 import tempfile
 from datetime import datetime
 import unittest
@@ -12,6 +13,24 @@ from http.server import ThreadingHTTPServer
 import threading
 
 import server
+
+
+# 2026-09-17：測試一律不碰真的 Vault。原本建課測試會在 D:\本機MD檔 建出空的測試資料夾。
+_VAULT_TMP = None
+_VAULT_ORIG = None
+
+
+def setUpModule():
+    global _VAULT_TMP, _VAULT_ORIG
+    _VAULT_TMP = tempfile.TemporaryDirectory()
+    _VAULT_ORIG = (server.VAULT_COURSE_MD_ROOT, server.VAULT_URL_MD_ROOT)
+    server.VAULT_COURSE_MD_ROOT = str(Path(_VAULT_TMP.name) / "課程逐字稿整理")
+    server.VAULT_URL_MD_ROOT = str(Path(_VAULT_TMP.name) / "YouTube")
+
+
+def tearDownModule():
+    server.VAULT_COURSE_MD_ROOT, server.VAULT_URL_MD_ROOT = _VAULT_ORIG
+    _VAULT_TMP.cleanup()
 
 
 class TestCoursePipeline(unittest.TestCase):
@@ -1456,6 +1475,200 @@ class TestCourseFolderName(unittest.TestCase):
                                    "20260826_用 AI 找出可轉移能力"])
         for folder in folders:
             self.assertNotIn("20260826_20260826", folder)
+
+
+class TestUrlSourceDedup(unittest.TestCase):
+    """v1.24：網址來源落點、video_id 去重、留言分析（2026-09-17 使用者裁定 Q1～Q14）。"""
+    VID = "dQw4w9WgXcQ"
+    URL = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.output_root = str(Path(self.temp.name) / "courses")
+        self.yt_root = Path(self.temp.name) / "YouTube"
+        self.local_root = Path(self.temp.name) / "課程逐字稿整理"
+        self.yt_root.mkdir()
+        self.orig = (server.VAULT_URL_MD_ROOT, server.VAULT_COURSE_MD_ROOT)
+        server.VAULT_URL_MD_ROOT = str(self.yt_root)
+        server.VAULT_COURSE_MD_ROOT = str(self.local_root)
+
+    def tearDown(self):
+        server.VAULT_URL_MD_ROOT, server.VAULT_COURSE_MD_ROOT = self.orig
+        for d in Path(self.output_root).glob("*/文件") if Path(self.output_root).is_dir() else []:
+            if server._is_junction(d):
+                os.rmdir(str(d))
+        self.temp.cleanup()
+
+    def _seed(self, name="20260910_舊影片", record=None, transcript="舊逐字稿", reviewed=None):
+        folder = self.yt_root / name
+        folder.mkdir()
+        rec = {"video_id": self.VID}
+        rec.update(record or {})
+        (folder / server.PROCESSING_RECORD_NAME).write_text(json.dumps(rec, ensure_ascii=False), encoding="utf-8")
+        if transcript is not None:
+            (folder / "舊影片_逐字稿.md").write_text(transcript, encoding="utf-8")
+        if reviewed is not None:
+            (folder / "舊影片_逐字稿_校對版.md").write_text(reviewed, encoding="utf-8")
+        return folder
+
+    def _create(self, artifacts, name="我改的課名"):
+        return server.create_course_manifest("auto", self.URL, name,
+                                             options={"artifacts": artifacts},
+                                             output_root=self.output_root)
+
+    def test_youtube_video_id_formats(self):
+        for url in ("https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+                    "https://youtu.be/dQw4w9WgXcQ",
+                    "https://youtu.be/dQw4w9WgXcQ?si=abc",
+                    "https://www.youtube.com/watch?feature=share&v=dQw4w9WgXcQ&t=30",
+                    "https://m.youtube.com/watch?v=dQw4w9WgXcQ",
+                    "https://www.youtube.com/shorts/dQw4w9WgXcQ",
+                    "https://www.youtube.com/live/dQw4w9WgXcQ?feature=shared"):
+            self.assertEqual(server.youtube_video_id(url), self.VID, url)
+        for url in ("https://www.facebook.com/watch?v=dQw4w9WgXcQ",
+                    "https://www.youtube.com/watch?v=short", "https://www.youtube.com/", "not a url"):
+            self.assertEqual(server.youtube_video_id(url), "", url)
+
+    def test_new_url_course_links_docs_to_youtube_root_and_writes_record(self):
+        manifest, path = self._create({"transcript": True, "summary": True})
+        course_dir = Path(manifest["courseDir"])
+        vault_dir = self.yt_root / course_dir.name
+        self.assertEqual(Path(os.path.realpath(str(course_dir / "文件"))), Path(os.path.realpath(str(vault_dir))))
+        record = json.loads((vault_dir / server.PROCESSING_RECORD_NAME).read_text(encoding="utf-8"))
+        self.assertEqual(record["video_id"], self.VID)
+        self.assertEqual(record["producer"], "8767")
+        self.assertFalse(record["media"]["keep"])
+        self.assertEqual(manifest["dedup"]["mode"], "new")
+        self.assertFalse(manifest["options"]["keepMedia"])
+        self.assertIn("不產 <課程名>.srt", manifest["stages"]["transcription"]["completion_criteria"])
+        self.assertFalse(self.local_root.exists() and any(self.local_root.iterdir()))
+
+    def test_non_youtube_url_uses_youtube_root_without_video_id(self):
+        manifest, _ = server.create_course_manifest(
+            "auto", "https://www.facebook.com/reel/123", "FB影片",
+            options={"artifacts": {"transcript": True, "comments": True}}, output_root=self.output_root)
+        vault_dir = self.yt_root / Path(manifest["courseDir"]).name
+        self.assertTrue((vault_dir / server.PROCESSING_RECORD_NAME).is_file())
+        self.assertEqual(manifest["dedup"]["videoId"], "")
+        self.assertFalse(manifest["options"]["artifacts"]["comments"])
+
+    def test_local_source_still_links_to_course_md_root(self):
+        src = Path(self.temp.name) / "課.mp3"
+        src.write_bytes(b"fake")
+        manifest, _ = server.create_course_manifest("auto", str(src), "本機課",
+                                                    output_root=self.output_root)
+        link = Path(manifest["courseDir"]) / "文件"
+        self.assertEqual(Path(os.path.realpath(str(link))).parent, Path(os.path.realpath(str(self.local_root))))
+        self.assertNotIn("dedup", manifest)
+
+    def test_record_without_transcript_is_not_a_hit(self):
+        self._seed(transcript=None)
+        manifest, _ = self._create({"transcript": True})
+        self.assertEqual(manifest["dedup"]["mode"], "new")
+
+    def test_hit_without_media_reuses_transcript_and_prefers_reviewed(self):
+        folder = self._seed(reviewed="校對版")
+        manifest, _ = self._create({"transcript": True, "review": True, "summary": True})
+        stages = manifest["stages"]
+        self.assertEqual(manifest["dedup"]["mode"], "reuse")
+        self.assertEqual(Path(manifest["courseDir"]).name, folder.name)          # Q12
+        self.assertEqual(manifest["userCourseName"], "我改的課名")
+        self.assertEqual(stages["acquisition"]["status"], "skipped")
+        self.assertEqual(stages["transcription"]["status"], "completed")
+        self.assertEqual(stages["transcript_review"]["status"], "completed")     # Q8
+        self.assertEqual(stages["summary"]["status"], "pending")
+        record = json.loads((folder / server.PROCESSING_RECORD_NAME).read_text(encoding="utf-8"))
+        self.assertEqual(record["userCourseName"], "我改的課名")
+        self.assertFalse(any(folder.glob("舊版_*")))
+
+    def test_hit_with_media_but_no_srt_redoes_and_archives_old_files(self):
+        folder = self._seed(record={"processedAt": "2026-09-10T10:00:00+08:00"})
+        manifest, _ = self._create({"video": True, "transcript": True})
+        self.assertEqual(manifest["dedup"]["mode"], "redo")                     # Q9
+        old = folder / "舊版_20260910"                                          # Q10
+        self.assertTrue((old / "舊影片_逐字稿.md").is_file())
+        self.assertFalse((folder / "舊影片_逐字稿.md").exists())
+        self.assertEqual(manifest["stages"]["transcription"]["status"], "pending")
+        record = json.loads((folder / server.PROCESSING_RECORD_NAME).read_text(encoding="utf-8"))
+        self.assertEqual(record["dedup"]["mode"], "redo")
+        self.assertTrue(record["media"]["keep"])
+
+    def test_hit_with_existing_media_and_srt_reuses(self):
+        media_dir = Path(self.temp.name) / "media"
+        media_dir.mkdir()
+        (media_dir / "課.mp4").write_bytes(b"v")
+        (media_dir / "課.srt").write_text("1", encoding="utf-8")
+        self._seed(record={"media": {"video": str(media_dir / "課.mp4"), "srt": str(media_dir / "課.srt")}})
+        manifest, _ = self._create({"video": True, "transcript": True})
+        self.assertEqual(manifest["dedup"]["mode"], "reuse")                    # Q11
+        self.assertEqual(manifest["stages"]["acquisition"]["status"], "completed")
+
+    def test_second_run_after_archive_is_a_hit(self):
+        manifest, path = self._create({"transcript": True})
+        course_dir = Path(manifest["courseDir"])
+        (course_dir / "文件" / f"{manifest['courseName']}_逐字稿.md").write_text("全文", encoding="utf-8")
+        self.assertEqual(server.find_url_record(self.VID)["folder"].name, course_dir.name)
+        again, _ = self._create({"transcript": True}, name="另一個名字")
+        self.assertEqual(again["dedup"]["mode"], "reuse")
+        self.assertEqual(again["courseDir"], manifest["courseDir"])
+
+    def test_archive_moves_html_recycles_temp_media_and_updates_record(self):
+        manifest, path = self._create({"transcript": True})
+        course_dir = Path(manifest["courseDir"])
+        vault_dir = self.yt_root / course_dir.name
+        (vault_dir / f"{manifest['courseName']}_逐字稿.md").write_text("全文", encoding="utf-8")
+        (course_dir / "課_心智圖網頁版.html").write_text("<html></html>", encoding="utf-8")
+        (course_dir / "暫存.mp3").write_bytes(b"a")
+        (course_dir / "課_逐字稿.srt").write_text("1", encoding="utf-8")
+        (course_dir / "課.words.json").write_text("[]", encoding="utf-8")
+        data = json.loads(path.read_text(encoding="utf-8"))
+        for name, st in data["stages"].items():
+            if name != "archive" and st["status"] not in ("skipped", "cancelled"):
+                st["status"] = "completed"
+        recycled = []
+        with mock.patch.object(server, "send_to_recycle_bin", side_effect=lambda f: (recycled.append(f.name), f.unlink())):
+            result = server.auto_archive_course(path, data)
+        self.assertIsNotNone(result)
+        self.assertEqual(result["stages"]["archive"]["status"], "completed")
+        self.assertTrue((vault_dir / "課_心智圖網頁版.html").is_file())              # Q14
+        self.assertEqual(sorted(recycled), ["暫存.mp3", "課.words.json", "課_逐字稿.srt"])  # Q1／Q2
+        self.assertEqual(sorted(f.name for f in course_dir.iterdir() if f.is_file()), ["course-manifest.json"])
+        record = json.loads((vault_dir / server.PROCESSING_RECORD_NAME).read_text(encoding="utf-8"))
+        self.assertTrue(record["transcript"]["raw"].endswith("_逐字稿.md"))
+        self.assertEqual(record["video_id"], self.VID)
+
+    def test_archive_keeps_preexisting_media_when_media_not_selected(self):
+        folder = self._seed()
+        course_dir = Path(self.output_root) / folder.name
+        course_dir.mkdir(parents=True)
+        (course_dir / "舊影片.mp4").write_bytes(b"v")
+        manifest, path = self._create({"transcript": True})
+        self.assertEqual(Path(manifest["courseDir"]), course_dir)
+        data = json.loads(path.read_text(encoding="utf-8"))
+        for name, st in data["stages"].items():
+            if name != "archive" and st["status"] not in ("skipped", "cancelled"):
+                st["status"] = "completed"
+        with mock.patch.object(server, "send_to_recycle_bin") as recycle:
+            server.auto_archive_course(path, data)
+        recycle.assert_not_called()
+        self.assertTrue((course_dir / "舊影片.mp4").is_file())
+
+    def test_comments_artifact_only_for_youtube_and_adds_fifth_tab(self):
+        forced, _ = self._create({"transcript": True}, name="沒勾留言")
+        self.assertTrue(forced["options"]["artifacts"]["comments"])          # YouTube 一律必做
+        manifest, _ = self._create({"htmlBundle": True})
+        stages = manifest["stages"]
+        self.assertEqual(stages["comment_analysis"]["status"], "pending")
+        self.assertIn("comment_sort=top", stages["comment_analysis"]["completion_criteria"])
+        self.assertIn("留言分析", stages["html_bundle"]["completion_criteria"])
+        self.assertIn("五", stages["html_bundle"]["completion_criteria"])
+
+    def test_page_has_comments_checkbox_and_url_prompt_rules(self):
+        page = server.PAGE
+        self.assertIn('id="a-comments"', page)
+        self.assertIn("courseIsYoutube", page)
+        self.assertIn("【網址來源規則】", page)
+        self.assertIn("dedup.mode 是 reuse", page)
 
 
 class TestAdminIntegration(unittest.TestCase):

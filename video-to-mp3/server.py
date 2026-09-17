@@ -1,5 +1,41 @@
 """
-影音工具本機服務（影音網址下載 / 影片轉 MP3 / 錄音檔合併 / 圖檔轉 PDF）
+影音工具本機服務（影音網址下載 / 影片轉 MP3 / 影音合併 / 影片壓縮 / 圖檔轉 PDF）
+
+v1.24 2026-09-17 [Claude Code / Opus 5] 網址來源改落點＋video_id 去重＋留言分析（使用者逐題裁定 Q1～Q14）：
+                 (1) 網址來源（YouTube／FB／IG／X）的「文件」接合點改指 D:\\本機MD檔\\30_研究\\YouTube\\<夾名>\\，
+                     MD 與 HTML 都放那裡（跟 yt-summary、Mac Telegram 流程同一棵樹）；本機檔照舊指課程逐字稿整理。
+                 (2) 沒勾 MP3／MP4：D 槽課程夾只留 manifest＋接合點，歸檔時把本次新產生的暫存音訊、srt、
+                     words.json 丟資源回收桶；建課前就在的檔案不碰。
+                 (3) 三條流程共用「處理紀錄.json」（video_id 欄位）：建課時掃 30_研究\\YouTube 各夾外層，
+                     同 video_id 且有非空 *_逐字稿.md 即命中。沒勾媒體或舊紀錄已有媒體＋srt → reuse（逐字稿／校對版
+                     階段直接 completed）；勾了媒體但缺 srt → redo（外層舊檔收進 舊版_<日期>\\ 後從頭做）。
+                     命中時 D 槽課程夾沿用 Vault 夾名，使用者輸入的課程名記進 userCourseName。
+                 (4) 新增「💬 留言分析」產物：YouTube 網址一律必做（鎖定勾選），其他來源不顯示；
+                     勾全景學習手冊時變第五分頁。
+
+v1.23 2026-09-16 [Claude Code / Opus 5] 建課時自動從 Google 行事曆帶入課程資訊：
+                 依課程名／錄音檔修改日／今天找當天行程，標題比對分數 ≥ 0.5 才採用，
+                 寫成 <課程夾>\文件\<課程名>_課程資訊.md（同名不覆蓋）；manifest 新增 calendar_info 階段。
+                 唯讀權杖（calendar.readonly）獨立一份，API-011；首次執行 server.py --calendar-auth 授權，
+                 補抓舊課程用 server.py --calendar-info <manifest>。抓不到或未授權只略過，不影響建課。
+v1.22 2026-09-16 [Claude Code / Opus 5] 影片壓縮改成事後、勾選、取代原檔：
+                 (1) 取消 v1.20 建任務當下的自動壓縮（會拖慢建課、失敗還回滾搬移）。
+                 (2) 課程表單新增「🗜️ 完成後壓縮影片」勾選（預設不勾）；勾了 video_compression
+                     為 pending，排在 archive 之後，由 AI 執行 server.py --compress-course <manifest>。
+                     auto_archive_course 不再等這個階段。
+                 (3) 壓縮一律取代原檔：先壓成 <檔名>.compressing.mp4 → ffprobe 長度差 ≤ 1 秒 →
+                     比原檔小才換；原檔丟資源回收桶，新檔沿用原檔名（副檔名改 .mp4），字幕照樣對得上。
+                     比原檔大就保留原檔。「影片檔壓縮」分頁同樣改為取代原檔。
+                 (4) 建課搬移時課程資料夾已有同名檔（使用者先搬過去）不再報錯，直接沿用該檔。
+                 (5) 本機非 MP3 音檔（m4a/wav…）一律轉 MP3，驗證長度後原音檔丟資源回收桶；
+                     media_to_mp3 由 AI 執行 server.py --media-to-mp3 <manifest>，影片依 MP3 勾選另產、原檔保留，
+                     manifest 的 source.value／movedFiles 會改指 MP3。
+v1.21 2026-09-15 [Codex] 課程產物選項依相依關係重排：全景學習手冊置首，
+                 後接摘要／心智圖／培訓報告／技能樹；版面改固定五欄，附加設定獨立成列；
+                 自動鎖定項只顯示鎖頭，不再附加「前置」兩字。
+v1.20 2026-09-15 [Codex] 課程本機影片搬入 courseDir 後自動產生壓縮副本：
+                 沿用既有正式格式 H.264 CRF 23、30fps、AAC 64k 單聲道、faststart；
+                 原檔保留，輸出為 <原檔名>_compressed.mp4，壓縮失敗會回滾搬移。
 
 v1.19 2026-09-10 [Claude Code / Opus 5] 選擇器修 bug ＋ 來源改成頁內清單勾選：
                  (1) **選資料夾按了沒反應的真因**：COURSE_PICK_DIALOG_CODE 用 root.withdraw()
@@ -183,6 +219,11 @@ DEFAULT_YTDL_DIR = r"C:\OBS"
 COURSE_ROOT = r"D:\2026_已整理課程"
 # 課程包的 Markdown 副本要複製進 Obsidian vault 的這裡（archive 階段由 AI 執行）。
 VAULT_COURSE_MD_ROOT = r"D:\本機MD檔\30_研究\課程逐字稿整理"
+# 2026-09-17 使用者裁定：網址來源（YouTube／FB／IG／X）的 MD 與 HTML 改放這裡，
+# 跟 yt-summary、Mac 的 Telegram 流程同一棵樹，才互相掃得到 video_id；本機檔仍放上面那個。
+VAULT_URL_MD_ROOT = r"D:\本機MD檔\30_研究\YouTube"
+# 三條 YouTube 流程共用的去重紀錄檔名（欄位 video_id 不可改名）。
+PROCESSING_RECORD_NAME = "處理紀錄.json"
 
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".flv", ".wmv", ".ts"}
 AUDIO_EXTENSIONS = {".m4a", ".mp3", ".wav", ".aac", ".flac", ".ogg", ".opus", ".wma"}
@@ -340,7 +381,7 @@ def _pipeline_stage(status: str, criterion: str) -> dict:
 
 
 ARTIFACT_KEYS = ("video", "mp3", "transcript", "review", "rawSegments",
-                 "summary", "report", "mindmap", "skillTree")
+                 "summary", "report", "mindmap", "skillTree", "htmlBundle", "comments")
 
 # yt-dlp 的畫質選項；best＝不限制。
 VIDEO_QUALITIES = ("best", "1080p", "720p", "480p")
@@ -368,10 +409,14 @@ ARTIFACT_DEFAULTS = {
     "video": True,
     "mp3": True, "transcript": True, "summary": True,
     "report": True, "mindmap": True, "skillTree": False,
+    # 三份課程 MD 合成一個 html-visualizer 全景頁；網頁 UI 預設開啟。
+    "htmlBundle": True,
     # 校對要花 agy 額度，預設不做；重要課程才勾。
     "review": False,
     # 原字分段版是額外客製檔，skill 要求「使用者明確要求」才產。
     "rawSegments": False,
+    # 留言分析只有 YouTube 網址有意義，預設不做（2026-09-17 使用者裁定加進 8767）。
+    "comments": False,
 }
 
 # 下游產物 → 需要的前置產物。勾了下游就自動把前置補上。
@@ -383,6 +428,7 @@ ARTIFACT_REQUIRES = {
     "review": "transcript",
     "rawSegments": "transcript",
 }
+HTML_BUNDLE_REQUIRES = ("summary", "mindmap", "report", "skillTree")
 
 
 def resolve_course_artifacts(supplied: dict, source_type: str, skill_mode: int,
@@ -414,10 +460,16 @@ def resolve_course_artifacts(supplied: dict, source_type: str, skill_mode: int,
     for downstream, prerequisite in ARTIFACT_REQUIRES.items():
         if artifacts[downstream]:
             artifacts[prerequisite] = True
+    if artifacts["htmlBundle"]:
+        for prerequisite in HTML_BUNDLE_REQUIRES:
+            artifacts[prerequisite] = True
 
     # 只有網址來源需要「下載影片」；本機來源的影片本來就在手上。
     if not is_url_source(source_type):
         artifacts["video"] = False
+    # 留言分析靠 yt-dlp 抓 YouTube 留言：YouTube 網址一律必做（2026-09-17 使用者裁定，
+    # 與 Mac Telegram 流程一致），其他來源一律關掉。
+    artifacts["comments"] = bool(is_url_source(source_type) and youtube_video_id(source_val))
 
     # 只有單檔是 MP3，或資料夾內全部支援媒體都是 MP3，才沒有轉檔可做。
     source_path = Path(str(source_val or ""))
@@ -463,6 +515,8 @@ def _restore_moved(moved: list) -> list:
     """把搬過的檔案放回原位；回傳沒能放回去的目標路徑。"""
     failed = []
     for record in reversed(moved):
+        if record.get("alreadyInCourse"):
+            continue
         origin, target = Path(record["from"]), Path(record["to"])
         try:
             if target.exists():
@@ -490,7 +544,9 @@ def move_source_into_course_dir(source_type: str, source_val: str,
         for origin, target_name in pairs:
             target = course_dir / target_name
             if target.exists():
-                raise ValueError(f"課程資料夾已經有同名檔案：{target_name}")
+                # 使用者先把檔案搬進課程夾了：沿用，不搬也不報錯；回滾時不能動它。
+                moved.append({"from": str(origin), "to": str(target), "alreadyInCourse": True})
+                continue
             shutil.move(str(origin), str(target))
             moved.append({"from": str(origin), "to": str(target)})
     except (OSError, ValueError) as exc:
@@ -519,19 +575,26 @@ def _is_junction(path: Path) -> bool:
         return False
 
 
-def ensure_course_docs_link(course_dir: Path) -> tuple:
+def ensure_course_docs_link(course_dir: Path, vault_md_dir: Path | None = None) -> tuple:
     """在課程資料夾裡建好指向 Vault 同名資料夾的「文件」目錄接合點。
 
     回傳 (接合點路徑, Vault 目標路徑, 這次做了什麼)。已經是接合點就原樣沿用，
     已經是實體資料夾就不動它（交給一次性清理腳本處理），不覆蓋任何既有東西。
+    有指定 vault_md_dir（網址來源）時，舊接合點指錯地方就只拆連結重接，目標資料夾不動。
     """
-    vault_md_dir = Path(VAULT_COURSE_MD_ROOT) / course_dir.name
+    explicit = vault_md_dir is not None
+    if not explicit:
+        vault_md_dir = Path(VAULT_COURSE_MD_ROOT) / course_dir.name
     link = course_dir / COURSE_DOCS_LINK_NAME
     # 既有接合點可能指向「不同名」的 Vault 資料夾——早期有些課程夾名帶重複日期
     # （20260826_20260826_...），Vault 那邊卻是乾淨名。一律以接合點實際指向的目標為準，
     # 不能再用同名路徑去 mkdir，否則每次歸檔都在 Vault 生一個空的重複夾。
     if _is_junction(link):
-        return link, Path(os.path.realpath(str(link))), "junction 已存在"
+        current = Path(os.path.realpath(str(link)))
+        if not explicit or os.path.normcase(str(current)) == os.path.normcase(
+                os.path.realpath(str(vault_md_dir))):
+            return link, current, "junction 已存在"
+        os.rmdir(str(link))             # 只拆連結，不會碰到舊目標裡的檔案
     vault_md_dir.mkdir(parents=True, exist_ok=True)
     if link.exists():
         return link, vault_md_dir, "已有同名實體資料夾，未動"
@@ -580,6 +643,359 @@ def rollback_course_manifest(manifest: dict) -> list:
     return failed
 
 
+# ── 網址來源去重（v1.24，2026-09-17 使用者裁定 Q1～Q14）──────────────────────
+YOUTUBE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
+YOUTUBE_HOSTS = {"youtube.com", "m.youtube.com", "music.youtube.com",
+                 "youtube-nocookie.com", "youtu.be"}
+
+
+def youtube_video_id(url: str) -> str:
+    """從各種 YouTube 網址取出 11 碼 video_id；不是 YouTube 或解析不出來回空字串。
+
+    涵蓋 watch?v=、youtu.be/、shorts/、live/、embed/，分享參數（si、feature、t）不影響結果。
+    """
+    try:
+        parsed = urlparse(str(url or "").strip())
+    except ValueError:
+        return ""
+    host = (parsed.hostname or "").lower()
+    if host.startswith("www."):
+        host = host[4:]
+    if host not in YOUTUBE_HOSTS:
+        return ""
+    parts = [p for p in parsed.path.split("/") if p]
+    if host == "youtu.be":
+        candidate = parts[0] if parts else ""
+    elif parts[:1] == ["watch"]:
+        candidate = parse_qs(parsed.query).get("v", [""])[0]
+    elif len(parts) >= 2 and parts[0] in {"shorts", "live", "embed", "v"}:
+        candidate = parts[1]
+    else:
+        candidate = ""
+    return candidate if YOUTUBE_ID_RE.match(candidate) else ""
+
+
+def _raw_transcript_files(folder: Path) -> list:
+    """資料夾外層的 raw 逐字稿（`*_逐字稿.md`，排除校對版），非空才算。"""
+    return sorted(f for f in folder.glob("*_逐字稿.md")
+                  if f.is_file() and f.stat().st_size > 0)
+
+
+def _read_processing_record(folder: Path) -> dict | None:
+    path = folder / PROCESSING_RECORD_NAME
+    try:
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def find_url_record(video_id: str, md_root: str | Path | None = None) -> dict | None:
+    """在 30_研究\\YouTube 各資料夾「外層」找同 video_id 的處理紀錄。
+
+    命中條件（Q6、Q8）：處理紀錄.json 的 video_id 相同，且外層有非空的 `*_逐字稿.md`。
+    子資料夾（舊版_YYYYMMDD）不看，所以永遠比對到最新那份（Q10）。
+    """
+    if not video_id:
+        return None
+    root = Path(md_root or VAULT_URL_MD_ROOT)
+    if not root.is_dir():
+        return None
+    for folder in sorted(d for d in root.iterdir() if d.is_dir()):
+        record = _read_processing_record(folder)
+        if not record or record.get("video_id") != video_id:
+            continue
+        raws = _raw_transcript_files(folder)
+        if not raws:
+            continue
+        raw = raws[0]
+        reviewed = raw.with_name(raw.stem + "_校對版.md")
+        media = record.get("media") if isinstance(record.get("media"), dict) else {}
+
+        def _exists(key):
+            value = str(media.get(key) or "")
+            return value if value and Path(value).is_file() else ""
+
+        srt, video, mp3 = _exists("srt"), _exists("video"), _exists("mp3")
+        return {
+            "folder": folder,
+            "record": record,
+            "transcript": raw,
+            "reviewed": reviewed if reviewed.is_file() and reviewed.stat().st_size > 0 else None,
+            "srt": srt, "video": video, "mp3": mp3,
+            # Q11：舊紀錄已經有字幕檔＋媒體，才算「勾了媒體也能沿用」。
+            "hasMediaWithSrt": bool(srt and (video or mp3)),
+        }
+    return None
+
+
+def archive_old_version(folder: Path, record: dict | None) -> Path | None:
+    """Q10：全部重做前，把資料夾外層的舊檔整批搬進 `舊版_<舊處理日期>\\`；子資料夾不動。"""
+    files = [f for f in folder.iterdir() if f.is_file()]
+    if not files:
+        return None
+    stamp = re.sub(r"\D", "", str((record or {}).get("processedAt") or ""))[:8]
+    if len(stamp) != 8:
+        stamp = datetime.fromtimestamp(folder.stat().st_mtime).strftime("%Y%m%d")
+    target = folder / f"舊版_{stamp}"
+    suffix = 2
+    while target.exists():
+        target = folder / f"舊版_{stamp}-{suffix}"
+        suffix += 1
+    target.mkdir()
+    for f in files:
+        shutil.move(str(f), str(target / f.name))
+    return target
+
+
+def url_record_paths(course_dir: Path, vault_md_dir: Path) -> dict:
+    """歸檔時要回寫處理紀錄的實際路徑：Vault 外層逐字稿、courseDir 根層媒體與字幕。"""
+    raws = _raw_transcript_files(vault_md_dir)
+    raw = raws[0] if raws else None
+    reviewed = raw.with_name(raw.stem + "_校對版.md") if raw else None
+
+    def _first(pattern_ok):
+        found = sorted(f for f in course_dir.iterdir() if f.is_file() and pattern_ok(f))
+        return str(found[0]) if found else ""
+
+    media = {
+        "video": _first(lambda f: f.suffix.lower() in VIDEO_EXTENSIONS),
+        "mp3": _first(lambda f: f.suffix.lower() == ".mp3"),
+        # 播放器吃的是跟媒體同名的 srt，不是 _逐字稿.srt。
+        "srt": _first(lambda f: f.suffix.lower() == ".srt" and not f.stem.endswith("_逐字稿")),
+    }
+    transcript = {"raw": str(raw) if raw else "",
+                  "reviewed": str(reviewed) if reviewed and reviewed.is_file() else ""}
+    # 這次沒找到的欄位不寫，避免把舊紀錄裡還有效的路徑洗成空字串。
+    return {
+        "transcript": {k: v for k, v in transcript.items() if v},
+        "media": {k: v for k, v in media.items() if v},
+        "archivedAt": datetime.now().astimezone().isoformat(timespec="seconds"),
+    }
+
+
+def write_processing_record(folder: Path, updates: dict) -> Path:
+    """原子寫入處理紀錄.json；既有欄位保留，只覆蓋這次給的欄位（dict 欄位淺層合併）。"""
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / PROCESSING_RECORD_NAME
+    data = _read_processing_record(folder) or {}
+    for key, value in updates.items():
+        if isinstance(value, dict) and isinstance(data.get(key), dict):
+            merged = dict(data[key])
+            merged.update(value)
+            data[key] = merged
+        else:
+            data[key] = value
+    temp = folder / f".{PROCESSING_RECORD_NAME}.tmp"
+    temp.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    temp.replace(path)
+    return path
+
+
+# ── Google 行事曆課程資訊（v1.23，API-011）──────────────────────────────
+CALENDAR_SECRETS_DIR = Path.home() / ".codex" / "calendar-secrets"
+CALENDAR_CLIENT_FILE = CALENDAR_SECRETS_DIR / "google-calendar-credentials.json"
+# 8767 專用唯讀權杖，不跟 google-calendar-add 的 calendar.events 權杖共用（07-apis 第 6 條）。
+CALENDAR_TOKEN_FILE = CALENDAR_SECRETS_DIR / "8767-course-calendar-readonly-token.json"
+CALENDAR_SCOPES = ["https://www.googleapis.com/auth/calendar.readonly"]
+CALENDAR_API = "https://www.googleapis.com/calendar/v3"
+CALENDAR_MATCH_THRESHOLD = 0.5
+CALENDAR_META_RE = re.compile(r"<!--\s*classroom-calendar-meta\s*([\s\S]*?)-->", re.I)
+URL_RE = re.compile(r"https?://[^\s<>\"'）」】]+")
+
+
+def _calendar_session():
+    """回傳已授權的 AuthorizedSession；沒授權過回 None。"""
+    if not CALENDAR_TOKEN_FILE.is_file():
+        return None
+    from google.oauth2.credentials import Credentials
+    from google.auth.transport.requests import Request, AuthorizedSession
+    creds = Credentials.from_authorized_user_file(str(CALENDAR_TOKEN_FILE), CALENDAR_SCOPES)
+    if not creds.valid:
+        if not creds.refresh_token:
+            return None
+        creds.refresh(Request())
+        CALENDAR_TOKEN_FILE.write_text(creds.to_json(), encoding="utf-8")
+    return AuthorizedSession(creds)
+
+
+def calendar_auth() -> int:
+    """CLI：一次性瀏覽器授權，產生 8767 專用的唯讀權杖。"""
+    from google_auth_oauthlib.flow import InstalledAppFlow
+    flow = InstalledAppFlow.from_client_secrets_file(str(CALENDAR_CLIENT_FILE), CALENDAR_SCOPES)
+    creds = flow.run_local_server(port=0, open_browser=True, login_hint="ohihio@gmail.com")
+    CALENDAR_TOKEN_FILE.write_text(creds.to_json(), encoding="utf-8")
+    print(f"授權完成，權杖存到：{CALENDAR_TOKEN_FILE}")
+    return 0
+
+
+def _norm_title(text: str) -> str:
+    text = COURSE_DIR_PREFIX_RE.sub("", str(text or ""))
+    return re.sub(r"[\W_]+", "", text).lower()
+
+
+def calendar_title_score(course_name: str, title: str) -> float:
+    """包含關係算 1；否則以課程名的二字組有幾成出現在行程標題裡。"""
+    a, b = _norm_title(course_name), _norm_title(title)
+    if not a or not b:
+        return 0.0
+    if a in b or b in a:
+        return 1.0
+    grams = lambda t: {t[i:i + 2] for i in range(len(t) - 1)} or {t}
+    ga, gb = grams(a), grams(b)
+    return len(ga & gb) / len(ga)
+
+
+def course_date_candidates(clean_name: str, moved_files: list) -> list:
+    """課程日期候選：課程名開頭日期 → 錄音／錄影檔修改日 → 今天。"""
+    from datetime import date
+    found = []
+    m = re.match(r"^((?:19|20)\d{2})[-_]?(\d{2})[-_]?(\d{2})", clean_name)
+    if m:
+        try:
+            found.append(date(int(m.group(1)), int(m.group(2)), int(m.group(3))))
+        except ValueError:
+            pass
+    for record in moved_files or []:
+        try:
+            found.append(date.fromtimestamp(Path(record["to"]).stat().st_mtime))
+        except (OSError, KeyError):
+            pass
+    found.append(date.today())
+    return list(dict.fromkeys(found))
+
+
+def find_calendar_event(session, clean_name: str, dates: list):
+    """在候選日期的所有行事曆找標題最像的行程；回傳 (score, event, 行事曆名) 或 None。"""
+    calendars = session.get(f"{CALENDAR_API}/users/me/calendarList",
+                            params={"maxResults": 250}, timeout=15)
+    calendars.raise_for_status()
+    best = None
+    for day in dates:
+        params = {"timeMin": f"{day.isoformat()}T00:00:00+08:00",
+                  "timeMax": f"{day.isoformat()}T23:59:59+08:00",
+                  "singleEvents": "true", "orderBy": "startTime", "maxResults": 100}
+        for cal in calendars.json().get("items", []):
+            r = session.get(f"{CALENDAR_API}/calendars/{requests_quote(cal['id'])}/events",
+                            params=params, timeout=15)
+            if r.status_code != 200:
+                continue
+            for ev in r.json().get("items", []):
+                score = calendar_title_score(clean_name, ev.get("summary", ""))
+                if score >= CALENDAR_MATCH_THRESHOLD and (best is None or score > best[0]):
+                    best = (score, ev, cal.get("summary", cal["id"]))
+        if best and best[0] >= 1.0:
+            break
+    return best
+
+
+def requests_quote(value: str) -> str:
+    from urllib.parse import quote
+    return quote(value, safe="")
+
+
+def _event_time_text(ev: dict) -> str:
+    week = "一二三四五六日"
+    start, end = ev.get("start", {}), ev.get("end", {})
+    if "dateTime" in start:
+        a = datetime.fromisoformat(start["dateTime"])
+        b = datetime.fromisoformat(end.get("dateTime", start["dateTime"]))
+        return f"{a:%Y-%m-%d}（{week[a.weekday()]}）{a:%H:%M}–{b:%H:%M}"
+    a = datetime.fromisoformat(start.get("date", "1970-01-01"))
+    return f"{a:%Y-%m-%d}（{week[a.weekday()]}）全天"
+
+
+def _plain_description(desc: str) -> str:
+    text = CALENDAR_META_RE.sub("", desc or "")
+    text = re.sub(r"<br\s*/?>|</p>|</div>|</li>", "\n", text, flags=re.I)
+    text = re.sub(r'<a [^>]*href="([^"]+)"[^>]*>(.*?)</a>', r"\2 \1", text, flags=re.I | re.S)
+    text = html_lib.unescape(re.sub(r"<[^>]+>", "", text))
+    return re.sub(r"\n{3,}", "\n\n", text).strip()
+
+
+def build_course_info_md(clean_name: str, score: float, ev: dict, calendar_name: str) -> str:
+    meta_block = CALENDAR_META_RE.search(ev.get("description") or "")
+    meta = {}
+    if meta_block:
+        for line in meta_block.group(1).splitlines():
+            if "=" in line:
+                k, v = line.split("=", 1)
+                meta[k.strip()] = v.strip()
+    desc = _plain_description(ev.get("description", ""))
+    urls = list(dict.fromkeys(URL_RE.findall(f"{ev.get('location', '')}\n{desc}")))
+    cell = lambda v: str(v or "—").replace("|", "／").replace("\n", " ")
+    rows = [("行程標題", ev.get("summary")), ("時間", _event_time_text(ev)),
+            ("地點", ev.get("location")), ("行事曆", calendar_name)]
+    for key, label in (("application", "申請狀態"), ("registration", "報名狀態"), ("priority", "優先級")):
+        if meta.get(key):
+            rows.append((label, meta[key]))
+    lines = [
+        "---",
+        f'title: "{clean_name} 課程資訊"',
+        "type: course-info",
+        "source: google-calendar",
+        f'calendar_event_id: "{ev.get("id", "")}"',
+        f"synced: {datetime.now():%Y-%m-%d %H:%M}",
+        "---",
+        "",
+        f"# {clean_name} 課程資訊",
+        "",
+        f"> 8767 建課時從 Google 行事曆自動帶入（標題比對分數 {score:.2f}）；行事曆之後若有修改不會自動更新。",
+        "",
+        "| 項目 | 內容 |",
+        "|---|---|",
+        *[f"| {k} | {cell(v)} |" for k, v in rows],
+    ]
+    if ev.get("htmlLink"):
+        lines.append(f"| Google 行事曆 | [開啟行程]({ev['htmlLink']}) |")
+    if urls:
+        lines += ["", "## 相關連結", ""] + [f"- [{u}]({u})" for u in urls]
+    lines += ["", "## 行程說明原文", "", desc or "（行程沒有說明）", ""]
+    return "\n".join(lines)
+
+
+def write_course_calendar_info(clean_name: str, course_dir: Path, docs_dir: Path,
+                               moved_files: list) -> dict:
+    """抓行事曆寫 _課程資訊.md，回傳 manifest 的 calendar_info 階段；任何失敗都只略過，不擋建課。"""
+    criterion = "Google 行事曆有比對到行程時，文件\\<課程名>_課程資訊.md 存在且非空；沒有就 skipped"
+    target = Path(docs_dir) / f"{clean_name}_課程資訊.md"
+    try:
+        if target.exists():
+            return {**_pipeline_stage("completed", criterion),
+                    "evidence": [f"已存在，不覆蓋：{target.name}"], "outputs": [str(target)]}
+        session = _calendar_session()
+        if session is None:
+            return {**_pipeline_stage("skipped", criterion),
+                    "error": "8767 尚未授權 Google 行事曆：執行 server.py --calendar-auth"}
+        dates = course_date_candidates(clean_name, moved_files)
+        best = find_calendar_event(session, clean_name, dates)
+        if not best:
+            return {**_pipeline_stage("skipped", criterion),
+                    "evidence": [f"查了 {'、'.join(d.isoformat() for d in dates)}，沒有標題相符的行程"]}
+        score, ev, calendar_name = best
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(build_course_info_md(clean_name, score, ev, calendar_name), encoding="utf-8")
+        return {**_pipeline_stage("completed", criterion),
+                "evidence": [f"比對到「{ev.get('summary', '')}」（{_event_time_text(ev)}，分數 {score:.2f}）"],
+                "outputs": [str(target)]}
+    except Exception as exc:  # 網路、權杖、API 任何問題都不能讓建課失敗
+        return {**_pipeline_stage("skipped", criterion), "error": f"抓行事曆失敗：{exc}"}
+
+
+def calendar_info_manifest(manifest_path: Path) -> int:
+    """CLI：替既有課程補抓行事曆資訊並回寫 calendar_info 階段。"""
+    manifest_path = Path(manifest_path)
+    data = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
+    course_dir = manifest_path.parent
+    stage = write_course_calendar_info(
+        data.get("courseName") or course_dir.name, course_dir,
+        course_dir / COURSE_DOCS_LINK_NAME, data.get("source", {}).get("movedFiles", []))
+    data.setdefault("stages", {})["calendar_info"] = stage
+    _write_manifest(manifest_path, data)
+    print(json.dumps(stage, ensure_ascii=False, indent=2))
+    return 0 if stage["status"] == "completed" else 1
+
+
 def create_course_manifest(source_type: str, source_val: str, course_name: str,
                            options: dict | None = None, output_root: str | None = None) -> tuple:
     """建立不覆蓋既有資料夾的 course-manifest.json，供 AI 跨 Session 續跑。"""
@@ -621,7 +1037,24 @@ def create_course_manifest(source_type: str, source_val: str, course_name: str,
             raise ValueError("enginePriority 有重複項目")
     root = Path(output_root or COURSE_ROOT)
     root.mkdir(parents=True, exist_ok=True)
-    reused_dir = find_existing_course_dir(root, clean_name)
+    is_url = is_url_source(source_type)
+    user_course_name = clean_name
+    video_id = youtube_video_id(source_val) if is_url else ""
+    keep_media = bool(artifacts["video"] or artifacts["mp3"])
+    url_hit = find_url_record(video_id) if video_id else None
+    # Q9／Q11：命中舊紀錄時，沒勾媒體、或舊的已經有字幕檔＋媒體 → 沿用；勾了媒體但缺字幕檔 → 全部重做。
+    dedup_mode = "new"
+    if url_hit is not None:
+        dedup_mode = "reuse" if (not keep_media or url_hit["hasMediaWithSrt"]) else "redo"
+        # Q12：D 槽課程夾沿用 Vault 既有資料夾的名稱，使用者改的課程名只記進處理紀錄。
+        clean_name = COURSE_DIR_PREFIX_RE.sub("", url_hit["folder"].name).strip() or clean_name
+
+    if is_url:
+        # 網址來源不靠課程名找舊夾（去重改看 video_id）；D 槽與 Vault 兩邊都不能撞名。
+        base_name = url_hit["folder"].name if url_hit else course_folder_name(clean_name)
+        reused_dir = root / base_name if url_hit and (root / base_name).is_dir() else None
+    else:
+        reused_dir = find_existing_course_dir(root, clean_name)
     if reused_dir is not None:
         # 沿用既有課程夾。舊 manifest 先收進 _備份 再寫新的，不覆蓋任何進度紀錄。
         course_dir = reused_dir
@@ -632,13 +1065,17 @@ def create_course_manifest(source_type: str, source_val: str, course_name: str,
             stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
             old_manifest.replace(backup_dir / f"course-manifest.json.bak-{stamp}-before-reuse")
     else:
-        base_name = course_folder_name(clean_name)
+        if not is_url:
+            base_name = course_folder_name(clean_name)
         course_dir = root / base_name
         suffix = 2
-        while course_dir.exists():
+        # 網址來源命中舊紀錄時 Vault 那個資料夾本來就該存在，只有沒命中才要避開 Vault 撞名。
+        while course_dir.exists() or (is_url and url_hit is None
+                                      and (Path(VAULT_URL_MD_ROOT) / course_dir.name).exists()):
             course_dir = root / f"{base_name}-{suffix}"
             suffix += 1
         course_dir.mkdir(parents=False)
+    preexisting_files = sorted(f.name for f in course_dir.iterdir() if f.is_file())
 
     # 建完資料夾立刻把本機原檔剪進來；搬不動就連同剛建的空資料夾一起收掉。
     try:
@@ -656,7 +1093,10 @@ def create_course_manifest(source_type: str, source_val: str, course_name: str,
     # 建任務當下就接好，AI 一路把 MD 寫進 <課程夾>\文件\ 就等於直接寫進 Vault，全程只有一份。
     # （2026-09-10 使用者裁定，取代 2026-08-26 的「archive 時複製一份」）
     try:
-        docs_link, vault_md_dir, docs_note = ensure_course_docs_link(course_dir)
+        docs_link, vault_md_dir, docs_note = ensure_course_docs_link(
+            course_dir,
+            (url_hit["folder"] if url_hit else Path(VAULT_URL_MD_ROOT) / course_dir.name)
+            if is_url else None)
     except (OSError, ValueError) as exc:
         _restore_moved(moved_files)
         try:
@@ -665,16 +1105,39 @@ def create_course_manifest(source_type: str, source_val: str, course_name: str,
             pass
         raise ValueError(f"課程資料夾建好了但接合點失敗，已全部回滾：{exc}") from exc
 
-    is_url = is_url_source(source_type)
+    # Q10：全部重做 → 外層舊檔先整批收進 舊版_<日期>\，新產出寫外層。
+    old_version_dir = None
+    if dedup_mode == "redo":
+        old_version_dir = archive_old_version(url_hit["folder"], url_hit["record"])
+
     is_multi_part = source_type == MULTI_PART_SOURCE
+    has_video = (artifacts["video"] if is_url else any(
+        Path(record["to"]).suffix.lower() in VIDEO_EXTENSIONS for record in moved_files))
+    compress_video = bool(supplied.get("compressVideo", False)) and has_video
+    # 本機非 MP3 音檔一律轉 MP3 並回收原檔（2026-09-16 使用者裁定），不看 MP3 勾選。
+    audio_to_mp3 = not is_url and any(
+        Path(record["to"]).suffix.lower() in AUDIO_EXTENSIONS - {".mp3"} for record in moved_files)
+    local_mp3_stage = not is_url and (artifacts["mp3"] or audio_to_mp3)
+    calendar_stage = write_course_calendar_info(
+        clean_name, course_dir, course_dir / COURSE_DOCS_LINK_NAME, moved_files)
     if is_url:
         want_video = artifacts["video"]
         quality_text = "最佳畫質" if quality == "best" else quality
-        acquisition_criterion = (
-            "來源媒體存在且非空；網址來源另有 "
-            + (f"MP4（{quality_text}）、" if want_video else "")
-            + "MP3、metadata 與字幕／raw transcript"
-        )
+        if keep_media:
+            acquisition_criterion = (
+                "網址來源的 "
+                + (f"MP4（{quality_text}）" if want_video else "")
+                + ("、" if want_video and artifacts["mp3"] else "")
+                + ("MP3" if artifacts["mp3"] else "")
+                + " 存在 courseDir 根層且非空；影片標題、頻道、長度寫進 "
+                f"文件\\{PROCESSING_RECORD_NAME} 的 title／channel／durationSeconds"
+            )
+        else:
+            acquisition_criterion = (
+                "這次沒勾 MP3／MP4：只取字幕，或下載暫存音訊供轉錄，不保留任何媒體；"
+                "影片標題、頻道、長度寫進 "
+                f"文件\\{PROCESSING_RECORD_NAME} 的 title／channel／durationSeconds"
+            )
     elif is_multi_part:
         acquisition_criterion = (
             "分段媒體已由 8767 剪進 courseDir 並依檔名排序改名為 "
@@ -727,15 +1190,33 @@ def create_course_manifest(source_type: str, source_val: str, course_name: str,
                 if is_url else []
             ),
             "videoQuality": quality,
+            "compressVideo": compress_video,
+            "videoToMp3": bool(artifacts["mp3"]),
             "summaryStyle": summary_style,
             "multiPart": is_multi_part,
             "transcriptEngine": engine,
             "enginePriority": priority,
         },
         "stages": {
+            "calendar_info": calendar_stage,
             "acquisition": _pipeline_stage("pending", acquisition_criterion),
-            "media_to_mp3": _stage_for(
-                artifacts["mp3"], "MP3 存在、size > 0、ffprobe duration > 0"),
+            "video_compression": _pipeline_stage(
+                "pending" if compress_video else "skipped",
+                ("archive completed 之後才做：執行 "
+                 f'python "{Path(__file__).resolve()}" --compress-course "{course_dir / "course-manifest.json"}"'
+                 "；指令會把 courseDir 根層影片壓成 H.264 CRF 23、30fps、AAC 64k 單聲道，"
+                 "長度差 ≤ 1 秒且比原檔小才取代（原檔進資源回收桶、沿用原檔名），並自行回寫本階段")
+                if compress_video else "沒有勾選完成後壓縮影片，或來源沒有影片"),
+            "media_to_mp3": (
+                _pipeline_stage(
+                    "pending",
+                    "執行 "
+                    f'python "{Path(__file__).resolve()}" --media-to-mp3 "{course_dir / "course-manifest.json"}"'
+                    "；非 MP3 音檔轉 MP3、長度差 ≤ 1 秒後原音檔進資源回收桶"
+                    + ("；影片另產同名 MP3、原影片保留" if artifacts["mp3"] else "；影片不轉")
+                    + "；指令會自行回寫本階段與 source.value")
+                if local_mp3_stage else _stage_for(
+                    artifacts["mp3"] and is_url, "MP3 存在、size > 0、ffprobe duration > 0")),
             "transcription": _stage_for(
                 artifacts["transcript"],
                 transcription_criterion + engine_criteria.get(engine, "")),
@@ -759,6 +1240,20 @@ def create_course_manifest(source_type: str, source_val: str, course_name: str,
             "skill_tree": _stage_for(
                 artifacts["skillTree"],
                 "技能樹存在；模式 3 每個節點另含教學與最小案例"),
+            "comment_analysis": _stage_for(
+                artifacts["comments"],
+                f"{clean_name}_留言分析.md 存在且非空；依留言分析修正版："
+                "yt-dlp 以 comment_sort=top 擷取，總留言 <200 全抓、200～2000 抓前 300、>2000 抓前 500；"
+                "濾掉純表情／純符號／少於 5 字／重複後依讚數排序；先分六類立場（支持／反對／混合有條件／提問／個人經驗／無關），"
+                "無關直接排除不佔配額；各立場至少保留 2～3 則、總上限 30 則；深度分析 5 則寫核心主張、正方依據、反方盲點、"
+                "論點是否具體可查證、論證強度，不裁定對錯；註明還有幾則未收錄"),
+            "html_bundle": _stage_for(
+                artifacts["htmlBundle"],
+                "同一課程的摘要、心智圖、培訓報告、技能樹"
+                + ("、留言分析" if artifacts["comments"] else "")
+                + " MD 已整合為單一 html-visualizer HTML（"
+                + ("五" if artifacts["comments"] else "四")
+                + "個分頁）；並在同課程所有 MD 頂端維護該 HTML 連結"),
             "archive": _pipeline_stage(
                 "pending",
                 "所有要求產物位於 courseDir，manifest 證據完整；"
@@ -766,10 +1261,65 @@ def create_course_manifest(source_type: str, source_val: str, course_name: str,
                 f"（courseDir 底下的「{COURSE_DOCS_LINK_NAME}」是指向該處的目錄接合點，寫進去就是寫進 Vault）；"
                 "courseDir 根層或其他子資料夾若還留著實體 .md，一律照相對路徑搬進 Vault 後刪除原檔，"
                 "同名但內容不同的加上 _課程夾版 後綴另存、不覆蓋，並在 evidence 列出；"
-                "HTML、srt、words.json 與媒體檔留在 courseDir 不進 Vault"),
+                + ("HTML 也放 Vault（網址來源）；"
+                   + ("srt 與媒體檔留在 courseDir 不進 Vault；" if keep_media else
+                      "這次沒勾 MP3／MP4，courseDir 裡本次新產生的暫存音訊、srt、words.json 由 8767 歸檔時丟資源回收桶；")
+                   + f"8767 歸檔時會把逐字稿、srt、媒體路徑回寫 {PROCESSING_RECORD_NAME}"
+                   if is_url else "HTML、srt、words.json 與媒體檔留在 courseDir 不進 Vault")),
         },
     }
+    if is_url:
+        # 網址來源的去重資訊與處理紀錄（2026-09-17 使用者裁定 Q1～Q14）。
+        manifest["options"]["keepMedia"] = keep_media
+        manifest["userCourseName"] = user_course_name
+        manifest["dedup"] = {
+            "videoId": video_id,
+            "mode": dedup_mode,
+            "vaultDir": str(vault_md_dir),
+            "transcript": str(url_hit["transcript"]) if url_hit else "",
+            "reviewed": str(url_hit["reviewed"]) if url_hit and url_hit["reviewed"] else "",
+            "oldVersionDir": str(old_version_dir) if old_version_dir else "",
+            "preexistingFiles": preexisting_files,
+        }
+        stages = manifest["stages"]
+        stages["transcription"]["completion_criteria"] += (
+            f"；逐字稿檔名 {clean_name}_逐字稿.md，寫在 文件\\"
+            + ("" if keep_media else "；這次沒勾 MP3／MP4，不產 <課程名>.srt"))
+        if dedup_mode == "reuse":
+            evidence = f"沿用既有逐字稿：{url_hit['transcript']}（video_id {video_id} 命中，不重新下載、不重新轉錄）"
+            if keep_media:
+                stages["acquisition"] = _pipeline_stage("completed", acquisition_criterion)
+                stages["acquisition"]["evidence"] = [
+                    "沿用既有媒體：" + "、".join(x for x in (url_hit["video"], url_hit["mp3"], url_hit["srt"]) if x)]
+            else:
+                stages["acquisition"] = _pipeline_stage(
+                    "skipped", "沿用既有逐字稿，沒勾 MP3／MP4，不需取得媒體")
+            if artifacts["mp3"] and url_hit["mp3"]:
+                stages["media_to_mp3"] = _pipeline_stage("completed", stages["media_to_mp3"]["completion_criteria"])
+                stages["media_to_mp3"]["evidence"] = [f"沿用既有 MP3：{url_hit['mp3']}"]
+            if artifacts["transcript"]:
+                stages["transcription"]["status"] = "completed"
+                stages["transcription"]["evidence"] = [evidence]
+                stages["transcription"]["outputs"] = [str(url_hit["transcript"])]
+            if artifacts["review"] and url_hit["reviewed"]:
+                stages["transcript_review"]["status"] = "completed"
+                stages["transcript_review"]["evidence"] = [f"沿用既有校對版：{url_hit['reviewed']}"]
+                stages["transcript_review"]["outputs"] = [str(url_hit["reviewed"])]
     manifest_path = course_dir / "course-manifest.json"
+    if is_url:
+        write_processing_record(vault_md_dir, {
+            "video_id": video_id,
+            "url": source_val,
+            "producer": "8767",
+            "courseName": clean_name,
+            "userCourseName": user_course_name,
+            "processedAt": now,
+            "courseDir": str(course_dir),
+            "manifest": str(manifest_path),
+            "dedup": {"mode": dedup_mode,
+                      "oldVersionDir": str(old_version_dir) if old_version_dir else ""},
+            "media": {"keep": keep_media},
+        })
     temp_path = course_dir / ".course-manifest.json.tmp"
     temp_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     temp_path.replace(manifest_path)
@@ -949,7 +1499,8 @@ def auto_archive_course(manifest_path: Path, data: dict | None = None) -> dict |
             return None
 
         other_active = [st for name, st in stages.items()
-                        if name != "archive" and st.get("status") not in ("skipped", "cancelled")]
+                        if name not in ("archive", "video_compression")
+                        and st.get("status") not in ("skipped", "cancelled")]
         if not other_active or not all(st.get("status") == "completed" for st in other_active):
             return None
 
@@ -976,6 +1527,35 @@ def auto_archive_course(manifest_path: Path, data: dict | None = None) -> dict |
             shutil.move(str(md_file), str(target_file))
             moved_outputs.append(str(target_file))
 
+        is_url = is_url_source(data.get("source", {}).get("type", ""))
+        keep_media = data.get("options", {}).get("keepMedia", True)
+        if is_url:
+            # Q14：網址來源的 HTML 跟 MD 一起放 Vault。同名不同內容比照 MD 另存 _課程夾版。
+            for html_file in sorted(course_dir.glob("*.html")):
+                target_file = vault_md_dir / html_file.name
+                if target_file.exists():
+                    if target_file.read_bytes() == html_file.read_bytes():
+                        html_file.unlink()
+                        continue
+                    target_file = target_file.with_name(f"{target_file.stem}_課程夾版{target_file.suffix}")
+                    renamed_list.append(str(target_file))
+                shutil.move(str(html_file), str(target_file))
+                moved_outputs.append(str(target_file))
+        if is_url and not keep_media:
+            # Q1／Q2：沒勾 MP3／MP4 → 本次新產生的暫存音訊、srt、words.json 進資源回收桶。
+            # 建課前就在的檔案（例如之前勾過 MP4 留下的）一律不碰。
+            preexisting = set(data.get("dedup", {}).get("preexistingFiles", []))
+            recycled = []
+            for f in sorted(course_dir.iterdir()):
+                if not f.is_file() or f.name in preexisting:
+                    continue
+                suffix = f.suffix.lower()
+                if suffix in COURSE_MEDIA_EXTENSIONS or suffix == ".srt" or f.name.endswith("words.json"):
+                    send_to_recycle_bin(f)
+                    recycled.append(f.name)
+            if recycled:
+                evidence.append("沒勾 MP3／MP4，已丟資源回收桶：" + "、".join(recycled))
+
         # 確保同名字幕（若有 _逐字稿.srt 但無 <課程名>.srt）
         media_files = [f for f in course_dir.iterdir() if f.suffix.lower() in COURSE_MEDIA_EXTENSIONS]
         if media_files:
@@ -992,6 +1572,9 @@ def auto_archive_course(manifest_path: Path, data: dict | None = None) -> dict |
             evidence.append(f"已把 {len(moved_outputs)} 份 MD 搬進 Vault 並清掉課程夾原檔")
         if renamed_list:
             evidence.append(f"{len(renamed_list)} 份同名但內容不同，另存 _課程夾版：" + "、".join(renamed_list))
+        if is_url:
+            record_path = write_processing_record(vault_md_dir, url_record_paths(course_dir, vault_md_dir))
+            evidence.append(f"已回寫 {record_path}")
 
         archive_stage["status"] = "completed"
         archive_stage["evidence"] = evidence
@@ -1336,6 +1919,192 @@ def remove_file(path) -> None:
             time.sleep(0.3)
 
 
+COMPRESSING_SUFFIX = ".compressing.mp4"
+
+
+def send_to_recycle_bin(path: Path) -> None:
+    """用 SHFileOperationW 把檔案丟進資源回收桶（可從回收桶救回）。"""
+    import ctypes
+    from ctypes import wintypes
+
+    class SHFILEOPSTRUCTW(ctypes.Structure):
+        _fields_ = [("hwnd", wintypes.HWND), ("wFunc", wintypes.UINT),
+                    ("pFrom", wintypes.LPCWSTR), ("pTo", wintypes.LPCWSTR),
+                    ("fFlags", ctypes.c_uint16), ("fAnyOperationsAborted", wintypes.BOOL),
+                    ("hNameMappings", ctypes.c_void_p), ("lpszProgressTitle", wintypes.LPCWSTR)]
+
+    path = Path(path).resolve()
+    # FO_DELETE=3；FOF_ALLOWUNDO|FOF_NOCONFIRMATION|FOF_SILENT|FOF_NOERRORUI；pFrom 需雙 NUL 結尾
+    op = SHFILEOPSTRUCTW(None, 3, str(path) + "\0", None, 0x40 | 0x10 | 0x4 | 0x400, False, None, None)
+    code = ctypes.windll.shell32.SHFileOperationW(ctypes.byref(op))
+    if code != 0 or op.fAnyOperationsAborted or path.exists():
+        raise OSError(f"原檔丟不進資源回收桶（code {code}）：{path.name}")
+
+
+def compress_video_replace(source: Path, on_progress=None) -> dict:
+    """壓縮影片並取代原檔：長度差 ≤ 1 秒且比原檔小才換，原檔進資源回收桶，沿用原檔名（.mp4）。"""
+    source = Path(source)
+    if not source.is_file():
+        raise ValueError(f"找不到影片：{source}")
+    duration = probe_duration(str(source))
+    if duration <= 0:
+        raise ValueError(f"影片無法讀取或長度為 0：{source.name}")
+    final = source.with_suffix(".mp4")
+    if final != source and final.exists():
+        raise ValueError(f"同資料夾已經有 {final.name}，不覆蓋")
+    temp = source.with_name(source.stem + COMPRESSING_SUFFIX)
+    remove_file(temp)
+
+    code, stderr = run_ffmpeg(
+        [FFMPEG, "-y", "-nostdin", "-loglevel", "error", "-progress", "pipe:1",
+         "-i", str(source), "-c:v", "libx264", "-crf", "23", "-preset", "medium",
+         "-r", "30", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "64k",
+         "-ac", "1", "-movflags", "+faststart", str(temp)],
+        duration, on_progress or (lambda _current, _percent: True),
+    )
+    if code != 0 or not temp.exists() or temp.stat().st_size <= 0:
+        remove_file(temp)
+        raise ValueError(f"影片壓縮失敗：{source.name}；{stderr[-300:] or f'ffmpeg exit {code}'}")
+    new_duration = probe_duration(str(temp))
+    if abs(new_duration - duration) > 1.0:
+        remove_file(temp)
+        raise ValueError(f"壓縮後長度不符（原 {duration:.1f}s／新 {new_duration:.1f}s），保留原檔：{source.name}")
+    before, after = source.stat().st_size, temp.stat().st_size
+    if after >= before:
+        remove_file(temp)
+        return {"status": "kept", "path": str(source), "before": before, "after": after}
+    send_to_recycle_bin(source)
+    try:
+        os.replace(str(temp), str(final))
+    except OSError as exc:
+        raise OSError(f"原檔已進資源回收桶，但壓縮檔改名失敗，請手動把 {temp.name} 改成 {final.name}：{exc}") from exc
+    return {"status": "replaced", "path": str(final), "before": before, "after": after}
+
+
+def convert_media_to_mp3(source: Path, verify_duration: bool = True) -> Path:
+    """ffmpeg 轉同名 MP3（192k）；已有同名 MP3 就沿用。長度差 > 1 秒視為失敗。"""
+    source = Path(source)
+    target = source.with_suffix(".mp3")
+    duration = probe_duration(str(source))
+    if duration <= 0:
+        raise ValueError(f"媒體無法讀取或長度為 0：{source.name}")
+    if not target.exists():
+        temp = source.with_name(source.stem + ".converting.mp3")
+        remove_file(temp)
+        code, stderr = run_ffmpeg(
+            [FFMPEG, "-y", "-nostdin", "-loglevel", "error", "-progress", "pipe:1",
+             "-i", str(source), "-vn", "-acodec", "libmp3lame", "-ab", "192k", str(temp)],
+            duration, lambda _current, _percent: True,
+        )
+        if code != 0 or not temp.exists() or temp.stat().st_size <= 0:
+            remove_file(temp)
+            raise ValueError(f"轉 MP3 失敗：{source.name}；{stderr[-300:] or f'ffmpeg exit {code}'}")
+        os.replace(str(temp), str(target))
+    if verify_duration and abs(probe_duration(str(target)) - duration) > 1.0:
+        raise ValueError(f"MP3 長度跟原檔對不上，原檔保留：{target.name}")
+    return target
+
+
+def _write_manifest(manifest_path: Path, data: dict) -> None:
+    temp_path = manifest_path.with_name(".course-manifest.json.tmp")
+    temp_path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    temp_path.replace(manifest_path)
+
+
+def media_to_mp3_manifest(manifest_path: Path) -> int:
+    """CLI：courseDir 根層非 MP3 音檔轉 MP3 並回收原檔；影片依勾選另產 MP3。回寫 media_to_mp3。"""
+    manifest_path = Path(manifest_path)
+    data = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
+    stage = data.get("stages", {}).get("media_to_mp3")
+    if not stage or stage.get("status") not in ("pending", "blocked"):
+        print(f"media_to_mp3 不是 pending／blocked（{stage and stage.get('status')}），不處理。")
+        return 0
+    want_video = bool(data.get("options", {}).get("videoToMp3", False))
+    source = data.get("source", {})
+    course_dir = manifest_path.parent
+    evidence, outputs = [], []
+    try:
+        for item in sorted(course_dir.iterdir()):
+            suffix = item.suffix.lower()
+            if not item.is_file() or suffix == ".mp3":
+                continue
+            if suffix in AUDIO_EXTENSIONS:
+                print(f"轉 MP3：{item.name}", flush=True)
+                target = convert_media_to_mp3(item)
+                send_to_recycle_bin(item)
+                evidence.append(f"{item.name} → {target.name}，原音檔進資源回收桶")
+                outputs.append(str(target))
+                # 原檔已回收：來源與搬移紀錄改指 MP3，後續轉錄與刪課回滾才不會找不到檔。
+                if source.get("value") == str(item):
+                    source["value"] = str(target)
+                for record in source.get("movedFiles", []) or []:
+                    if record.get("to") == str(item):
+                        record["to"] = str(target)
+                        record["from"] = str(Path(record["from"]).with_suffix(".mp3"))
+            elif suffix in VIDEO_EXTENSIONS and want_video:
+                print(f"影片另產 MP3：{item.name}", flush=True)
+                target = convert_media_to_mp3(item)
+                evidence.append(f"{item.name} → {target.name}，原影片保留")
+                outputs.append(str(target))
+        for mp3 in outputs:
+            if Path(mp3).stat().st_size <= 0 or probe_duration(mp3) <= 0:
+                raise ValueError(f"MP3 無效：{mp3}")
+        stage.update(status="completed", evidence=evidence or ["courseDir 根層沒有需要轉的媒體"],
+                     outputs=outputs, error=None)
+        code = 0
+    except (OSError, ValueError) as exc:
+        stage.update(status="blocked", evidence=evidence, outputs=outputs, error=str(exc))
+        code = 1
+    _write_manifest(manifest_path, data)
+    print("\n".join(evidence) or "沒有需要轉的媒體")
+    if code:
+        print(f"[失敗] {stage['error']}")
+    return code
+
+
+def compress_course_manifest(manifest_path: Path) -> int:
+    """CLI：壓縮一堂課 courseDir 根層的影片並回寫 video_compression 階段。"""
+    manifest_path = Path(manifest_path)
+    data = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
+    stage = data.get("stages", {}).get("video_compression")
+    if not stage or stage.get("status") not in ("pending", "blocked"):
+        print(f"video_compression 不是 pending／blocked（{stage and stage.get('status')}），不處理。")
+        return 0
+    course_dir = manifest_path.parent
+    videos = sorted(item for item in course_dir.iterdir()
+                    if item.is_file() and item.suffix.lower() in VIDEO_EXTENSIONS
+                    and not item.name.lower().endswith(COMPRESSING_SUFFIX))
+    evidence, outputs = [], []
+
+    def mb(n):
+        return f"{n / 1048576:.1f}MB"
+
+    try:
+        for video in videos:
+            print(f"壓縮中：{video.name}", flush=True)
+            result = compress_video_replace(video)
+            if result["status"] == "replaced":
+                evidence.append(f"已取代：{Path(result['path']).name} {mb(result['before'])} → "
+                                f"{mb(result['after'])}，原檔進資源回收桶")
+            else:
+                evidence.append(f"保留原檔：{video.name} 壓縮後沒有變小"
+                                f"（{mb(result['before'])} → {mb(result['after'])}）")
+            outputs.append(result["path"])
+        stage.update(status="completed", evidence=evidence or ["courseDir 根層沒有影片"],
+                     outputs=outputs, error=None)
+        code = 0
+    except (OSError, ValueError) as exc:
+        stage.update(status="blocked", evidence=evidence, outputs=outputs, error=str(exc))
+        code = 1
+    temp_path = manifest_path.with_name(".course-manifest.json.tmp")
+    temp_path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    temp_path.replace(manifest_path)
+    print("\n".join(evidence) or "沒有影片")
+    if code:
+        print(f"[失敗] {stage['error']}")
+    return code
+
+
 def worker_convert(job: Job):
     """逐支影片轉成同名 MP3，放回原資料夾。"""
     for item in job.items:
@@ -1422,6 +2191,36 @@ def worker_merge(job: Job):
 
     job.done = True
     job.finished_at = time.time()
+
+
+def worker_compress(job: Job):
+    """逐支影片壓縮並取代原檔（原檔進資源回收桶，沿用原檔名）。"""
+    for item in job.items:
+        if job.cancelled:
+            item["status"] = "cancelled"
+            continue
+        item["status"] = "running"
+        item["duration"] = probe_duration(item["path"])
+
+        def on_progress(current, percent, _item=item):
+            _item["current"] = current
+            _item["percent"] = round(percent, 1)
+            return not job.cancelled
+
+        try:
+            result = compress_video_replace(Path(item["path"]), on_progress)
+            item["status"] = "done"
+            item["percent"] = 100.0
+            item["output"] = result["path"]
+            if result["status"] == "kept":
+                item["error"] = "壓縮後沒有變小，保留原檔"
+            job.outputs.append(result["path"])
+        except (OSError, ValueError) as exc:
+            item["status"] = "failed"
+            item["error"] = str(exc)
+    job.done = True
+    job.finished_at = time.time()
+    job.message = "已取消" if job.cancelled else "影片壓縮完成"
 
 
 YTDL_PCT_RE = re.compile(r"\[download\]\s+([\d.]+)%")
@@ -2076,7 +2875,7 @@ def start_job(kind: str, paths: list, output_dir: str, **extra) -> Job:
         setattr(job, key, value)
     with JOBS_LOCK:
         JOBS[job.id] = job
-    worker = {"convert": worker_convert, "merge": worker_merge,
+    worker = {"convert": worker_convert, "merge": worker_merge, "compress": worker_compress,
               "ytdl": worker_ytdl, "imgpdf": worker_imgpdf}[kind]
 
     def runner():
@@ -2109,7 +2908,7 @@ def list_folder(path: str, kind: str) -> dict:
     if not folder.exists() or not folder.is_dir():
         return {"error": f"找不到資料夾：{path}"}
 
-    wanted = VIDEO_EXTENSIONS if kind == "video" else AUDIO_EXTENSIONS
+    wanted = VIDEO_EXTENSIONS if kind in {"video", "video_merge", "compress"} else AUDIO_EXTENSIONS
     dirs, files = [], []
     try:
         for entry in sorted(folder.iterdir(), key=lambda p: p.name.lower()):
@@ -2139,7 +2938,7 @@ PAGE = r"""<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>影音工具 — 影片轉MP3 / 錄音合併</title>
+<title>影音工具 — 課程整理中心</title>
 <style>
   :root {
     --bg: #0f1216; --card: #171c23; --line: #262d38; --text: #e6edf3;
@@ -2206,6 +3005,13 @@ PAGE = r"""<!doctype html>
           border: 1px solid var(--line); background: #0d1117; font-size: 13px; cursor: pointer; }
   .pick:has(input:checked) { border-color: var(--accent); color: var(--accent); }
   .picks { display: flex; gap: 8px; flex-wrap: wrap; }
+  .artifact-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+  .artifact-grid .pick { min-width: 0; justify-content: flex-start; white-space: nowrap; }
+  .artifact-grid .pick.primary { border-color: var(--accent); background: #14243a; font-weight: 600; }
+  .option-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px;
+                padding-left: 14px; border-left: 2px solid #2f3b4a; }
+  .option-row .option-title { width: 78px; color: var(--muted); font-size: 12px; flex: none; }
+  .option-row .pick { padding: 6px 12px; font-size: 12px; }
   .pick.locked { cursor: not-allowed; border-color: #33507a; color: #7fa8dd; background: #10161f; }
   .pick.locked input { cursor: not-allowed; }
   .pick .lk { font-size: 11px; color: var(--muted); }
@@ -2214,6 +3020,8 @@ PAGE = r"""<!doctype html>
               padding-left: 14px; border-left: 2px solid #2f3b4a; }
   .subpicks .pick { padding: 6px 12px; font-size: 12px; }
   .subpicks.inline { margin: 0; align-items: center; }
+  @media (max-width: 820px) { .artifact-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  @media (max-width: 560px) { .artifact-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   .engine { display: flex; align-items: center; gap: 8px; margin: 10px 0 0 10px;
             padding-left: 14px; border-left: 2px solid #2f3b4a; }
   .engine select { flex: 0 1 380px; min-width: 200px; }
@@ -2274,11 +3082,10 @@ PAGE = r"""<!doctype html>
   <h1>🎬 影音工具</h1>
   <div class="sub">網頁操作、本機處理。檔案不上傳，轉檔輸出寫回原資料夾。</div>
   <div class="tabs">
-    <div class="tab on" data-mode="course">課程整理SOP</div>
+    <div class="tab on" data-mode="course">課程整理中心</div>
+    <div class="tab" data-mode="media">影音處理</div>
+    <div class="tab" data-mode="ytdl">萬用下載</div>
     <div class="tab" data-mode="lexicon">字幕詞庫</div>
-    <div class="tab" data-mode="video">影片轉 MP3</div>
-    <div class="tab" data-mode="audio">錄音檔合併</div>
-    <div class="tab" data-mode="ytdl">YouTube 下載</div>
   </div>
 </header>
 <main>
@@ -2302,6 +3109,15 @@ PAGE = r"""<!doctype html>
   </div>
 
   <div class="card hide" id="browseCard">
+    <div class="row" style="margin-bottom:12px">
+      <span class="label" style="margin:0">處理項目</span>
+      <select id="mediaOp" onchange="mediaOperationChanged()" style="flex:0 1 300px;min-width:220px">
+        <option value="video">影片轉 MP3</option>
+        <option value="audio">錄音檔合併</option>
+        <option value="video_merge">錄影檔合併</option>
+        <option value="compress">影片檔壓縮</option>
+      </select>
+    </div>
     <div class="row">
       <input type="text" id="path" spellcheck="false">
       <button onclick="go(document.getElementById('path').value)">前往</button>
@@ -2333,7 +3149,8 @@ PAGE = r"""<!doctype html>
       <b>網址</b>：YouTube、Facebook、Instagram、X 等 yt-dlp 支援的站台都吃，需要登入的站台會自動帶 Chrome cookies。<br>
       <b>資料夾</b>：選好之後下面會把第一層的東西全部列出來，勾哪幾項就建幾堂課。
       子資料夾算一堂（裡面的檔案依檔名排序合併成同一堂）。<br>
-      <b>單一檔案</b>：直接貼完整路徑也可以，那個檔就是一堂課；任何音檔或影片檔都吃。
+      <b>單一檔案</b>：直接貼完整路徑也可以，那個檔就是一堂課；任何音檔或影片檔都吃。課程資料夾裡已經有同名檔（你先搬過去的）會直接沿用。<br>
+      <b>課程資訊</b>：建課時會去 Google 行事曆找同一天、標題相符的行程，找到就寫成 `文件\課程名_課程資訊.md`；找不到就略過。
     </div>
     <div class="course-preview hide" id="coursePreview" aria-live="polite">
       <div id="coursePreviewSummary"></div>
@@ -2347,19 +3164,23 @@ PAGE = r"""<!doctype html>
     <div class="label" style="margin-top:12px">課程名稱（自動帶入後仍可修改）</div>
     <input type="text" id="courseName" spellcheck="false" placeholder="會自動抓影片標題、檔名或資料夾名">
     <div class="label" style="margin-top:16px">要產出哪些東西（沒勾的 AI 就不做）</div>
-    <div class="picks">
-      <label class="pick" id="w-video"><input type="checkbox" id="a-video" checked onchange="courseVideoToggle(this)"> 🎬 下載 MP4</label>
-      <label class="pick" id="w-mp3"><input type="checkbox" id="a-mp3" checked onchange="syncCourseArtifacts()"> 🎵 轉檔 MP3</label>
-      <label class="pick" id="w-transcript"><input type="checkbox" id="a-transcript" checked onchange="syncCourseArtifacts()"> 📝 逐字稿</label>
-      <label class="pick" id="w-review" title="用 agy（Gemini）校對專有名詞與人名，raw 稿保留不覆蓋"><input type="checkbox" id="a-review" checked onchange="syncCourseArtifacts()"> 🔍 校對逐字稿</label>
+    <div class="picks artifact-grid">
+      <label class="pick primary" id="w-htmlBundle"><input type="checkbox" id="a-htmlBundle" checked onchange="syncCourseArtifacts()"> 📚 全景學習手冊</label>
       <label class="pick" id="w-summary"><input type="checkbox" id="a-summary" checked onchange="syncCourseArtifacts()"> 📄 摘要</label>
-      <label class="pick" id="w-report"><input type="checkbox" id="a-report" checked onchange="syncCourseArtifacts()"> 📊 培訓報告</label>
       <label class="pick" id="w-mindmap"><input type="checkbox" id="a-mindmap" checked onchange="syncCourseArtifacts()"> 🧠 心智圖</label>
+      <label class="pick" id="w-report"><input type="checkbox" id="a-report" checked onchange="syncCourseArtifacts()"> 📊 培訓報告</label>
       <label class="pick" id="w-skillTree"><input type="checkbox" id="a-skillTree" checked onchange="syncCourseArtifacts()"> 🌳 技能樹</label>
-      <div class="subpicks inline" id="courseSkillSub" style="display:none">
-        <label class="pick" id="w-teach"><input type="checkbox" id="s-teach" checked onchange="syncCourseArtifacts()"> 含教學</label>
-        <label class="pick"><input type="checkbox" id="s-minimum" onchange="syncCourseArtifacts()"> 含最小案例</label>
-      </div>
+      <label class="pick" id="w-transcript"><input type="checkbox" id="a-transcript" checked onchange="syncCourseArtifacts()"> 📝 逐字稿</label>
+      <label class="pick" id="w-review" title="用 agy（Gemini）校對專有名詞與人名，raw 稿保留不覆蓋"><input type="checkbox" id="a-review" onchange="syncCourseArtifacts()"> 🔍 校對逐字稿</label>
+      <label class="pick" id="w-comments" style="display:none" title="YouTube 網址一律必做；抓熱門留言分立場整理，不判對錯"><input type="checkbox" id="a-comments" onchange="syncCourseArtifacts()"> 💬 留言分析</label>
+      <label class="pick" id="w-mp3"><input type="checkbox" id="a-mp3" checked onchange="syncCourseArtifacts()"> 🎵 MP3</label>
+      <label class="pick" id="w-video"><input type="checkbox" id="a-video" checked onchange="courseVideoToggle(this)"> 🎬 下載 MP4</label>
+      <label class="pick" id="w-compress" title="全部產物與 archive 完成後才壓縮；取代原檔、沿用原檔名，原檔進資源回收桶"><input type="checkbox" id="s-compress" onchange="syncCourseArtifacts()"> 🗜️ 完成後壓縮影片</label>
+    </div>
+    <div class="option-row" id="courseSkillSub" style="display:none">
+      <span class="option-title">技能樹設定</span>
+      <label class="pick" id="w-teach"><input type="checkbox" id="s-teach" checked onchange="syncCourseArtifacts()"> 含教學</label>
+      <label class="pick"><input type="checkbox" id="s-minimum" onchange="syncCourseArtifacts()"> 含最小案例</label>
     </div>
     <div class="engine" id="courseQualityRow">
       <span class="hintx">影片畫質</span>
@@ -2371,9 +3192,10 @@ PAGE = r"""<!doctype html>
       </select>
       <span class="hintx">只影響下載的 MP4，MP3 音質不受影響。</span>
     </div>
-    <div class="subpicks" id="courseSummarySub" style="display:none">
-      <label class="pick" id="w-dense"><input type="checkbox" id="s-dense" onchange="syncCourseArtifacts()"> 高密度總覽（1-2 段，取代預設 3-6 段）</label>
-      <label class="pick" id="w-rawSegments"><input type="checkbox" id="a-rawSegments" onchange="syncCourseArtifacts()"> 另出原字分段版（保留原句不改寫）</label>
+    <div class="option-row" id="courseSummarySub" style="display:none">
+      <span class="option-title">文字設定</span>
+      <label class="pick" id="w-dense" title="摘要總覽改為 1-2 段，取代預設 3-6 段"><input type="checkbox" id="s-dense" onchange="syncCourseArtifacts()"> 高密度總覽</label>
+      <label class="pick" id="w-rawSegments" title="另外產生保留原句、不改寫的原字分段版"><input type="checkbox" id="a-rawSegments" onchange="syncCourseArtifacts()"> 原字分段版</label>
     </div>
     <div class="engine" id="courseEngineRow">
       <span class="hintx">轉錄引擎</span>
@@ -2436,6 +3258,7 @@ PAGE = r"""<!doctype html>
 
 <script>
 let mode = 'course';   // 預設開在課程整理SOP
+let mediaOp = 'video';
 let cur = '';
 let files = [];
 let checked = new Set();
@@ -2470,9 +3293,18 @@ document.querySelectorAll('.tab').forEach(tab => tab.onclick = () => {
     refreshCourseProgress();
     return;
   }
-  $('run').textContent = mode === 'video' ? '開始轉檔' : '開始合併';
-  go(DEFAULTS[mode]);
+  if (mode === 'media') {
+    mediaOperationChanged();
+    go(DEFAULTS.video);
+  }
 });
+
+function mediaOperationChanged() {
+  mediaOp = $('mediaOp').value;
+  $('run').textContent = mediaOp === 'compress' ? '開始壓縮'
+    : mediaOp === 'video' ? '開始轉 MP3' : '開始合併';
+  if (cur) go(cur);
+}
 
 async function coursePost(path, payload) {
   const response = await fetch(path, {
@@ -2537,6 +3369,7 @@ const ENGINE_LABELS = {
   web: 'ChatEverywhere 網頁（自動化較脆弱）',
   subtitle_auto: '平台自動生成字幕（沒標點，品質最差）'
 };
+const HTML_BUNDLE_REQUIRES = ['summary', 'mindmap', 'report', 'skillTree'];
 // 預設只走作者上傳字幕與 Groq；其餘要自己勾（很慢／脆弱／品質差）。
 let coursePrio = [
   { key: 'subtitle_manual', on: true },
@@ -2550,6 +3383,8 @@ let coursePrio = [
 // 這段需在 ENGINE_LABELS 與 coursePrio 完成初始化後才能觸發 tab 的同步呼叫鏈。
 if (location.hash === '#course') {
   document.querySelector('.tab[data-mode="course"]').click();
+} else if (location.hash === '#media') {
+  document.querySelector('.tab[data-mode="media"]').click();
 } else if (location.hash === '#lexicon') {
   document.querySelector('.tab[data-mode="lexicon"]').click();
 } else if (location.hash.startsWith('#ytdl:')) {
@@ -2585,17 +3420,22 @@ function coursePrioRender() {
 
 function courseArtifactState() {
   const keys = ['video', 'mp3', 'transcript', 'review', 'rawSegments',
-                'summary', 'report', 'mindmap', 'skillTree'];
+                'summary', 'report', 'mindmap', 'skillTree', 'htmlBundle', 'comments'];
   const type = $('courseType').value;
   const source = $('courseSource').value.trim().toLowerCase();
   const isUrl = type === 'url' || type === 'youtube';
+  const isYoutube = isUrl && courseIsYoutube(source);
   // 前端不掃資料夾：只有明確選到單一 .mp3 才關掉轉檔，資料夾交由後端逐檔判斷。
   const mp3Source = type === 'local_mp3' && source.endsWith('.mp3');
   const want = {};
   keys.forEach(k => want[k] = $('a-' + k).checked);
+  // 全景學習手冊是組合產物：一次勾選就立即帶上四個分頁來源，並一路帶上逐字稿。
+  if (want.htmlBundle) HTML_BUNDLE_REQUIRES.forEach(k => want[k] = true);
   // 下載 MP4 會因為來源是本機檔而被強制關掉，所以要記使用者的本意，
   // 換回網址來源時才不會莫名其妙留在關閉狀態。
   want.video = courseWantVideo;
+  // 留言分析：YouTube 網址一律必做（2026-09-17 使用者裁定），其他來源不做。
+  want.comments = isYoutube;
   const needTranscript = want.summary || want.report || want.mindmap
     || want.skillTree || want.review || want.rawSegments;
   const transcript = want.transcript || needTranscript;
@@ -2609,7 +3449,16 @@ function courseArtifactState() {
   // 資料夾一律逐項成課，不再有「要不要批次」的選項（2026-09-10 使用者裁定）。
   const batch = type === 'mp3_folder';
   return { mp3Source, want, needTranscript, transcript, mp3, mode, engine, priority,
-           batch, quality, summaryStyle, isUrl };
+           batch, quality, summaryStyle, isUrl, isYoutube };
+}
+
+// 跟後端 youtube_video_id 同一組網域；只用來決定要不要顯示「留言分析」。
+function courseIsYoutube(value) {
+  try {
+    const host = new URL(value).hostname.replace(/^www\./, '');
+    return ['youtube.com', 'm.youtube.com', 'music.youtube.com',
+            'youtube-nocookie.com', 'youtu.be'].includes(host);
+  } catch (e) { return false; }
 }
 
 function syncCourseArtifacts() {
@@ -2624,6 +3473,9 @@ function syncCourseArtifacts() {
   courseSetBox('video', st.isUrl && st.want.video, false, !st.isUrl);
   ['summary', 'report', 'mindmap', 'skillTree', 'review', 'rawSegments']
     .forEach(k => courseSetBox(k, st.want[k], false, false));
+  HTML_BUNDLE_REQUIRES.forEach(k => courseSetBox(k, true, st.want.htmlBundle, false));
+  $('w-comments').style.display = st.isYoutube ? '' : 'none';
+  courseSetBox('comments', st.want.comments, st.isYoutube, !st.isYoutube);
   $('courseQualityRow').style.display = (st.isUrl && st.want.video) ? 'flex' : 'none';
   $('courseSummarySub').style.display = st.want.summary ? 'flex' : 'none';
   if (!st.want.summary) { $('s-dense').checked = false; }
@@ -2632,16 +3484,23 @@ function syncCourseArtifacts() {
 
   const notes = [];
   if (st.mp3Source) notes.push('來源已經是 MP3，不需要轉檔這一步。');
-  if (st.needTranscript) notes.push('🔒 的是下游需要而自動帶進來的前置，不能單獨取消。');
+  if (st.needTranscript) notes.push('🔒 代表由目前選項自動帶入，不能單獨取消。');
   if (st.batch) {
     notes.push('資料夾來源：第一層每個媒體檔各一堂課、每個子資料夾各一堂課（子資料夾內依檔名排序合併成同一堂）。'
       + '每堂課各自用檔名或子資料夾名當課程名，上面那格「課程名稱」不會套用。');
   }
   if (lockTeach) notes.push('「含最小案例」要先有教學，已自動帶上「含教學」。');
   if (st.want.review) notes.push('🔍 校對會呼叫 agy（Gemini）逐段修專有名詞，會吃額度；raw 稿保留不覆蓋，下游改吃校對版。');
+  if (!st.isUrl) notes.push('🎵 非 MP3 的音檔（m4a、wav…）一律轉成 MP3，原音檔丟資源回收桶。');
+  if ($('s-compress').checked) notes.push('🗜️ 課程包做完才壓縮影片：比原檔小才取代，檔名不變、字幕照用，原檔進資源回收桶；MP3 或沒有影片的課程會自動略過。');
+  if (st.want.htmlBundle) notes.push('📚 會用 html-visualizer 產生一個 HTML，內含「摘要／心智圖／培訓報告／技能樹'
+    + (st.want.comments ? '／留言分析」五' : '」四') + '個分頁，不會產生多個 HTML。');
+  if (st.isUrl) notes.push('📁 網址來源：文件與 HTML 放 30_研究\\YouTube\\；'
+    + (st.want.video || st.mp3 ? 'MP3／MP4 與字幕檔放課程歸檔根目錄。' : '沒勾 MP3／MP4，不留媒體也不產字幕檔。')
+    + (st.isYoutube ? ' 同一支影片處理過會自動沿用舊逐字稿。' : ''));
   const nothing = !st.mp3 && !st.transcript && !st.want.video && !st.want.summary
     && !st.want.report && !st.want.mindmap && !st.want.skillTree
-    && !st.want.review && !st.want.rawSegments;
+    && !st.want.review && !st.want.rawSegments && !st.want.htmlBundle && !st.want.comments;
   if (nothing) {
     notes.push('⚠️ 至少要勾一項產物才能建立任務。');
   }
@@ -2676,7 +3535,7 @@ function courseSetBox(key, checked, locked, disabled) {
   let lk = wrap.querySelector('.lk');
   if (locked && !disabled) {
     if (!lk) { lk = document.createElement('span'); lk.className = 'lk'; wrap.appendChild(lk); }
-    lk.textContent = '🔒 前置';
+    lk.textContent = '🔒';
   } else if (lk) { lk.remove(); }
 }
 
@@ -2879,6 +3738,23 @@ function buildCoursePrompt(manifestPaths, st) {
   if (st.want.mindmap) wanted.push('心智圖（MD 與 Markmap HTML）');
   if (st.want.review) wanted.push('逐字稿校對版（呼叫 agy，只修專有名詞與同音誤字，raw 稿不覆蓋，下游吃校對版）');
   if (st.want.skillTree) wanted.push('技能樹模式 ' + st.mode);
+  if (st.want.comments) wanted.push('留言分析（<課程名>_留言分析.md，照 manifest comment_analysis 的修正版規則）');
+  const tabs = '「摘要／心智圖／培訓報告／技能樹' + (st.want.comments ? '／留言分析」五' : '」四');
+  if (st.want.htmlBundle) {
+    wanted.push('一個「全景學習手冊」HTML（使用 html-visualizer；同一檔案內有' + tabs + '個分頁，禁止拆成多個 HTML，也禁止把內容只串成同一長頁）');
+  }
+  // 網址來源（2026-09-17 使用者裁定 Q1～Q14）：文件與 HTML 進 30_研究\YouTube、沒勾媒體不留媒體、同 video_id 沿用逐字稿。
+  const keepMedia = st.want.video || st.mp3;
+  const urlRules = st.isUrl
+    ? '\n【網址來源規則】「文件」接合點指向 30_研究\\YouTube\\ 底下的資料夾；所有 .md 與 HTML（含心智圖 HTML、全景學習手冊）都寫進「文件」，不要留在 courseDir 根層。'
+      + '逐字稿檔名一律 <課程名>_逐字稿.md，校對版 <課程名>_逐字稿_校對版.md。'
+      + '取得影片資訊後，把 title、channel、durationSeconds 寫進「文件\\處理紀錄.json」（只加欄位，不要刪改 video_id 等既有欄位；其餘路徑欄位由 8767 歸檔時回寫）。'
+      + (keepMedia
+        ? 'MP3／MP4 與同名 srt 留 courseDir 根層。'
+        : '這次沒勾 MP3／MP4：不保留媒體、不產 <課程名>.srt；轉錄用的暫存音訊、srt、words.json 由 8767 歸檔時丟資源回收桶，不必自己刪。')
+      + '若 manifest 的 dedup.mode 是 reuse：逐字稿沿用 dedup.transcript（dedup.reviewed 有值就讀校對版），不要重新下載或轉錄；「文件」裡已存在且非空的產物直接標 completed 並寫 evidence，不要重做，只補缺的。'
+      + 'dedup.mode 是 redo：舊檔已由 8767 收進 dedup.oldVersionDir，照一般流程從頭做，新檔寫外層。'
+    : '';
   // 分段合併現在多半是「資料夾裡的子資料夾」變出來的，所以批次時也要講這段規則。
   const multi = ($('courseType').value === 'mp3_parts' || st.batch)
     ? '\n若某個 manifest 的 options.multiPart 是 true，那堂課是同一堂切成多段的錄音：每段各自轉逐字稿，再依檔名順序合併成單一份完整逐字稿，之後的產物都只做一份，涵蓋整堂課。'
@@ -2891,7 +3767,8 @@ function buildCoursePrompt(manifestPaths, st) {
   return head
     + '\n【產物落點】所有 .md 一律寫進 courseDir 底下的「文件」資料夾——那是指向 Vault 課程逐字稿整理目錄的'
     + '目錄接合點，寫進去就等於寫進 Vault，全程只有一份，不要另外複製。'
-    + '媒體檔、srt、words.json、心智圖 HTML 留在 courseDir 根層。'
+    + (st.isUrl ? '' : '媒體檔、srt、words.json、心智圖 HTML 留在 courseDir 根層。')
+    + urlRules
     + '\n從第一個 pending 或 blocked stage 開始，逐階段親自實跑；不要使用子代理人或外部 AI API。'
     + '把 completion_criteria、evidence、outputs、error 原子寫回 manifest；completed 階段不要重跑。'
     + '\n這次產物階段：' + wanted.join('、')
@@ -2901,6 +3778,13 @@ function buildCoursePrompt(manifestPaths, st) {
     + '確認全部 .md 只存在於 Vault 一份——courseDir 根層或其他子資料夾若還留著實體 .md，'
     + '照相對路徑搬進 Vault 後刪掉原檔（同名但內容不同的加 _課程夾版 後綴另存，不覆蓋），'
     + '並將 manifest 的 archive 標為 completed 後才算整體完成，中途不要停下來。'
+    + '\n【轉 MP3】media_to_mp3 是 pending 且 completion_criteria 寫了「執行 python ... --media-to-mp3」時，直接跑那行指令（非 MP3 音檔會轉 MP3、原音檔進資源回收桶），跑完重讀 manifest 再往下，轉錄改吃 source.value。'
+    + '\n【影片壓縮】archive completed 後，若 manifest 的 video_compression 是 pending，照它 completion_criteria 裡的指令執行（指令會自行回寫 manifest）；是 skipped 就不要壓。'
+    + (st.want.htmlBundle
+      ? '\n【全景學習手冊規則】讀取同一課程的「摘要.md」「心智圖.md」「培訓報告.md」「技能樹.md」，依 html-visualizer 與各自 live skill 先分別產生四份完整 HTML；再把四份完整 HTML 合併為單一獨立 HTML。外層固定做四個分頁，分頁名稱為「摘要」「心智圖」「培訓報告」「技能樹」，分別保留原 HTML 的版面與 JavaScript；技能樹的節點勾選、進度條、評級、篩選、搜尋、折疊與 localStorage 必須保留，摘要待辦 Checkbox 也必須保留。禁止把四份內容簡化成普通卡片，禁止只串成同一長頁，禁止交付四個分離 HTML。HTML 留在 courseDir 第一層。完成後掃描 courseDir 第一層的正式 HTML，排除 _備份、備份檔、暫存檔；在文件接合點內所有課程 Markdown 的最上方加入同一個 HTML 的連結，使用範例同樣的 file:/// 本機連結與簡潔顯示名稱。若日後新增正式 HTML，重跑時要以唯一標記更新既有 Markdown 頂端連結，不重複插入。'
+        + (st.want.comments ? '這次另有「留言分析.md」：外層改成五個分頁，第五頁名稱「留言分析」，同樣保留原 HTML 版面。' : '')
+        + (st.isUrl ? '網址來源例外：全景學習手冊 HTML 寫進「文件」（Vault），不放 courseDir 第一層；MD 頂端連結改用同資料夾相對路徑。' : '')
+      : '')
     + multi;
 }
 
@@ -3032,9 +3916,11 @@ async function startCourseCreate() {
             video: st.want.video, mp3: st.mp3, transcript: st.transcript,
             review: st.want.review, rawSegments: st.want.rawSegments,
             summary: st.want.summary, report: st.want.report,
-            mindmap: st.want.mindmap, skillTree: st.want.skillTree
+            mindmap: st.want.mindmap, skillTree: st.want.skillTree,
+            htmlBundle: st.want.htmlBundle, comments: st.want.comments
           },
           videoQuality: st.quality,
+          compressVideo: $('s-compress').checked,
           summaryStyle: st.summaryStyle,
           transcriptEngine: st.engine,
           enginePriority: st.priority,
@@ -3089,7 +3975,8 @@ function go(path) { cur = path; load(); }
 
 async function load() {
   $('path').value = cur;
-  const res = await fetch(`/api/list?path=${encodeURIComponent(cur)}&kind=${mode}`);
+  const activeKind = mode === 'media' ? mediaOp : mode;
+  const res = await fetch(`/api/list?path=${encodeURIComponent(cur)}&kind=${activeKind}`);
   const data = await res.json();
   if (data.error) {
     $('files').innerHTML = `<li class="empty">${data.error}</li>`;
@@ -3107,18 +3994,19 @@ async function load() {
 }
 
 function render() {
+  const activeKind = mode === 'media' ? mediaOp : mode;
   $('files').innerHTML = files.length ? files.map((f, i) => `
     <li>
       <input type="checkbox" ${checked.has(f.path) ? 'checked' : ''} onchange="toggle(${i}, this.checked)">
       <span class="fname" title="${f.name}">${f.name}</span>
       <span class="fsize">${mb(f.size)}</span>
     </li>`).join('')
-    : `<li class="empty">這個資料夾沒有${mode === 'video' ? '影片' : '音訊'}檔。</li>`;
+    : `<li class="empty">這個資料夾沒有${activeKind === 'video' || activeKind === 'compress' || activeKind === 'video_merge' ? '影片' : '音訊'}檔。</li>`;
   const n = checked.size;
   $('count').textContent = `已選 ${n} / ${files.length} 個`;
-  $('run').textContent = mode === 'video' ? '開始轉檔' : '開始合併';
-  $('run').disabled = !!jobId || n === 0 || (mode === 'audio' && n < 2);
-  $('hint').textContent = mode === 'audio' && n === 1 ? '合併至少要選 2 個檔案' : '';
+  $('run').textContent = activeKind === 'compress' ? '開始壓縮' : activeKind === 'video' ? '開始轉 MP3' : '開始合併';
+  $('run').disabled = !!jobId || n === 0 || ((activeKind === 'audio' || activeKind === 'video_merge') && n < 2);
+  $('hint').textContent = (activeKind === 'audio' || activeKind === 'video_merge') && n === 1 ? '合併至少要選 2 個檔案' : '';
 }
 
 function toggle(i, on) { on ? checked.add(files[i].path) : checked.delete(files[i].path); render(); }
@@ -3128,7 +4016,7 @@ async function start() {
   const list = files.filter(f => checked.has(f.path)).map(f => f.path);
   const res = await fetch('/api/start', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ kind: mode === 'video' ? 'convert' : 'merge', files: list, outputDir: cur })
+    body: JSON.stringify({ kind: mediaOp === 'video' ? 'convert' : mediaOp === 'compress' ? 'compress' : mediaOp === 'video_merge' ? 'merge' : 'merge', files: list, outputDir: cur })
   });
   const data = await res.json();
   if (data.error) { alert(data.error); return; }
@@ -3150,7 +4038,7 @@ async function poll() {
   const data = await (await fetch(`/api/status?id=${jobId}`)).json();
   const finished = data.items.filter(i => i.status === 'done').length;
   $('jobTitle').textContent = data.kind === 'merge' ? '合併中'
-    : `${data.kind === 'ytdl' ? '下載中' : '轉檔中'}（${finished}/${data.items.length}）`;
+    : `${data.kind === 'ytdl' ? '下載中' : data.kind === 'compress' ? '壓縮中' : '轉檔中'}（${finished}/${data.items.length}）`;
   $('jobPct').textContent = `${data.overall}%　已用 ${hhmmss(data.elapsed)}`;
   $('jobBar').firstElementChild.style.width = data.overall + '%';
 
@@ -3564,6 +4452,15 @@ def main() -> int:
     if not Path(FFMPEG).exists() and not shutil.which("ffmpeg"):
         print("[錯誤] 找不到 ffmpeg，請先安裝或加入 PATH。")
         return 1
+
+    if len(sys.argv) == 2 and sys.argv[1] == "--calendar-auth":
+        return calendar_auth()
+    if len(sys.argv) == 3 and sys.argv[1] == "--calendar-info":
+        return calendar_info_manifest(Path(sys.argv[2]))
+    if len(sys.argv) == 3 and sys.argv[1] == "--compress-course":
+        return compress_course_manifest(Path(sys.argv[2]))
+    if len(sys.argv) == 3 and sys.argv[1] == "--media-to-mp3":
+        return media_to_mp3_manifest(Path(sys.argv[2]))
 
     if port_in_use(PORT):
         print(f"[提示] 127.0.0.1:{PORT} 已經有服務在跑，直接開瀏覽器。")

@@ -68,6 +68,10 @@ service cloud.firestore {
     match /admin_tools/{document} {
       allow read, write: if isAdmin();
     }
+    // 行程總覽的私人快取／同步紀錄，事件正本仍是 Google Calendar
+    match /calendar_dashboard_cache/{document} {
+      allow read, write: if isAdmin();
+    }
     // 每月檢查（公務車 + 銀行保險箱）：docId = YYYY-MM，只有管理者可讀寫
     match /monthly_check/{monthId} {
       allow read, write: if isAdmin();
