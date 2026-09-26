@@ -1,7 +1,11 @@
 <#
   collect.ps1 — AI 額度收集腳本（AI 額度儀表板後端）
-  版號：v2.1.0
+  版號：v2.2.0
   版更記錄：
+  - v2.2.0 (2026-09-19) Antigravity 額度改成可按帳號分開保存：取得額度的同一個本機端點另呼叫
+    `GetUserStatus` 只為了辨識登入 email，再用 repo 外的 `~\.agy-failover\accounts.json` 換成
+    a1／a2／a3 代號，寫入 `ai_usage/agy_acct_<代號>`（最後一次看到的額度）。email 不寫入 Firestore；
+    accounts.json 不存在或 email 不在清單時就跳過，不影響其他欄位。
   - v2.1.0 (2026-07-29) 接入 Antigravity 本機 Language Server 的
     `RetrieveUserQuotaSummary`：只掃描 `language_server`／`agy` 程序，只連
     127.0.0.1，解析 Session、Weekly、Claude、Claude Weekly 四個真實額度池。
@@ -349,6 +353,22 @@ function ConvertTo-AntigravityMeter($bucket, [string]$source, [string]$collected
     }
 }
 
+# 登入 email → a1／a2／a3 代號；對照表在 repo 外（由 agy-switcher 建立），email 只在記憶體中比對。
+function Get-AgyAccountKey($requestParams) {
+    $accountsFile = Join-Path $env:USERPROFILE ".agy-failover\accounts.json"
+    if (-not (Test-Path $accountsFile)) { return $null }
+    try {
+        $content = (Invoke-WebRequest @requestParams).Content
+        $emails = @([regex]::Matches($content, '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}') |
+            ForEach-Object { $_.Value.ToLower() } | Select-Object -Unique)
+        $accounts = (Get-Content $accountsFile -Raw | ConvertFrom-Json).accounts
+        foreach ($account in $accounts) {
+            if ("$($account.email)".ToLower() -in $emails) { return "$($account.key)" }
+        }
+    } catch {}
+    return $null
+}
+
 function Get-AntigravityQuota {
     $collectedAt = (Get-Date).ToString("yyyy-MM-ddTHH:mm:sszzz")
     $servers = @(Get-AntigravityLanguageServers)
@@ -416,6 +436,8 @@ function Get-AntigravityQuota {
                 $availableMeters = @($agy.session, $agy.weekly, $agy.claude, $agy.claudeWeekly) |
                     Where-Object { $null -ne $_ }
                 if ($availableMeters.Count -gt 0) {
+                    $params.Uri = "$($endpoint.Scheme)://127.0.0.1:$($endpoint.Port)/exa.language_server_pb.LanguageServerService/GetUserStatus"
+                    $agy.accountKey = Get-AgyAccountKey $params
                     return $agy
                 }
             } catch {
@@ -457,8 +479,22 @@ try {
     Invoke-RestMethod -Method Patch -Uri $historyUri -ContentType "application/json; charset=utf-8" `
         -Body ([System.Text.Encoding]::UTF8.GetBytes($body)) -TimeoutSec 30 | Out-Null
 
+    # 按帳號保存「最後一次看到的」Antigravity 額度，讓儀表板同時顯示三個帳號
+    if ($result.agy.status -eq "ok" -and $result.agy.accountKey -match '^[a-z0-9]+$') {
+        $acctBody = @{
+            fields = @{
+                data      = @{ stringValue = ($result.agy | ConvertTo-Json -Depth 8 -Compress) }
+                updatedAt = @{ stringValue = $result.collectedAt }
+            }
+        } | ConvertTo-Json -Depth 8
+        $acctUri = "https://firestore.googleapis.com/v1/projects/my-teaching-tools-2b36c/databases/(default)/documents/ai_usage/agy_acct_$($result.agy.accountKey)" +
+                   "?key=AIzaSyBf0sHTsndFCksNlh46G_2mw9rk5zmPdc0"
+        Invoke-RestMethod -Method Patch -Uri $acctUri -ContentType "application/json; charset=utf-8" `
+            -Body ([System.Text.Encoding]::UTF8.GetBytes($acctBody)) -TimeoutSec 30 | Out-Null
+    }
+
     $codexTag = if ($result.codex.source) { "$($result.codex.status)/$($result.codex.source)" } else { "$($result.codex.status)" }
-    Write-Log "OK sample=$sampleId claude=$($result.claude.status) codex=$codexTag gemini=$($result.gemini.status) agy=$($result.agy.status)"
+    Write-Log "OK sample=$sampleId claude=$($result.claude.status) codex=$codexTag gemini=$($result.gemini.status) agy=$($result.agy.status)$(if ($result.agy.accountKey) { "/$($result.agy.accountKey)" })"
 } catch {
     Write-Log "Firestore 寫入失敗: $($_.Exception.Message)"
     exit 1

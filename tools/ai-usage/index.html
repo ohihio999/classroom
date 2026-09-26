@@ -1,8 +1,13 @@
 <!DOCTYPE html>
 <!--
   AI 額度儀表板 — AI CLI 月訂閱使用量
-  版號：v2.2.2
+  版號：v2.3.1
   版更記錄：
+  - v2.3.1 (2026-09-20) AGY 三帳號：改用登入資料短雜湊判斷「agy 目前登入」，同一組登入存到多個帳號時顯示警告；
+    加上 /logout → 重新登入 → 存檔的設定步驟；存檔時自動清掉存錯的重複存檔。
+  - v2.3.0 (2026-09-19) 新增「AGY 三帳號」卡片：分別顯示 a1／a2／a3 最後一次看到的 Antigravity 額度
+    （Firestore `ai_usage/agy_acct_*`）；在 A 機開啟且本機 agy-switcher（127.0.0.1:8772）有啟動時，
+    可直接點選切換 agy CLI 登入帳號、把目前登入存成某個帳號。公開頁面只顯示代號，email 只從本機服務取得。
   - v2.2.2 (2026-07-29) 額度條恢復網站原始固定色碼：剩餘 50% 以上綠色、
     25%～未滿 50% 藍色、未滿 25% 紅色；取消混色與漸變。
   - v2.2.1 (2026-07-29) 額度條色階改用高飽和亮綠、亮藍與亮紅，提升辨識度。
@@ -155,6 +160,21 @@
     font-size: 0.75rem; line-height: 1.7; margin: 20px 0 8px;
   }
   .stale { color: var(--fill-crit); font-weight: 600; }
+  .acct { padding: 12px 0; border-top: 1px solid var(--hairline); }
+  .acct:first-of-type { border-top: 0; padding-top: 0; }
+  .acct-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .acct-name { flex: 1; font-weight: 700; font-size: 0.92rem; overflow-wrap: anywhere; }
+  .badge.on { color: #fff; background: var(--fill-good); border-color: var(--fill-good); }
+  .acct-actions { display: flex; gap: 8px; margin-top: 10px; }
+  .act-btn {
+    flex: 1; padding: 9px 8px; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--surface); color: var(--ink); font-family: inherit; font-size: 0.82rem; font-weight: 600; cursor: pointer;
+  }
+  .act-btn.primary { border-color: var(--fill-normal); color: var(--fill-normal); }
+  .act-btn:disabled { opacity: 0.45; cursor: default; }
+  .act-btn:not(:disabled):active { background: var(--track); }
+  .switch-msg { font-size: 0.8rem; margin-top: 10px; line-height: 1.5; color: var(--ink-2); }
+  .switch-msg:empty { display: none; }
   .loading { text-align: center; color: var(--ink-muted); padding: 40px 0; font-size: 0.9rem; }
 </style>
 </head>
@@ -163,6 +183,11 @@
   <h1>AI 額度儀表板</h1>
   <div class="sub">Claude / Codex / Antigravity・電腦開機時每 5 分鐘更新</div>
   <div id="app"><div class="loading">載入中…</div></div>
+  <section class="card" id="agy-accounts">
+    <div class="card-head"><h2>AGY 三帳號</h2><span id="agy-local-badge" class="badge">檢查中</span></div>
+    <div id="agy-accounts-body"><div class="loading">載入中…</div></div>
+    <div id="agy-switch-msg" class="switch-msg"></div>
+  </section>
   <section class="card chart-card">
     <div class="card-head"><h2>用量趨勢</h2><span id="sample-count" class="badge">載入中</span></div>
     <div class="controls" aria-label="圖表選項">
@@ -322,6 +347,153 @@ onSnapshot(doc(db, "ai_usage", "current"), snap => {
 }, err => {
   $app.innerHTML = `<div class="err">Firestore 連線失敗：${err.message}</div>`;
 });
+
+// ---------- AGY 三帳號：各帳號最後一次額度 + 本機切換 ----------
+// 額度來自 collect.ps1 依登入 email 對應代號後寫入的 ai_usage/agy_acct_<代號>；
+// 切換走 A 機本機服務 agy-switcher（只綁 127.0.0.1），在其他裝置開這頁時按鈕自動隱藏。
+const AGY_KEYS = ["a1", "a2", "a3"];
+const SWITCHER = "http://127.0.0.1:8772";
+const acctQuota = {};
+let localStatus = null;
+let switching = false;
+const $acctBody = document.getElementById("agy-accounts-body");
+const $acctBadge = document.getElementById("agy-local-badge");
+const $switchMsg = document.getElementById("agy-switch-msg");
+
+function esc(value) {
+  const map = { "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" };
+  return String(value ?? "").replace(/[&<>"']/g, ch => map[ch]);
+}
+
+function renderAccounts() {
+  const localAccounts = localStatus ? Object.fromEntries(localStatus.accounts.map(a => [a.key, a])) : {};
+  $acctBadge.textContent = localStatus ? "可切換" : "僅檢視";
+  let html = "";
+  if (localStatus && localStatus.accounts.some(a => !a.saved || (a.duplicateOf && a.duplicateOf.length))) {
+    html += `<div class="state-note" style="margin-bottom:12px">設定步驟（每個帳號做一次）：<br>`
+      + `① 在 agy 輸入 <b>/logout</b>，再用要存的帳號重新登入（開頭會顯示 email）<br>`
+      + `② 關掉 agy<br>③ 回到這裡，在「那個 email」下面按「把目前登入存成此帳號」</div>`;
+  }
+  AGY_KEYS.forEach((key, index) => {
+    const local = localAccounts[key];
+    const name = local ? `${local.label}（${local.email}）` : `AGY 帳號 ${index + 1}`;
+    // isLive：認證管理員裡「現在這組登入」與此存檔相同（比對短雜湊，比 state.active 可靠）
+    const isActive = Boolean(local && local.isLive);
+    const dup = local && local.duplicateOf && local.duplicateOf.length ? local.duplicateOf : null;
+    const q = acctQuota[key];
+    let badge = "";
+    if (isActive) badge = `<span class="badge on">agy 目前登入</span>`;
+    else if (local && !local.saved) badge = `<span class="badge">尚未存登入</span>`;
+    const dupNote = dup
+      ? `<div class="err" style="margin-bottom:8px">⚠ 和 ${dup.map(k => esc(accountName(k))).join("、")} 存的是同一組登入，至少一個存錯了。請照上方步驟用正確帳號登入後重存。</div>`
+      : "";
+    let body;
+    if (q) {
+      const resetPassed = [q.session, q.weekly].some(m => m && m.resetTime && new Date(m.resetTime).getTime() < Date.now());
+      body = meter("Session 額度", q.session) + meter("Weekly 額度", q.weekly)
+        + meter("Claude 額度", q.claude) + meter("Claude Weekly 額度", q.claudeWeekly)
+        + `<div class="meter-reset">最後看到 ${fmtTime(q.collectedAt || q.checkedAt)}${resetPassed ? "・已過重置時間，實際額度應已回升" : ""}</div>`;
+    } else {
+      body = `<div class="state-note">還沒有這個帳號的額度紀錄。登入此帳號並開著 Antigravity 時，每 5 分鐘會自動記錄一次。</div>`;
+    }
+    let actions = "";
+    if (local) {
+      actions = `<div class="acct-actions">`
+        + `<button class="act-btn primary" data-act="switch" data-key="${key}" ${isActive || !local.saved || switching ? "disabled" : ""}>切換到這個帳號</button>`
+        + `<button class="act-btn" data-act="capture" data-key="${key}" ${switching ? "disabled" : ""}>把目前登入存成此帳號</button>`
+        + `</div>`;
+    }
+    html += `<div class="acct"><div class="acct-head"><span class="acct-name">${esc(name)}</span>${badge}</div>${dupNote}${body}${actions}</div>`;
+  });
+  if (!localStatus) {
+    html += `<div class="meter-reset">要切換帳號：在 A 機開這一頁，並先執行 C:\\Code\\agy-switcher\\start.bat。</div>`;
+  } else if (localStatus.agyProcesses && localStatus.agyProcesses.length) {
+    html += `<div class="meter-reset">目前有 ${localStatus.agyProcesses.length} 個 agy 在執行；切換時會先問你要不要關掉。</div>`;
+  }
+  $acctBody.innerHTML = html;
+}
+
+async function switcherCall(path, body) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), body ? 60000 : 8000);
+  try {
+    const res = await fetch(SWITCHER + path, body
+      ? { method: "POST", headers: { "Content-Type": "application/json", "X-Agy-Switch": "1" }, body: JSON.stringify(body), signal: controller.signal }
+      : { signal: controller.signal, cache: "no-store" });
+    return { status: res.status, data: await res.json() };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function refreshLocal() {
+  try {
+    const { status, data } = await switcherCall("/api/status");
+    localStatus = status === 200 ? data : null;
+  } catch {
+    localStatus = null;
+  }
+  renderAccounts();
+}
+
+function accountName(key) {
+  const a = localStatus && localStatus.accounts.find(item => item.key === key);
+  return a ? `${a.label}（${a.email}）` : key;
+}
+
+$acctBody.addEventListener("click", async event => {
+  const button = event.target.closest(".act-btn");
+  if (!button || button.disabled) return;
+  const key = button.dataset.key;
+  const act = button.dataset.act;
+  const name = accountName(key);
+  let path;
+  if (act === "capture") {
+    if (!confirm(`確定 agy 現在登入的是 ${name}？\n\n會把目前這組登入資料存成「${name}」（DPAPI 加密，只存在這台電腦）。\n若這組登入之前被存到別的帳號，會一併清掉那個錯的存檔。\n\n不確定的話先按取消，開 agy 看開頭顯示的 email。`)) return;
+    path = "/api/capture";
+  } else {
+    path = "/api/switch";
+  }
+  switching = true; renderAccounts();
+  $switchMsg.textContent = "處理中…";
+  try {
+    let { status, data } = await switcherCall(path, { key, killAgy: false });
+    if (status === 409 && data.reason === "agy_running") {
+      const list = data.agyProcesses.map(p => `PID ${p.pid}（由 ${p.parent || "?"} 開啟）`).join("\n");
+      if (!confirm(`有 ${data.agyProcesses.length} 個 agy 正在執行。執行中的 agy 可能把舊帳號寫回去，必須先關閉：\n\n${list}\n\n要全部關閉後切換到 ${name} 嗎？`)) {
+        $switchMsg.textContent = "已取消，沒有變更。";
+        return;
+      }
+      ({ status, data } = await switcherCall(path, { key, killAgy: true }));
+    }
+    if (status === 200 && data.ok) {
+      $switchMsg.textContent = act === "capture"
+        ? `已存成 ${name}。${data.cleared && data.cleared.length ? `（已清掉存錯的：${data.cleared.map(accountName).join("、")}）` : ""}`
+        : `已切換到 ${name}。重新開啟 agy 就會用這個帳號${data.killed && data.killed.length ? `（已關閉 ${data.killed.length} 個 agy）` : ""}。`;
+    } else {
+      $switchMsg.textContent = `失敗：${data.error || data.reason || status}`;
+    }
+  } catch (e) {
+    $switchMsg.textContent = `連不到本機切換服務：${e.message}`;
+  } finally {
+    switching = false;
+    await refreshLocal();
+  }
+});
+
+AGY_KEYS.forEach(key => {
+  onSnapshot(doc(db, "ai_usage", `agy_acct_${key}`), snap => {
+    try {
+      acctQuota[key] = snap.exists() ? JSON.parse(snap.data().data || "null") : null;
+    } catch {
+      acctQuota[key] = null;
+    }
+    renderAccounts();
+  });
+});
+refreshLocal();
+setInterval(() => { if (!document.hidden && !switching) refreshLocal(); }, 20000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden && !switching) refreshLocal(); });
 
 // ---------- 每 5 分鐘歷史樣本折線圖 ----------
 // 樣本和 current 共用 ai_usage collection，避免另開 collection 後必須先部署新規則。

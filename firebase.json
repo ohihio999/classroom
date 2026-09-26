@@ -14,6 +14,10 @@
     "ignore": ["firebase.json", "**/.*", "**/node_modules/**", "**/*.bak-*", "TG小幫手/**", "FB文章擷取帶圖片/**", "LINE對話自動化整理含圖片/**", "**/*.py"],
     "headers": [
       {
+        "source": "/admin{,/**}",
+        "headers": [{ "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }]
+      },
+      {
         "source": "/ai-usage{,/**}",
         "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
       },

@@ -1,6 +1,10 @@
 <!--
-  版本：v6.20
+  版本：v6.25
   版更記錄：
+  v6.25 (2026-09-27) [Claude Code / Opus 5.5] - 新增「素材一條龍」卡片：點卡片走 ytcli://claude/57Sg5p2Q5LiA5qKd6b6N（base64url 解碼＝「素材一條龍」），開新終端機跑 Claude 載入 material-pipeline skill，從初步分類一路做到歸檔、課程包、知識入庫與結案，過程一題一題詢問並附建議；簡單工作由 Claude 開 agy 視窗處理。排在「素材資料整理分類」前面。CARD_CONTENT_VERSION 24→25。
+  v6.24 (2026-09-23) - 以「素材資料整理分類」取代「研討會資料整理」卡片。右上 🚀 送 AGY 執行 material-inbox-classifier：先盤點、詢問影音分組、產生左右對照表並等待「確認執行」，確認後才搬移／改名；照片維持既有分類。CARD_CONTENT_VERSION 23→24。
+  v6.23 (2026-09-21) - 新增「Jev 瀏覽器 Agent（本機）」卡片（🌐 → 127.0.0.1:8773，🚀 走 jev://start 一鍵啟動）：極速視覺瀏覽器 Agent 決策儀表板。程式在 C:\Code\jev-ultrafast\。協定註冊在 HKCU\Software\Classes\jev → start.bat：先探 8773 有沒有人在聽，有就只開瀏覽器不重複起服務，沒有才用 uv run jev 啟動。CARD_CONTENT_VERSION 21→22 讓 Firestore 同步更新。
+  v6.22 (2026-09-20) - 「AI 額度儀表板」卡片加 🚀：走新協定 agyswitch://start（HKCU\Software\Classes\agyswitch → C:\Code\agy-switcher\start.bat v1.1.0），先探 8772 有沒有在聽，沒有才用 pythonw 無視窗啟動 AGY 三帳號切換服務，再開 /ai-usage/。不設開機自動啟動（使用者裁定）。CARD_CONTENT_VERSION 20→21
   v6.21 (2026-09-15) - 整合影音與課程入口：影音處理卡片涵蓋 MP3、錄音／錄影合併與影片壓縮；課程入口改名「課程整理中心」；移除重複的逐字稿培訓包、課程入庫、網址下載與 YouTube 下載卡片；新增字幕詞庫入口。CARD_CONTENT_VERSION 19→20
   v6.19 (2026-09-13) - 新增「研討會／課程行程總覽」卡片，進入 Google Calendar 週時間軸，直接查看申請狀態、上下班時段與參加優先級。
   v6.18 (2026-09-12) - 依使用者指定將「🤖 一鍵生成三 Tab 全景學習手冊（AGY）」按鈕改放至「長回覆做成網頁（html-visualizer）」卡片內：說明書 modal 頂部新增顯著啟動按鈕，卡片右上動作列亦加入 🤖 快捷按鈕（走 ytcli://agy/ 協定開 AGY，AI 先問「要抓哪個資料夾？」，接著讀取摘要/培訓報告/技能樹自動編譯三 Tab 全景手冊）。CARD_CONTENT_VERSION 17→18 讓 Firestore 同步更新
@@ -707,7 +711,44 @@
   </div>
 </div>
 
-<!-- seminar-organizer modal（v6.9） -->
+<!-- material-inbox-classifier modal（v6.24） -->
+<div class="modal-overlay" id="materialInboxClassifierModal" onclick="closeOnOverlay(event)">
+  <div class="modal" style="max-height:90vh">
+    <button class="modal-close" onclick="closeMaterialInboxClassifier()">✕</button>
+    <div class="modal-title">🗂️ 素材資料整理分類</div>
+    <div class="modal-sub">先產生分類對照表，收到你的確認後才搬移與改名</div>
+
+    <div class="step" style="background:#fff3cd;border-radius:10px;padding:12px">
+      <div class="step-label">🚀 執行方式</div>
+      <div style="font-size:13px;color:#333;line-height:1.8">
+        按卡片右上角的 🚀「執行素材分類」會開啟 AGY。AGY 先讀取
+        <code>D:\2026_待整理素材</code>，列出錄音／錄影分組與「原路徑 → 新路徑」左右對照表，然後停下等待你輸入<strong>確認執行</strong>。未確認前不會搬檔、改名或刪檔。
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-label">① 分類規則</div>
+      <div style="font-size:13px;color:#ccc;line-height:1.8">
+        同一活動的錄音／錄影使用同一活動名稱加 <strong>01、02…</strong>；不同活動使用不同活動名稱；單段活動不強加 01。<br>
+        所有影音直接放在 <code>D:\2026_待整理素材\_初步分類</code> 根層；活動照片、課程 PPT、誤拍、日常截圖與生活照片維持原分類。
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-label">② 實際流程</div>
+      <div style="font-size:13px;color:#ccc;line-height:1.8">
+        盤點 → 詢問「1、2、3、4 哪些同場」→ 顯示左右對照表 → 你輸入「確認執行」→ 才搬移／改名 → 回報成功、失敗、跳過與衝突。<br>
+        分類成果由你自行查看，AI 不代替你宣告驗證通過。
+      </div>
+    </div>
+
+    <div style="font-size:12px;color:#aaa;margin-top:16px">
+      技能正本：<code>C:\Users\admin\.codex\skills\material-inbox-classifier\SKILL.md</code>
+    </div>
+  </div>
+</div>
+
+<!-- seminar-organizer modal（保留舊說明，已不再由工具卡片入口使用） -->
 <div class="modal-overlay" id="seminarOrganizerModal" onclick="closeOnOverlay(event)">
   <div class="modal" style="max-height:90vh">
     <button class="modal-close" onclick="closeSeminarOrganizer()">✕</button>
@@ -1417,6 +1458,98 @@ D:\本機MD檔\30_研究\課程逐字稿整理\&lt;同名&gt;\　課程包 MD �
   </div>
 </div>
 
+<!-- TradingView 桌面直連 MCP modal -->
+<div class="modal-overlay" id="tvDesktopMcpModal" onclick="closeOnOverlay(event)">
+  <div class="modal" style="max-height:90vh">
+    <button class="modal-close" onclick="closeTvDesktopMcp()">✕</button>
+    <div class="modal-title">📈 TV 桌面直連（MCP）</div>
+    <div class="modal-sub">透過 Chrome DevTools Protocol (CDP 9222) 直連本機 TradingView Desktop</div>
+
+    <div class="step">
+      <div class="step-label">怎麼啟動與使用</div>
+      <div class="cmd-box">tv launch</div>
+      <div style="font-size:12px;color:#aaa;margin-top:6px">
+        開啟 TradingView Desktop 偵錯模式（自動監聽 9222 埠），AI（Claude Code / Desktop / Antigravity）即可無縫連線接管。
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">常用終端機指令（tv 指令庫）</div>
+      <div class="cmd-box" style="font-family:monospace;line-height:1.75">
+        tv status &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;# 檢查連線狀態<br>
+        tv quote &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;# 讀取目前商品即時報價<br>
+        tv values &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;# 讀取圖表上所有副圖與指標數值<br>
+        tv screenshot -r chart &nbsp;# 立即將當前圖表截圖<br>
+        tv symbol MXF1! &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;# 切換圖表為微台指<br>
+        tv timeframe 5 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;# 切換為 5 分鐘 K 線
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">在 AI 對話中怎麼用</div>
+      <div class="cmd-box" style="font-family:sans-serif;line-height:1.75">
+        已註冊至 <code>~/.claude/.mcp.json</code>。直接對 AI 說：<br>
+        ・「檢查我目前的 TradingView 連線狀態」<br>
+        ・「讀取圖面上的 KD 與最新價位」<br>
+        ・「將當前圖面截圖並分析形態」<br>
+        ・「幫我修改並在圖表編譯 Pine Script」
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">專案位置與來源</div>
+      <div class="cmd-box">C:\Users\admin\dev\tradingview-mcp</div>
+      <div style="font-size:12px;color:#aaa;margin-top:6px">
+        GitHub: <a href="https://github.com/tradesdontlie/tradingview-mcp" target="_blank" rel="noopener">tradesdontlie/tradingview-mcp</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- TradingView 背景快照 MCP modal -->
+<div class="modal-overlay" id="tvChartMcpModal" onclick="closeOnOverlay(event)">
+  <div class="modal" style="max-height:90vh">
+    <button class="modal-close" onclick="closeTvChartMcp()">✕</button>
+    <div class="modal-title">📷 TV 背景快照（MCP）</div>
+    <div class="modal-sub">Selenium 瀏覽器池背景無頭抓圖，傳回各週期高解析快照給多模態視覺模型</div>
+
+    <div class="step">
+      <div class="step-label">運作機制與預設版面</div>
+      <div class="cmd-box" style="font-family:sans-serif;line-height:1.75">
+        本機不需常駐開啟 TradingView 軟體。AI 透過 Selenium 瀏覽器池在背景自動開啟指定版面並截圖回傳。<br>
+        目前預設版面已綁定您提供的 Layout ID：<code>ulOiLJv4</code>
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">在 AI 對話中直接呼叫（Prompt 範例）</div>
+      <div class="cmd-box" style="font-family:sans-serif;line-height:1.75">
+        ・「請抓取 MXF1! 的 1 分鐘 K 線圖（interval: 1）」<br>
+        ・「請抓取 MXF1! 的 5 分鐘 K 線圖（interval: 5）」<br>
+        ・「抓取 ulOiLJv4 版面快照並判斷 1K 與 5K 底色是否同步紅綠」
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">專案位置與環境</div>
+      <div class="cmd-box">C:\Users\admin\dev\tradingview-chart-mcp</div>
+      <div style="font-size:12px;color:#aaa;margin-top:6px">
+        GitHub: <a href="https://github.com/ertugrul59/tradingview-chart-mcp" target="_blank" rel="noopener">ertugrul59/tradingview-chart-mcp</a>（已配置專屬 Python 虛擬環境 <code>.venv</code>）
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script type="module">
@@ -1435,8 +1568,8 @@ const getGroqKeyFn = httpsCallable(functions, 'getGroqKey');
 const getAssemblyAIKeyFn = httpsCallable(functions, 'getAssemblyAIKey');
 const ALLOWED_EMAIL = 'ohihio@gmail.com';
 const TOOLS_COL = 'admin_tools';
-const CARD_CONTENT_VERSION = 20;
-const ICON_OPTIONS = ['🗂️','🎙️','📝','📚','📌','📎','📦','⚙️','🛠️','💡','📊','🧾','📁','🔧','🔍','🚀','⭐','✅','⚖️'];
+const CARD_CONTENT_VERSION = 25;
+const ICON_OPTIONS = ['🗂️','🎙️','📝','📚','📌','📎','📦','⚙️','🛠️','💡','📊','🧾','📁','🔧','🔍','🚀','⭐','✅','⚖️','🌐'];
 const DEFAULT_TOOLS = [
   // order -1：Firestore 裡既有卡片的 order 是 0 起跳，給 -1 才排得到第一格（normalizeOrder 會重編成 0）
   { id: 'ai-workbench', title: 'AI 工作台（本機）', description: '啟動 7 個 Hermes 分頁：3 AGY／2 Claude／2 Codex', icon: '🚀', actionType: 'link', href: 'aiwork://start', launchHref: 'aiwork://start', order: -1, createdAt: '2026-08-08T00:00:00+08:00' },
@@ -1450,7 +1583,7 @@ const DEFAULT_TOOLS = [
   { id: 'subtitle-archive', title: '課程字幕歸檔', description: '用 Arctime 校對版 SRT 取代自動字幕並保留整理結構', icon: '🔤', actionType: 'modal', modalFn: 'openSubtitleArchive', order: 11, createdAt: '2026-07-31T00:00:00+08:00' },
   { id: 'subtitle-lexicon-local', title: '字幕詞庫', description: '字幕詞庫、專有名詞校正與逐字稿比對；需先啟動 8767 服務', icon: '🔤', actionType: 'link', href: 'http://127.0.0.1:8767/#lexicon', launchHref: 'mediatools://open', order: 5, createdAt: '2026-09-15T00:00:00+08:00' },
   { id: 'video-progress', title: '影片製作進度表', description: '依 9 個階段追蹤每支影片的狀態、進度與連結', icon: '🎞️', actionType: 'link', href: '/影片進度表/', order: 6, createdAt: '2026-05-31T00:00:00+08:00' },
-  { id: 'ai-usage', title: 'AI 額度儀表板', description: '查看 Claude、Codex、Antigravity 即時額度與歷史趨勢', icon: '📊', actionType: 'link', href: '/ai-usage/', order: 7, createdAt: '2026-07-14T00:00:00+08:00' },
+  { id: 'ai-usage', title: 'AI 額度儀表板', description: '查看 Claude、Codex、Antigravity 額度與趨勢；AGY 三帳號切換要先按 🚀 啟動 8772', icon: '📊', actionType: 'link', href: '/ai-usage/', launchHref: 'agyswitch://start', order: 7, createdAt: '2026-07-14T00:00:00+08:00' },
   { id: 'calendar-dashboard', title: '研討會／課程行程總覽', description: 'Google Calendar 週時間軸：申請狀態、上下班時段與參加優先級', icon: '🗓️', actionType: 'link', href: '/calendar-dashboard/', order: 7.5, createdAt: '2026-09-13T00:00:00+08:00' },
   { id: 'skill-manager-local', title: 'AI Skill 管理器（本機）', description: '管理共用 Skills；需先啟動 127.0.0.1:8768', icon: '🛠️', actionType: 'link', href: 'http://127.0.0.1:8768/', order: 8, createdAt: '2026-07-14T00:00:00+08:00' },
   { id: 'line-digest-local', title: 'LINE 對話整理（本機）', description: '將 LINE 群組對話整理成 Obsidian 摘要；需先啟動 8766', icon: '💬', actionType: 'link', href: 'http://127.0.0.1:8766/', order: 9, createdAt: '2026-07-19T00:00:00+08:00' },
@@ -1461,12 +1594,16 @@ const DEFAULT_TOOLS = [
   { id: 'todo-dashboard-local', title: '待辦總表儀表板（本機）', description: '九分類看板讀寫 Obsidian 待辦總表，可勾選與新增；沒開按 🚀 啟動 8771', icon: '✅', actionType: 'link', href: 'http://127.0.0.1:8771/', launchHref: 'todoboard://open', order: 17, createdAt: '2026-08-25T00:00:00+08:00' },
   { id: 'session-title-sync', title: '對話名同步（本機）', description: '把 Claude Code 對話名對齊進度檔名；對 AI 說「同步檔名」', icon: '🏷️', actionType: 'modal', modalFn: 'openSessionTitleSync', order: 18, createdAt: '2026-09-04T00:00:00+08:00' },
   { id: 'yt-summary', title: 'YouTube 極速摘要（本機）', description: '貼網址免下影片30秒出摘要、留言正反批判檢驗與心智圖HTML；對 AI 說「YT摘要」', icon: '⚡', actionType: 'modal', modalFn: 'openYtSummary', order: 19, createdAt: '2026-09-09T00:00:00+08:00' },
-  { id: 'seminar-organizer', title: '研討會資料整理', description: '點一下開 agy 並送出「研討會整理」，AI 會問你要整理哪個資料夾；📖 看說明書', icon: '🎪', actionType: 'link', href: 'ytcli://agy/56CU6KiO5pyD5pW055CG', infoFn: 'openSeminarOrganizer', order: 20, createdAt: '2026-09-10T00:00:00+08:00' },
+  { id: 'material-pipeline', title: '素材一條龍', description: '🐉 一句話做完整批素材：Claude 從初步分類、研討會照片、影片課程包、截圖／生活照歸檔做到知識入庫與結案，過程一題一題問你並給建議', icon: '🐉', actionType: 'link', href: 'ytcli://claude/57Sg5p2Q5LiA5qKd6b6N', launchHref: 'ytcli://claude/57Sg5p2Q5LiA5qKd6b6N', order: 19, createdAt: '2026-09-27T00:00:00+08:00' },
+  { id: 'material-inbox-classifier', title: '素材資料整理分類', description: '🚀 執行素材分類：AGY 先列影音分組與左右對照表，等你確認後才搬移／改名；照片分類維持不變', icon: '🗂️', actionType: 'modal', modalFn: 'openMaterialInboxClassifier', launchHref: 'ytcli://agy/6KuL5Z-36KGMIG1hdGVyaWFsLWluYm94LWNsYXNzaWZpZXLvvIzmlbTnkIblm7rlrprmlLbku7blpL4gRDpcMjAyNl_lvoXmlbTnkIbntKDmnZDjgIIK5YWI5LiN6KaB5pCs56e744CB5pS55ZCN44CB5Yiq6Zmk5oiW6KaG6JOL5Lu75L2V5qqU5qGI77yM5Lmf5LiN6KaB5ZG85Y-r5LiL5ri4IFNraWxs44CCCuWFiOebpOm7nuizh-aWmeWkvuS4reeahOWclueJh-OAgemMhOmfs-OAgemMhOW9seiIh-WFtuS7luaqlOahiO-8m-aJgOaciemMhOmfs--8j-mMhOW9see3qOiZn-W-jOmAkOasoeipouWVj-aIkeWTquS6m-WxrOaWvOWQjOS4gOa0u-WLleaIluWQjOS4gOWgguiqsuOAguW3suefpeWQjOS4gOa0u-WLleeahOWkmuauteW9semfs-S9v-eUqOWQjOS4gOa0u-WLleWQjeeoseWKoCAwMeOAgTAy77yb5LiN5ZCM5rS75YuV5L2_55So5LiN5ZCM5rS75YuV5ZCN56ix77yb5Zau5q615rS75YuV5LiN5by35YqgIDAx44CC5b2x6Z-z5pyA5b6M55u05o6l5pS-5ZyoIEQ6XDIwMjZf5b6F5pW055CG57Sg5p2QXF_liJ3mraXliIbpoZ4g5qC55bGk77yM54Wn54mH5YiG6aGe57at5oyB5pei5pyJ6KaP5YmH6IiH6LOH5paZ5aS-44CCCuWujOaIkOi-qOitmOW-jO-8jOWFiOWIl-WHuuW3puWPs-WwjeeFp-ihqO-8muWOn-Wni-i3r-W-ke-9nOaWsOi3r-W-ke-9nOWLleS9nO-8iOS_neaMge-8j-aQrOenu--8j-aUueWQje-8ie-9nOWIpOaWt-eQhueUseOAguihqOagvOWujOaIkOW-jOWBnOS4i-S-hu-8jOaYjueiuuetieW-heaIkei8uOWFpeOAjOeiuuiqjeWft-ihjOOAjeOAguWPquacieaUtuWIsOOAjOeiuuiqjeWft-ihjOOAjeW-jO-8jOaJjeS-neihqOagvOaQrOenu-iIh-aUueWQje-8m-mBh-WIsOWQjOWQjeaIlueWkeS8vOmHjeikh-aqlOWFiOWBnOS4i-ipouWVj-OAguWujOaIkOW-jOWPquWbnuWgseaIkOWKn-OAgeWkseaVl-OAgei3s-mBjuiIh-ihneeqge-8jOWIhumhnuaIkOaenOeUseaIkeiHquihjOafpeeci-OAgg', infoFn: 'openMaterialInboxClassifier', order: 20, createdAt: '2026-09-23T00:00:00+08:00' },
   { id: 'drink-order', title: '訂飲料（你訂 nidin）', description: '貼菜單網址＋一行一杯名單，AI 逐杯加購物車；結帳自己按', icon: '🧋', actionType: 'modal', modalFn: 'openDrinkOrder', order: 21, createdAt: '2026-09-11T00:00:00+08:00' },
   { id: 'html-visualizer', title: '長回覆做成網頁', description: '點一下開本機 Documents\\claude-html 索引頁；可開 AGY 產出全景手冊；📖 看說明書', icon: '📄', actionType: 'link', href: 'claudehtml://open', launchHref: 'claudehtml://open', agyHref: 'ytcli://agy/6KuL5pOU5Lu75YWo5pmv5a2457-S5omL5YaK6KO95L2c5bCI5a6244CC54--5Zyo6KuL5YWI5ZWP5oiR77ya44CM6KuL5ZWP6KaB5oqT5ZOq5YCL6LOH5paZ5aS-55qE6LOH5paZ77yf44CNCuetieaIkeaPkOS-m-iqsueoi-izh-aWmeWkvui3r-W-keW-jO-8jOiri-iugOWPluipsuizh-aWmeWkvuWFp-eahOOAjOaRmOimgeOAgeWfueiok-WgseWRiuOAgeaKgOiDveaoueOAjeS4ieWAiyBNYXJrZG93biDmqpTmoYjvvIzkvb_nlKggaHRtbC12aXN1YWxpemVyIOimj-evhOWwh-WFtuWQiOS9teijveS9nOaIkOS4gOS7veOAjOS4iSBUYWIg5YWo5pmv5a2457-S5omL5YaK44CNSFRNTO-8iOmggumDqOe9rumggiBUYWIg5YiH5o-b44CBQW50aHJvcGljIOexs-eZvemiqOagvOOAgeaKgOiDveaoueW4tuWPr-aJk-WLvumAsuW6puaineiIhyBMb2NhbFN0b3JhZ2Ug6KiY5oa244CB5rWB56iL5ZyW6IiH6Kqy5b6M6KmV6YeP5LqS5YuV5bGV6ZaL77yJ77yM5a6M5oiQ5b6M5a2Y5pa86Kmy6Kqy56iL6LOH5paZ5aS-5LiL5Lim5Zue5aCx5a6M5pW057WV5bCN6Lev5b6R44CC', infoFn: 'openHtmlVisualizer', order: 22, createdAt: '2026-09-11T00:00:00+08:00' },
   { id: 'hv-skill-main', title: '網頁產生器（主入口）', description: '整頁報告、教學、規格、選項拍板；挑版型、跑自檢、存檔開檔都它負責', icon: '📰', actionType: 'modal', modalFn: 'openHvMain', order: 23, createdAt: '2026-09-12T00:00:00+08:00' },
   { id: 'hv-skill-chart', title: '資料圖表（chart）', description: '只要一張圖表就找它：趨勢、占比、分組、目標對實際，用 @unovis 畫', icon: '📈', actionType: 'modal', modalFn: 'openHvChart', order: 24, createdAt: '2026-09-12T00:00:00+08:00' },
-  { id: 'hv-skill-diagram', title: '結構圖（diagram-design）', description: '流程、架構、時序、狀態機等 39 型，手工排版 SVG，不用 Mermaid', icon: '🧩', actionType: 'modal', modalFn: 'openHvDiagram', order: 25, createdAt: '2026-09-12T00:00:00+08:00' }
+  { id: 'hv-skill-diagram', title: '結構圖（diagram-design）', description: '流程、架構、時序、狀態機等 39 型，手工排版 SVG，不用 Mermaid', icon: '🧩', actionType: 'modal', modalFn: 'openHvDiagram', order: 25, createdAt: '2026-09-12T00:00:00+08:00' },
+  { id: 'jev-ultrafast-local', title: 'Jev 瀏覽器 Agent（本機）', description: '極速視覺瀏覽器 Agent 決策儀表板；沒開按 🚀 啟動 8773', icon: '🌐', actionType: 'link', href: 'http://127.0.0.1:8773/', launchHref: 'jev://start', order: 26, createdAt: '2026-09-21T00:00:00+08:00' },
+  { id: 'tradingview-desktop-mcp', title: 'TV 桌面直連（MCP）', description: 'CDP 直連本機 TradingView Desktop；即時讀取指標/副圖數值、畫線、自動截圖、Pine Script 編譯；支援 tv 指令', icon: '📈', actionType: 'modal', modalFn: 'openTvDesktopMcp', infoFn: 'openTvDesktopMcp', order: 27, createdAt: '2026-09-21T00:00:00+08:00' },
+  { id: 'tradingview-chart-mcp', title: 'TV 背景快照（MCP）', description: 'Selenium 瀏覽器池背景拍圖，傳回多週期高清圖檔給 AI 視覺模型；已綁定 ulOiLJv4 圖表版面', icon: '📷', actionType: 'modal', modalFn: 'openTvChartMcp', infoFn: 'openTvChartMcp', order: 28, createdAt: '2026-09-21T00:00:00+08:00' }
 ];
 
 let toolsState = DEFAULT_TOOLS.map(tool => ({ ...tool }));
@@ -1582,7 +1719,10 @@ async function loadToolOverrides() {
     const staleContent = [];
     toolsState = DEFAULT_TOOLS.map(tool => {
       const remote = remoteMap.get(tool.id);
-      if (!remote) return { ...tool };
+      if (!remote) {
+        staleContent.push({ ...tool });
+        return { ...tool };
+      }
       const merged = { ...tool, ...remote };
       if (remote.contentVersion !== CARD_CONTENT_VERSION) {
         Object.assign(merged, {
@@ -1681,7 +1821,7 @@ function renderTools() {
         <div class="tool-created-at">${escapeHtml(formatToolCreatedAt(tool.createdAt))}</div>
       </div>
       <div class="tool-actions">
-        ${tool.launchHref ? `<button class="tool-action-btn" onclick="event.stopPropagation(); launchLocalService('${tool.launchHref}')" title="啟動本機服務">🚀</button>` : ''}
+        ${tool.launchHref ? `<button class="tool-action-btn" onclick="event.stopPropagation(); launchLocalService('${tool.launchHref}')" title="${tool.id === 'material-inbox-classifier' ? '執行素材分類' : '啟動本機服務'}">🚀</button>` : ''}
         ${tool.agyHref ? `<button class="tool-action-btn" onclick="event.stopPropagation(); launchAgyPanorama('${tool.agyHref}')" title="AGY 製作全景學習手冊">🤖</button>` : ''}
         ${tool.infoFn ? `<button class="tool-action-btn" onclick="event.stopPropagation(); ${tool.infoFn}()" title="說明書">📖</button>` : ''}
         <button class="tool-action-btn" onclick="event.stopPropagation(); openEditTool('${tool.id}')" title="編輯">✏️</button>
@@ -1715,7 +1855,9 @@ function highlightSelectedIcon() {
 // 本機服務（影音工具）用自訂協定叫起 start.bat；服務本身啟動後會自己開分頁。
 // 協定註冊在 HKCU\Software\Classes\mediatools，只在這台機器有效。
 window.launchLocalService = (href) => {
-  showToast('正在啟動本機服務，請允許瀏覽器開啟外部程式');
+  showToast(href.startsWith('ytcli://agy/')
+    ? '正在喚醒 AGY，請允許瀏覽器開啟外部程式'
+    : '正在啟動本機服務，請允許瀏覽器開啟外部程式');
   location.href = href;
 };
 
@@ -1894,6 +2036,7 @@ function closeOnOverlay(e) {
   if (e.target === document.getElementById('sessionTitleSyncModal')) closeSessionTitleSync();
   if (e.target === document.getElementById('ytSummaryModal')) closeYtSummary();
   if (e.target === document.getElementById('seminarOrganizerModal')) closeSeminarOrganizer();
+  if (e.target === document.getElementById('materialInboxClassifierModal')) closeMaterialInboxClassifier();
   if (e.target === document.getElementById('drinkOrderModal')) closeDrinkOrder();
   if (e.target === document.getElementById('subtitleArchiveModal')) closeSubtitleArchive();
   if (e.target === document.getElementById('ytDlpModal')) closeYtDlp();
@@ -2032,6 +2175,14 @@ function closeSeminarOrganizer() {
   document.getElementById('seminarOrganizerModal').classList.remove('open');
 }
 
+// material-inbox-classifier（素材資料整理分類）modal
+function openMaterialInboxClassifier() {
+  document.getElementById('materialInboxClassifierModal').classList.add('open');
+}
+function closeMaterialInboxClassifier() {
+  document.getElementById('materialInboxClassifierModal').classList.remove('open');
+}
+
 // drink-order（訂飲料）modal
 function openDrinkOrder() {
   document.getElementById('drinkOrderModal').classList.add('open');
@@ -2067,6 +2218,27 @@ function openHvDiagram() {
 function closeHvDiagram() {
   document.getElementById('hvDiagramModal').classList.remove('open');
 }
+
+// TradingView 桌面直連（MCP）modal
+function openTvDesktopMcp() {
+  document.getElementById('tvDesktopMcpModal').classList.add('open');
+}
+function closeTvDesktopMcp() {
+  document.getElementById('tvDesktopMcpModal').classList.remove('open');
+}
+
+// TradingView 背景快照（MCP）modal
+function openTvChartMcp() {
+  document.getElementById('tvChartMcpModal').classList.add('open');
+}
+function closeTvChartMcp() {
+  document.getElementById('tvChartMcpModal').classList.remove('open');
+}
+
+window.openTvDesktopMcp = openTvDesktopMcp;
+window.closeTvDesktopMcp = closeTvDesktopMcp;
+window.openTvChartMcp = openTvChartMcp;
+window.closeTvChartMcp = closeTvChartMcp;
 
 // ── 一鍵送進本機 CLI（v6.3）──
 // 瀏覽器在沙箱裡，沒辦法直接對別的視窗打字，所以走自訂協定：

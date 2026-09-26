@@ -217,6 +217,8 @@ DEFAULT_YTDL_DIR = r"C:\OBS"
 # 2026-08-19 使用者裁定：課程產物一律不進 vault（媒體檔會撐大 vault 的 git 快照）。
 # 這是預設值，網頁上的「課程歸檔根目錄」可以隨時改成別的位置。
 COURSE_ROOT = r"D:\2026_已整理課程"
+# 初步分類完成後的批次交接正本；素材整理分頁只讀這份檔案。
+MATERIALS_STATE_FILE = Path(r"D:\2026_待整理素材\_初步分類\_批次狀態.json")
 # 課程包的 Markdown 副本要複製進 Obsidian vault 的這裡（archive 階段由 AI 執行）。
 VAULT_COURSE_MD_ROOT = r"D:\本機MD檔\30_研究\課程逐字稿整理"
 # 2026-09-17 使用者裁定：網址來源（YouTube／FB／IG／X）的 MD 與 HTML 改放這裡，
@@ -3075,6 +3077,17 @@ PAGE = r"""<!doctype html>
                            margin-top: 8px; flex-wrap: wrap; }
   .course-preview .tools button { padding: 4px 10px; font-size: 12px; }
   .course-preview .tally { color: var(--accent); }
+  .materials-summary { display: flex; gap: 12px; flex-wrap: wrap; margin: 10px 0 14px; }
+  .materials-summary span { padding: 6px 10px; border: 1px solid var(--line);
+                             border-radius: 8px; background: #0d1117; font-size: 12px; }
+  .material-item { border: 1px solid var(--line); border-radius: 10px; padding: 12px;
+                   margin-top: 10px; background: #0d1117; }
+  .material-item .material-head { display:flex; gap:10px; align-items:center; justify-content:space-between; }
+  .material-item .material-title { font-weight: 600; }
+  .material-item .material-meta { color: var(--muted); font-size: 12px; margin-top: 5px; }
+  .material-item .material-path { color: var(--muted); font-size: 12px; margin-top: 7px;
+                                  word-break: break-all; }
+  .material-item .material-preview { color: var(--accent); font-size: 12px; margin-top: 9px; }
 </style>
 </head>
 <body>
@@ -3086,6 +3099,7 @@ PAGE = r"""<!doctype html>
     <div class="tab" data-mode="media">影音處理</div>
     <div class="tab" data-mode="ytdl">萬用下載</div>
     <div class="tab" data-mode="lexicon">字幕詞庫</div>
+    <div class="tab" data-mode="materials">素材整理</div>
   </div>
 </header>
 <main>
@@ -3243,6 +3257,19 @@ PAGE = r"""<!doctype html>
     </div>
   </div>
 
+  <div class="card hide" id="materialsCard">
+    <div class="row" style="justify-content:space-between">
+      <div>
+        <div class="label" style="margin:0">初步分類後的交接清單</div>
+        <div class="note" style="margin-top:4px">這一頁只顯示下一步與預覽，不會自動搬檔或呼叫 Skill。</div>
+      </div>
+      <button onclick="refreshMaterials()">重新整理</button>
+    </div>
+    <div id="materialsSummary" class="materials-summary"></div>
+    <div id="materialsList"><div class="empty">尚未載入批次狀態。</div></div>
+    <div class="note" id="materialsNote"></div>
+  </div>
+
   <div class="card hide" id="lexCard" style="padding:0;overflow:hidden">
     <iframe id="lexFrame" title="字幕詞庫管理"
             style="width:100%;height:calc(100vh - 230px);min-height:520px;border:0;display:block"></iframe>
@@ -3270,6 +3297,7 @@ let coursePendingDelete = -1;   // 刪除鍵要按兩下：第一下先變成「
 let courseWantVideo = true;     // 使用者對「下載 MP4」的本意；本機來源會強制關掉那顆，不能當成使用者取消
 let courseEntries = [];         // 來源資料夾第一層列出來的項目（每項＝一堂課）
 let courseEntryChecked = new Set();   // 其中被勾起來的項目名稱，建立任務時只送這些
+let materialsState = null;
 
 const DEFAULTS = { video: %DEFAULT_VIDEO%, audio: %DEFAULT_AUDIO%, ytdl: %DEFAULT_YTDL%, course: %DEFAULT_COURSE% };
 const $ = id => document.getElementById(id);
@@ -3284,8 +3312,10 @@ document.querySelectorAll('.tab').forEach(tab => tab.onclick = () => {
   $('ytdlCard').classList.toggle('hide', mode !== 'ytdl');
   $('courseCard').classList.toggle('hide', mode !== 'course');
   $('lexCard').classList.toggle('hide', mode !== 'lexicon');
-  $('browseCard').classList.toggle('hide', mode === 'ytdl' || mode === 'course' || mode === 'lexicon');
+  $('materialsCard').classList.toggle('hide', mode !== 'materials');
+  $('browseCard').classList.toggle('hide', mode === 'ytdl' || mode === 'course' || mode === 'lexicon' || mode === 'materials');
   if (mode === 'lexicon') { const f = $('lexFrame'); if (!f.src) f.src = '/lexicon'; return; }
+  if (mode === 'materials') { refreshMaterials(); return; }
   if (mode === 'ytdl') { $('ytOut').value = $('ytOut').value || DEFAULTS.ytdl; return; }
   if (mode === 'course') {
     $('courseOut').value = $('courseOut').value || DEFAULTS.course;
@@ -3298,6 +3328,52 @@ document.querySelectorAll('.tab').forEach(tab => tab.onclick = () => {
     go(DEFAULTS.video);
   }
 });
+
+async function refreshMaterials() {
+  const list = $('materialsList');
+  list.innerHTML = '<div class="empty">正在讀取批次狀態…</div>';
+  try {
+    const response = await fetch('/api/materials/state', { cache: 'no-store' });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+    materialsState = data;
+    const items = Array.isArray(data.items) ? data.items : [];
+    $('materialsSummary').innerHTML = [
+      `<span>批次：${escapeHtml(data.batchId || '未命名')}</span>`,
+      `<span>狀態：${escapeHtml(data.status || '未知')}</span>`,
+      `<span>根目錄散檔：${Number(data.rootFiles || 0)}</span>`,
+      `<span>待處理類別：${items.length}</span>`
+    ].join('');
+    list.innerHTML = items.length ? items.map(item => `
+      <div class="material-item">
+        <div class="material-head">
+          <span class="material-title">${escapeHtml(item.label || item.id)}</span>
+          <button onclick="previewMaterial('${escapeHtml(item.id || '')}')">預覽下一步</button>
+        </div>
+        <div class="material-meta">${escapeHtml(item.type || '未分類')} · ${Number(item.count || 0)} 個檔案 · ${escapeHtml(item.status || '未知')}</div>
+        <div class="material-meta">下一個 Skill：${escapeHtml(item.nextSkill || '待指定')}</div>
+        <div class="material-path">${escapeHtml(item.path || '')}</div>
+        <div class="material-preview hide" id="materialPreview-${escapeHtml(item.id || '')}"></div>
+      </div>`).join('') : '<div class="empty">目前沒有可交接的素材。</div>';
+    $('materialsNote').textContent = `狀態檔更新：${data.lastUpdated || '未記錄'}`;
+  } catch (error) {
+    $('materialsSummary').innerHTML = '';
+    list.innerHTML = `<div class="err">❌ ${escapeHtml(error.message)}</div>`;
+  }
+}
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>'"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','\"':'&quot;'}[ch]));
+}
+
+function previewMaterial(id) {
+  const item = (materialsState?.items || []).find(row => row.id === id);
+  if (!item) return;
+  const box = $('materialPreview-' + id);
+  if (!box) return;
+  box.textContent = `下一步預覽：${item.nextAction || '等待規劃'}；將由 ${item.nextSkill || '未指定'} 接手。確認後才會執行。`;
+  box.classList.remove('hide');
+}
 
 function mediaOperationChanged() {
   mediaOp = $('mediaOp').value;
@@ -3387,6 +3463,8 @@ if (location.hash === '#course') {
   document.querySelector('.tab[data-mode="media"]').click();
 } else if (location.hash === '#lexicon') {
   document.querySelector('.tab[data-mode="lexicon"]').click();
+} else if (location.hash === '#materials') {
+  document.querySelector('.tab[data-mode="materials"]').click();
 } else if (location.hash.startsWith('#ytdl:')) {
   try {
     const prefill = decodeURIComponent(location.hash.slice(6));
@@ -4132,6 +4210,18 @@ class Handler(BaseHTTPRequestHandler):
                 "version": SERVICE_VERSION,
                 "courseRoot": COURSE_ROOT,
             })
+
+        elif url.path == "/api/materials/state":
+            try:
+                if not MATERIALS_STATE_FILE.is_file():
+                    raise FileNotFoundError(f"找不到批次狀態檔：{MATERIALS_STATE_FILE}")
+                state = json.loads(MATERIALS_STATE_FILE.read_text(encoding="utf-8"))
+                if not isinstance(state, dict):
+                    raise ValueError("批次狀態檔必須是 JSON object")
+            except (OSError, json.JSONDecodeError, ValueError) as exc:
+                self._json({"error": str(exc)}, 500)
+                return
+            self._json(state)
 
         elif url.path == "/api/list":
             path = query.get("path", [DEFAULT_VIDEO_DIR])[0]
