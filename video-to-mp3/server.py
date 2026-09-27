@@ -1,6 +1,10 @@
 """
 影音工具本機服務（影音網址下載 / 影片轉 MP3 / 影音合併 / 影片壓縮 / 圖檔轉 PDF）
 
+v1.25 2026-09-27 [Claude Code / Opus 5.5] 程式接口的預設產物對齊網頁預設（使用者裁定）：呼叫端完全沒給 artifacts 與
+                 skillTreeMode 時，改為技能樹模式 2（含教學）＋全景學習手冊，與網頁預設勾選一致。
+                 起因：Codex 依 skill 舊預設建課，4 堂課漏了技能樹與全景學習手冊。有給 artifacts 的呼叫行為不變。
+
 v1.24 2026-09-17 [Claude Code / Opus 5] 網址來源改落點＋video_id 去重＋留言分析（使用者逐題裁定 Q1～Q14）：
                  (1) 網址來源（YouTube／FB／IG／X）的「文件」接合點改指 D:\\本機MD檔\\30_研究\\YouTube\\<夾名>\\，
                      MD 與 HTML 都放那裡（跟 yt-summary、Mac Telegram 流程同一棵樹）；本機檔照舊指課程逐字稿整理。
@@ -405,7 +409,9 @@ TRANSCRIPT_ENGINES = {
     "local_whisper": "本機 whisper CLI，不花額度但很慢",
 }
 
-# 沒有指定 artifacts 時的預設＝改版前的固定行為：課程包五份全做、技能樹不做。
+# 沒有指定 artifacts 時的預設。v1.25 起技能樹由 DEFAULT_SKILL_TREE_MODE 決定（網頁預設＝2 含教學），
+# resolve_course_artifacts 會用 skill_mode > 0 回推 skillTree。
+DEFAULT_SKILL_TREE_MODE = 2
 ARTIFACT_DEFAULTS = {
     # 網址來源預設保留 MP4（維持改版前行為）；本機來源會自動關掉。
     "video": True,
@@ -1007,7 +1013,10 @@ def create_course_manifest(source_type: str, source_val: str, course_name: str,
         raise ValueError("課程來源無效或不存在")
     clean_name = sanitize_course_name(course_name)
     supplied = dict(options or {})
-    skill_mode = int(supplied.get("skillTreeMode", 0) or 0)
+    if "skillTreeMode" not in supplied and supplied.get("artifacts") is None:
+        skill_mode = DEFAULT_SKILL_TREE_MODE   # v1.25：什麼都沒指定＝網頁預設（技能樹含教學）
+    else:
+        skill_mode = int(supplied.get("skillTreeMode", 0) or 0)
     if skill_mode not in {0, 1, 2, 3}:
         raise ValueError("skillTreeMode 只能是 0、1、2、3")
     artifacts = resolve_course_artifacts(supplied, source_type, skill_mode, source_val)
