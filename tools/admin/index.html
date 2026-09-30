@@ -1,6 +1,7 @@
 <!--
-  版本：v6.27
+  版本：v6.28
   版更記錄：
+  v6.28 (2026-09-30) [Claude Code / Opus 5.5] - 新增「SIC 機房狀態（內網）」卡片（📡，排第二格 order 0.5 → Uptime Kuma 狀態頁 http://10.123.17.49:3001/status/sic），15 項機房核心設備掉線與 iDRAC 硬體健康一頁看完；僅公司內網／Tailscale 可連，比照 v6.26 內網 IP 放公開 repo 的前例，不含任何帳密。CARD_CONTENT_VERSION 27→28。
   v6.27 (2026-09-30) [Claude Code / Opus 5.5] - Proxmox 主機改到 10.123.17.47：「PVE 主控台 VM 102（內網）」卡片的 href 與說明由 .147 改為 .47。CARD_CONTENT_VERSION 26→27，讓 Firestore 上已存的舊網址被覆寫。
   v6.26 (2026-09-30) [Claude Code / Opus 5.5] - 新增「PVE 主控台 VM 102（內網）」卡片（🗄️，排第一格 order -2 → Proxmox 10.123.17.147:8006 直開 qemu/102 的 jsconsole），僅公司內網可連；使用者同意內網 IP 放進公開 repo，帳密不寫入。CARD_CONTENT_VERSION 25→26。
   v6.25 (2026-09-27) [Claude Code / Opus 5.5] - 新增「素材一條龍」卡片：點卡片走 ytcli://claude/57Sg5p2Q5LiA5qKd6b6N（base64url 解碼＝「素材一條龍」），開新終端機跑 Claude 載入 material-pipeline skill，從初步分類一路做到歸檔、課程包、知識入庫與結案，過程一題一題詢問並附建議；簡單工作由 Claude 開 agy 視窗處理。排在「素材資料整理分類」前面。CARD_CONTENT_VERSION 24→25。
@@ -1570,7 +1571,7 @@ const getGroqKeyFn = httpsCallable(functions, 'getGroqKey');
 const getAssemblyAIKeyFn = httpsCallable(functions, 'getAssemblyAIKey');
 const ALLOWED_EMAIL = 'ohihio@gmail.com';
 const TOOLS_COL = 'admin_tools';
-const CARD_CONTENT_VERSION = 27;
+const CARD_CONTENT_VERSION = 28;
 const ICON_OPTIONS = ['🗂️','🎙️','📝','📚','📌','📎','📦','⚙️','🛠️','💡','📊','🧾','📁','🔧','🔍','🚀','⭐','✅','⚖️','🌐'];
 const DEFAULT_TOOLS = [
   // order -1：Firestore 裡既有卡片的 order 是 0 起跳，給 -1 才排得到第一格（normalizeOrder 會重編成 0）
@@ -1606,7 +1607,8 @@ const DEFAULT_TOOLS = [
   { id: 'jev-ultrafast-local', title: 'Jev 瀏覽器 Agent（本機）', description: '極速視覺瀏覽器 Agent 決策儀表板；沒開按 🚀 啟動 8773', icon: '🌐', actionType: 'link', href: 'http://127.0.0.1:8773/', launchHref: 'jev://start', order: 26, createdAt: '2026-09-21T00:00:00+08:00' },
   { id: 'tradingview-desktop-mcp', title: 'TV 桌面直連（MCP）', description: 'CDP 直連本機 TradingView Desktop；即時讀取指標/副圖數值、畫線、自動截圖、Pine Script 編譯；支援 tv 指令', icon: '📈', actionType: 'modal', modalFn: 'openTvDesktopMcp', infoFn: 'openTvDesktopMcp', order: 27, createdAt: '2026-09-21T00:00:00+08:00' },
   { id: 'tradingview-chart-mcp', title: 'TV 背景快照（MCP）', description: 'Selenium 瀏覽器池背景拍圖，傳回多週期高清圖檔給 AI 視覺模型；已綁定 ulOiLJv4 圖表版面', icon: '📷', actionType: 'modal', modalFn: 'openTvChartMcp', infoFn: 'openTvChartMcp', order: 28, createdAt: '2026-09-21T00:00:00+08:00' },
-  { id: 'pve-vm102-console', title: 'PVE 主控台 VM 102（內網）', description: 'Proxmox 10.123.17.47 上 VM 102 的網頁主控台；僅公司內網可連', icon: '🗄️', actionType: 'link', href: 'https://10.123.17.47:8006/#v1:0:=qemu%2F102:4:=jsconsole::::::', order: -2, createdAt: '2026-09-30T00:00:00+08:00' }
+  { id: 'pve-vm102-console', title: 'PVE 主控台 VM 102（內網）', description: 'Proxmox 10.123.17.47 上 VM 102 的網頁主控台；僅公司內網可連', icon: '🗄️', actionType: 'link', href: 'https://10.123.17.47:8006/#v1:0:=qemu%2F102:4:=jsconsole::::::', order: -2, createdAt: '2026-09-30T00:00:00+08:00' },
+  { id: 'sic-status-page', title: 'SIC 機房狀態（內網）', description: 'Uptime Kuma 狀態頁：15 項核心設備掉線與硬體健康一頁看完；異常同步推播 Telegram；僅公司內網可連', icon: '📡', actionType: 'link', href: 'http://10.123.17.49:3001/status/sic', order: 0.5, createdAt: '2026-09-30T00:00:00+08:00' }
 ];
 
 let toolsState = DEFAULT_TOOLS.map(tool => ({ ...tool }));
