@@ -1,6 +1,7 @@
 <!--
-  版本：v2.1
+  版本：v2.2
   版更記錄：
+  v2.2 (2026-10-02) - Excel 字體加大、取消縮頁與斜體，首頁列出各選項及未填答姓名。
   v2.1 (2026-10-02) - Excel／Word 一頁摘要、完整統計、填答明細與未填答名單。
   v2.0 (2026-09-01) - 【多題問卷引擎】改造重點：
                       1. 資料結構由「一場活動＝一題照片複選」升級為 poll.questions[] 多題陣列
@@ -276,7 +277,7 @@
 <div class="toast" id="toast"></div>
 
 <script type="module">
-import { exportOfficeReport } from './report-export.js?v=2.1';
+import { exportOfficeReport } from './report-export.js?v=2.2';
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js';
 import { getAuth, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js';
 import { getFirestore, collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, writeBatch, onSnapshot, serverTimestamp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js';
