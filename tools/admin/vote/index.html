@@ -1,6 +1,7 @@
 <!--
-  版本：v2.2
+  版本：v2.3
   版更記錄：
+  v2.3 (2026-10-02) - 套用核定橫式黑框版型；新增一頁 Excel，姓名依填寫時間排序。
   v2.2 (2026-10-02) - Excel 字體加大、取消縮頁與斜體，首頁列出各選項及未填答姓名。
   v2.1 (2026-10-02) - Excel／Word 一頁摘要、完整統計、填答明細與未填答名單。
   v2.0 (2026-09-01) - 【多題問卷引擎】改造重點：
@@ -234,6 +235,7 @@
         <div class="btns" style="margin-bottom:14px">
           <button class="btn secondary" data-export onclick="exportReport('xlsx')">匯出 Excel</button>
           <button class="btn secondary" data-export onclick="exportReport('docx')">匯出 Word</button>
+          <button class="btn secondary" data-export onclick="exportReport('xlsx-onepage')">一頁報告 Excel</button>
           <button class="btn danger" style="margin-left:auto" onclick="clearVotes()">清空這場所有填答</button>
         </div>
         <div id="resultBox"></div>
@@ -277,7 +279,7 @@
 <div class="toast" id="toast"></div>
 
 <script type="module">
-import { exportOfficeReport } from './report-export.js?v=2.2';
+import { exportOfficeReport } from './report-export.js?v=2.3';
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js';
 import { getAuth, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js';
 import { getFirestore, collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, writeBatch, onSnapshot, serverTimestamp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js';
