@@ -1,6 +1,7 @@
 <!--
-  版本：v2.0
+  版本：v2.1
   版更記錄：
+  v2.1 (2026-10-02) - Excel／Word 一頁摘要、完整統計、填答明細與未填答名單。
   v2.0 (2026-09-01) - 【多題問卷引擎】改造重點：
                       1. 資料結構由「一場活動＝一題照片複選」升級為 poll.questions[] 多題陣列
                          （schemaVersion:2）。舊活動沒有 questions 時自動遷移成一題
@@ -230,8 +231,8 @@
       <!-- 結果 -->
       <div class="pane" id="pane-result">
         <div class="btns" style="margin-bottom:14px">
-          <button class="btn secondary" onclick="exportSummary()">匯出結果 CSV</button>
-          <button class="btn secondary" onclick="exportDetail()">匯出明細 CSV</button>
+          <button class="btn secondary" data-export onclick="exportReport('xlsx')">匯出 Excel</button>
+          <button class="btn secondary" data-export onclick="exportReport('docx')">匯出 Word</button>
           <button class="btn danger" style="margin-left:auto" onclick="clearVotes()">清空這場所有填答</button>
         </div>
         <div id="resultBox"></div>
@@ -275,6 +276,7 @@
 <div class="toast" id="toast"></div>
 
 <script type="module">
+import { exportOfficeReport } from './report-export.js?v=2.1';
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js';
 import { getAuth, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js';
 import { getFirestore, collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, writeBatch, onSnapshot, serverTimestamp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js';
@@ -1002,6 +1004,22 @@ window.clearVotes = async function(){
     for (const d of snap.docs) await deleteDoc(d.ref);
     toast('已清空所有填答');
   } catch (e) { toast('清空失敗：' + (e.code || e.message)); }
+};
+
+window.exportReport = async function(format){
+  if (!current) return;
+  const buttons = document.querySelectorAll('[data-export]');
+  buttons.forEach(b => b.disabled = true);
+  try {
+    await exportOfficeReport(format, {
+      title: current.title || currentId,
+      voters: [...(current.voters || [])],
+      questions: (current.questions || []).map(q => ({...q, options:(q.options || []).map(o => ({...o}))})),
+      votes: structuredClone(votes), allowComment: current.allowComment
+    }, {answerOf, answerText, isChoice});
+    toast('報告已匯出');
+  } catch(e) { console.error(e); toast('匯出失敗：' + e.message); }
+  finally { buttons.forEach(b => b.disabled = false); }
 };
 
 window.exportSummary = function(){
