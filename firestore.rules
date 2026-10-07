@@ -1,3 +1,4 @@
+// v1.1.0 2026-10-03 [Codex]：依使用者選擇，僅 polls、votes、proposals 開放免登入管理；其他權限不變。
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -97,38 +98,18 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
     // ── 投票系統（/vote/ 前台、/admin/vote/ 後台）──────────────
-    // 活動設定：任何人可讀（前台要載入選項與名單），只有管理者能建立與修改
-    function pollOf(pollId) {
-      return get(/databases/$(database)/documents/polls/$(pollId)).data;
-    }
+    // 使用者選擇完全公開管理：活動、填答及提案皆可免登入讀寫。
     match /polls/{pollId} {
-      allow read: if true;
-      allow write: if isAdmin();
+      allow read, write: if true;
 
-      // 票：doc id = 投票人姓名，天然擋掉同一人重複投票
-      // 2026-09-01（投票系統 v2.0 多題問卷）：新增 answers / schemaVersion 兩個欄位；
-      // 每題的最少最多幾個改由題目自己的 min/max 控制，規則層不再用 votesPerPerson 卡票數
-      // （新問卷文件已經沒有這個欄位，繼續比較會讓所有填答被拒），只留基本的欄位白名單與上限。
+      // 姓名仍為文件代號；公開管理包含修改、撤銷及清空填答。
       match /votes/{person} {
-        allow read: if true;
-        allow create: if isAdmin() || (request.resource.data.keys().hasOnly(['person', 'picks', 'answers', 'comment', 'schemaVersion', 'createdAt'])
-          && request.resource.data.person == person
-          && person is string
-          && person.size() > 0
-          && request.resource.data.picks is list
-          && request.resource.data.picks.size() <= 50
-          && pollOf(pollId).status == 'open');
-        allow update: if isAdmin();
-        // 投票人自行撤銷重投，僅限該場活動有開這個開關時
-        allow delete: if isAdmin() || pollOf(pollId).allowRevoke == true;
+        allow read, write: if true;
       }
 
-      // 自由提案：開關打開時任何人可投稿，審核與刪除限管理者
+      // 公開管理包含提案讀取、審核及刪除。
       match /proposals/{propId} {
-        allow read: if isAdmin();
-        allow create: if pollOf(pollId).allowProposal == true
-          && request.resource.data.status == 'pending';
-        allow update, delete: if isAdmin();
+        allow read, write: if true;
       }
     }
 

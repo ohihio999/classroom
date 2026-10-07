@@ -1,7 +1,8 @@
 /*
   AI 額度儀表板 — Service Worker（讓頁面可「加到主畫面」常駐、短暫斷線也打得開）
-  版號：v1.3.4
+  版號：v1.4.0
   版更記錄：
+  - v1.4.0 (2026-10-05) 新帳號池模組使用 network-first，更新外殼至 v12。
   - v1.3.4 (2026-09-20) 更新外殼快取，載入 AGY 三帳號重複存檔警告與設定步驟。
   - v1.3.3 (2026-09-19) 更新外殼快取，載入 AGY 三帳號額度與本機切換卡片。
   - v1.3.2 (2026-07-29) 更新外殼快取，額度條改用網站原始固定綠藍紅三色與 50／25 門檻。
@@ -17,8 +18,8 @@
   注意：額度數字走 Firestore 即時連線，一律不快取；這裡只快取靜態外殼。
   改動內容時要把 CACHE 版號往上加，舊快取才會被清掉。
 */
-const CACHE = "ai-usage-v11";
-const SHELL = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png"];
+const CACHE = "ai-usage-v12";
+const SHELL = ["./", "./index.html", "./accounts.js", "./manifest.json", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -41,7 +42,7 @@ self.addEventListener("fetch", e => {
   if (!url.pathname.startsWith("/ai-usage/")) return;
 
   // HTML：network-first，離線才回快取（部署後才不會一直吃到舊版）
-  if (req.mode === "navigate" || url.pathname.endsWith(".html") || url.pathname.endsWith("/ai-usage/")) {
+  if (req.mode === "navigate" || url.pathname.endsWith(".html") || url.pathname.endsWith(".js") || url.pathname.endsWith("/ai-usage/")) {
     e.respondWith(
       fetch(req)
         .then(res => {

@@ -1,6 +1,8 @@
 <!--
-  版本：v2.3
+  版本：v2.3.2
   版更記錄：
+  v2.3.2 (2026-10-03) [Codex] - 依使用者選擇公開投票管理，免登入／密碼；移除帳號檢查與登出，管理首頁仍限指定帳號。
+  v2.3.1 (2026-10-03) - 前台網址文字及複製分享連結改用 tools.sii.com.tw，保留 poll 參數。
   v2.3 (2026-10-02) - 套用核定橫式黑框版型；新增一頁 Excel，姓名依填寫時間排序。
   v2.2 (2026-10-02) - Excel 字體加大、取消縮頁與斜體，首頁列出各選項及未填答姓名。
   v2.1 (2026-10-02) - Excel／Word 一頁摘要、完整統計、填答明細與未填答名單。
@@ -41,7 +43,6 @@
   .header { background:var(--brand); color:#fff; padding:18px 20px; text-align:center; box-shadow:0 2px 8px rgba(0,0,0,.2); position:relative; }
   .header h1 { font-size:21px; font-weight:600; }
   .header p { font-size:13px; opacity:.85; margin-top:4px; }
-  .logout { position:absolute; right:16px; top:20px; background:none; border:0; color:#fff; font-size:13px; cursor:pointer; opacity:.85; }
   .wrap { width:min(100%,1240px); margin:0 auto; padding:18px 16px 60px; }
   .card { background:#fff; border-radius:14px; padding:16px; box-shadow:0 4px 12px rgba(0,0,0,.07); margin-bottom:16px; }
   .card > h2 { font-size:16px; font-weight:600; margin-bottom:12px; }
@@ -131,8 +132,7 @@
 <body>
 <div class="header">
   <h1>🗳️ 投票管理</h1>
-  <p>前台網址：<a href="/vote/" target="_blank" style="color:#fff">my-teaching-tools-2b36c.web.app/vote/</a></p>
-  <button class="logout" onclick="logout()">登出</button>
+  <p>前台網址：<a href="https://tools.sii.com.tw/vote/" target="_blank" rel="noopener" style="color:#fff">tools.sii.com.tw/vote/</a></p>
 </div>
 
 <div class="wrap">
@@ -281,16 +281,13 @@
 <script type="module">
 import { exportOfficeReport } from './report-export.js?v=2.3';
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js';
-import { getAuth, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js';
 import { getFirestore, collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, writeBatch, onSnapshot, serverTimestamp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js';
 import { getStorage, ref as sref, uploadBytes, getDownloadURL, deleteObject } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-storage.js';
 
 const firebaseConfig = { apiKey:"AIzaSyBf0sHTsndFCksNlh46G_2mw9rk5zmPdc0", authDomain:"my-teaching-tools-2b36c.firebaseapp.com", projectId:"my-teaching-tools-2b36c", storageBucket:"my-teaching-tools-2b36c.firebasestorage.app", messagingSenderId:"82693897353", appId:"1:82693897353:web:f667501aad05c536c09a58" };
 const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
 const db = getFirestore(app);
 const storage = getStorage(app);
-const ALLOWED_EMAIL = 'ohihio@gmail.com';
 
 const $ = (s) => document.querySelector(s);
 let polls = [];          // [{id, ...data}]
@@ -314,12 +311,11 @@ const TYPES = {
 };
 const isChoice = (q) => !!(TYPES[q.type] && TYPES[q.type].choice);
 
-onAuthStateChanged(auth, (user) => {
-  if (!user) { location.href = '/login.html'; return; }
-  if (user.email !== ALLOWED_EMAIL) { signOut(auth).then(() => location.href = '/login.html'); return; }
-  boot();
+// 投票管理依使用者授權公開；不讀取或改變其他頁面的登入狀態。
+boot().catch((error) => {
+  console.error(error);
+  $('#loading').textContent = '投票管理載入失敗，請重新整理。';
 });
-window.logout = async () => { await signOut(auth); location.href = '/login.html'; };
 
 async function boot(){
   await loadPolls();
@@ -498,7 +494,7 @@ window.setCurrent = async function(id, silent){
 };
 
 window.copyLink = function(){
-  const url = location.origin + '/vote/?poll=' + encodeURIComponent(currentId);
+  const url = 'https://tools.sii.com.tw/vote/?poll=' + encodeURIComponent(currentId);
   navigator.clipboard.writeText(url).then(() => toast('已複製：' + url), () => toast(url));
 };
 

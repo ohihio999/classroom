@@ -1,6 +1,11 @@
 <!--
-  版本：v6.28
+  版本：v6.33
   版更記錄：
+  v6.33 (2026-10-07) [Claude Code / Opus 5.5] - 新增「線上課程入口」連結卡片（🎓 → /courses/）：公司購買的 Hahow 三堂課入口頁（Power Query、Excel x AI、邏輯表達力），同事由工具首頁進入；卡片與頁面都不含帳號密碼。排在最後（order 30）。CARD_CONTENT_VERSION 32→33。
+  v6.32 (2026-10-07) [Claude Code / Opus 5.5] - 新增「目標管理卡片」（🎯 → modal 說明書，🚀 走 ytcli://claude/ 開 Claude 載入 goal-management 技能）：半年一次的公司個人目標管理表代筆，AI 讀歷年原文與語氣守則，用使用者的口氣填上一期成果、擬新一期目標與方法手段，先交 md 草稿。目標原文與語氣守則都放在 Vault，不在本 repo 也不在技能資料夾；卡片不含任何目標內容。排在最後（order 29）。CARD_CONTENT_VERSION 31→32。
+  v6.31 (2026-10-05) [Claude Code / Opus 5.5] - 新增「剪片小幫手（小關版）」卡片（✂️ → modal 說明書，🚀 走 ytcli://claude/ 開 Claude 載入 video-editing-xiaoguan 技能）：來源為小關（球長／關登元）分享的 Claude 剪片工作流，本機安裝在 C:\Code\video-editing-xiaoguan\，審片用該資料夾的 審片小幫手.bat。排在 Video Autopilot 後面（order 2.8）。同版把「Video Autopilot 剪輯」卡片與說明書標題改名為「HAO剪片（Video Autopilot）」，與技能說明的【HAO剪片】標註一致，方便和小關版區分。CARD_CONTENT_VERSION 30→31。
+  v6.30 (2026-10-05) [Codex] - 新增「n8n 工作流程」連結卡片，開啟使用者指定的 Tailscale 工作流程頁；CARD_CONTENT_VERSION 29→30。
+  v6.29 (2026-10-02) [Codex] - 新增 Talkcraft 口播動畫與 Video Autopilot 剪輯卡片，附教學、訂閱 Codex 一鍵入口及本機工作台啟動；CARD_CONTENT_VERSION 28→29。
   v6.28 (2026-09-30) [Claude Code / Opus 5.5] - 新增「SIC 機房狀態（內網）」卡片（📡，排第二格 order 0.5 → Uptime Kuma 狀態頁 http://10.123.17.49:3001/status/sic），15 項機房核心設備掉線與 iDRAC 硬體健康一頁看完；僅公司內網／Tailscale 可連，比照 v6.26 內網 IP 放公開 repo 的前例，不含任何帳密。CARD_CONTENT_VERSION 27→28。
   v6.27 (2026-09-30) [Claude Code / Opus 5.5] - Proxmox 主機改到 10.123.17.47：「PVE 主控台 VM 102（內網）」卡片的 href 與說明由 .147 改為 .47。CARD_CONTENT_VERSION 26→27，讓 Firestore 上已存的舊網址被覆寫。
   v6.26 (2026-09-30) [Claude Code / Opus 5.5] - 新增「PVE 主控台 VM 102（內網）」卡片（🗄️，排第一格 order -2 → Proxmox 10.123.17.147:8006 直開 qemu/102 的 jsconsole），僅公司內網可連；使用者同意內網 IP 放進公開 repo，帳密不寫入。CARD_CONTENT_VERSION 25→26。
@@ -1553,6 +1558,95 @@ D:\本機MD檔\30_研究\課程逐字稿整理\&lt;同名&gt;\　課程包 MD �
   </div>
 </div>
 
+<div class="modal-overlay" id="talkcraftModal" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="modal" style="max-height:90vh">
+    <button class="modal-close" onclick="document.getElementById('talkcraftModal').classList.remove('open')">✕</button>
+    <div class="modal-title">🎨 Talkcraft 口播動畫</div>
+    <div class="modal-sub">把稿子與配音做成有字幕、圖解、動效的解說片。</div>
+    <div class="step"><div class="step-label">① 準備材料</div>
+      <p>一份與錄音一致的口播稿、一條 WAV／MP3 配音，以及想放進影片的照片或截圖。第一次建議做 30～60 秒。</p>
+    </div>
+    <div class="step"><div class="step-label">② 讓 AI 帶你開始</div>
+      <button class="copy-btn" onclick="launchVideoAgent('talkcraft')">🚀 開啟 Codex 開始製片</button>
+      <p>AI 會先問素材位置、橫直式與風格，先做首鏡預覽。使用本機語音對齊；需要額外付費服務時先告知。</p>
+      <div class="cmd-box">用 video-talkcraft，把我的稿子與配音做成繁體中文解說片。先問素材位置，再做首鏡給我確認。</div>
+    </div>
+    <div class="step"><div class="step-label">③ 編輯動效與輸出</div>
+      <a class="copy-btn" href="videotools://talkcraft" style="display:block;text-align:center;text-decoration:none">開啟 Talkcraft 工作台</a>
+      <p>可選動效、改文字與顏色、編排時間線並匯出 MP4。新安裝尚未接入影片；先讓 AI 建立工程。修改配音內容需重新對齊。</p>
+    </div>
+    <div class="yt-note">本機入口僅適用已安裝的 Windows 電腦；手機只能看說明。商業用途須先向 Talkcraft 作者取得授權。</div>
+    <p><a href="https://github.com/Vincentwei1021/video-talkcraft" target="_blank" rel="noopener">官方專案與授權</a></p>
+  </div>
+</div>
+
+<div class="modal-overlay" id="videoAutopilotModal" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="modal" style="max-height:90vh">
+    <button class="modal-close" onclick="document.getElementById('videoAutopilotModal').classList.remove('open')">✕</button>
+    <div class="modal-title">🎞️ HAO剪片（Video Autopilot）</div>
+    <div class="modal-sub">自己的素材＋頻道設定，讓 AI 規劃長片、Shorts 或訪談。</div>
+    <div class="step"><div class="step-label">① 首次設定</div>
+      <p>先回答頻道名稱、是否露臉、內容類型與發布平台。素材、腳本與成品留在本機。</p>
+      <button class="copy-btn" onclick="launchVideoAgent('autopilot')">🚀 開啟 Codex 帶我設定／剪片</button>
+    </div>
+    <div class="step"><div class="step-label">② 製作第一支片</div>
+      <div class="cmd-box">用 video-autopilot，把我指定的素材做成 45 秒 IG Reels。繁體中文字幕，先整理素材與剪輯計畫，再做預覽，由我審片及發布。</div>
+      <p>AI 透過本機 Editkin 引擎處理素材與剪輯。若缺必要素材或功能，它會列出缺口，不會假稱已完成。</p>
+    </div>
+    <div class="step"><div class="step-label">③ 查看 Editkin 介面</div>
+      <a class="copy-btn" href="videotools://editkin" style="display:block;text-align:center;text-decoration:none">開啟 Editkin 網頁編輯介面</a>
+      <p>網頁版可試排時間線，但不會自動同步 AI 工程，也不會輸出 MP4；重新整理前先匯出工程 JSON。正式影片由 Codex 呼叫本機引擎輸出。</p>
+    </div>
+    <div class="yt-note">本機入口僅適用已安裝的 Windows 電腦。使用社群原始碼版；進階 GPU、原生特效與桌面封裝功能不代表已支援。發片前由你審核。</div>
+    <p><a href="https://github.com/Hao0321/video-autopilot-kit" target="_blank" rel="noopener">Autopilot 官方專案</a> · <a href="https://github.com/Hao0321/Editkin" target="_blank" rel="noopener">Editkin 官方專案</a></p>
+  </div>
+</div>
+
+<div class="modal-overlay" id="xiaoguanEditModal" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="modal" style="max-height:90vh">
+    <button class="modal-close" onclick="document.getElementById('xiaoguanEditModal').classList.remove('open')">✕</button>
+    <div class="modal-title">✂️ 剪片小幫手（小關版）</div>
+    <div class="modal-sub">毛片丟進去，AI 聽打、挑重點、初剪、上字幕與 BGM；你負責決定內容與審片。來源：小關（球長／關登元）分享的 Claude 剪片工作流。</div>
+    <div class="step"><div class="step-label">① 放毛片</div>
+      <div class="cmd-box">C:\Code\video-editing-xiaoguan\毛片\</div>
+      <p>BGM 放 <code>音樂庫\</code>，成品會出在 <code>成品\</code>。</p>
+    </div>
+    <div class="step"><div class="step-label">② 叫 AI 剪</div>
+      <button class="copy-btn" onclick="launchVideoAgent('xiaoguan')">🚀 開啟 Claude 開始剪片</button>
+      <div class="cmd-box">用 video-editing-xiaoguan 剪這支片。毛片在 C:\Code\video-editing-xiaoguan\毛片，先定片型、聽打完跟我討論要留哪些段落，再動剪。</div>
+      <p>流程五階段、兩道確認：拆解聽打 → 價值篩選討論 → 純畫面初剪 → 畫面定版後才上字幕音樂 → 自檢交付。</p>
+    </div>
+    <div class="step"><div class="step-label">③ 審片</div>
+      <div class="cmd-box">C:\Code\video-editing-xiaoguan\審片小幫手.bat</div>
+      <p>雙擊後選片，看片、暫停、打字，時間碼與當下畫面自動附上；可在波形上標要刪的停頓、直接改字幕錯字。匯出 md 丟回給 AI 說「照審片意見改」。通常跑 3～5 輪。</p>
+    </div>
+    <div class="yt-note">本機入口僅適用已安裝的 Windows 電腦。這套不是一鍵剪片：哪段有價值、哪句當開場仍由你判斷。品牌名、Logo、片尾卡與克隆音未隨包附上，要用時再設定。</div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="goalMgmtModal" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="modal" style="max-height:90vh">
+    <button class="modal-close" onclick="document.getElementById('goalMgmtModal').classList.remove('open')">✕</button>
+    <div class="modal-title">🎯 目標管理卡片</div>
+    <div class="modal-sub">半年一次的個人目標管理表，AI 讀你歷年寫過的內容，用你的口氣填上一期成果、擬新一期目標。每年 4 月與 10 月用。</div>
+    <div class="step"><div class="step-label">① 叫 AI 寫</div>
+      <button class="copy-btn" onclick="launchVideoAgent('goal')">🚀 開啟 Claude 寫目標</button>
+      <div class="cmd-box">寫目標</div>
+      <p>也可以說「目標管理」「半年目標」「填目標表」。AI 會先問這次要填上一期成果、訂新一期目標，還是兩個都做。</p>
+    </div>
+    <div class="step"><div class="step-label">② AI 會問你的事</div>
+      <p>組織目標 4 條有沒有換、公司有沒有發新的空白表、主管有沒有指定題目、你自己想放什麼。這半年做了什麼它會先去翻工作紀錄，翻不到的月份才問你。</p>
+    </div>
+    <div class="step"><div class="step-label">③ 拿到草稿</div>
+      <p>草稿是一份 md，照 Excel 儲存格分段（5 條個人目標、每條的方法手段與成果、難易度與比率），直接貼進表格。沒有紀錄佐證的成果會標「待你補」，沒做完的不會寫成完成。</p>
+    </div>
+    <div class="step"><div class="step-label">④ 改完告訴 AI</div>
+      <p>你改過的定稿會存回樣本庫，被改掉的寫法會補進語氣守則，下一期就更像你。主管意見也可以一起丟給它記。</p>
+    </div>
+    <div class="yt-note">歷年目標原文與語氣守則都在 Vault，位置寫在技能裡；本卡片與技能資料夾不含任何目標內容。技能正本：<code>%USERPROFILE%\.codex\skills\goal-management\SKILL.md</code>。</div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script type="module">
@@ -1571,9 +1665,26 @@ const getGroqKeyFn = httpsCallable(functions, 'getGroqKey');
 const getAssemblyAIKeyFn = httpsCallable(functions, 'getAssemblyAIKey');
 const ALLOWED_EMAIL = 'ohihio@gmail.com';
 const TOOLS_COL = 'admin_tools';
-const CARD_CONTENT_VERSION = 28;
+const CARD_CONTENT_VERSION = 33;
+const VIDEO_AGENT_PROMPTS = {
+  talkcraft: '使用 video-talkcraft 技能製作影片。先讀 C:/Code/video-tools-launcher/LOCAL-SETUP.md，使用 C:/Code/video-talkcraft 的現有安裝與專屬 Python 環境。先問我稿子、配音、圖片所在位置，以及發布平台與畫幅；先做首鏡預覽。繁體中文，使用本機能力與現有訂閱，付費 API 先告知並等我確認。不要自動發布。',
+  autopilot: '使用 video-autopilot 技能與已配置的 editkin MCP。先讀 C:/Code/video-tools-launcher/LOCAL-SETUP.md，再讀 C:/Code/video-autopilot-kit/SETUP.md，先問品牌、內容類型與製作設定三區。請使用本機媒體引擎與現有訂閱，先確認 MCP 可用及本次需要的能力；缺少時說明，不可偽造完成。先問素材路徑，工程限配置的 workspace，由我審片及發布。付費 API 先告知並等我確認。',
+  xiaoguan: '使用 video-editing-xiaoguan 技能剪片。剪片資料夾是 C:/Code/video-editing-xiaoguan，先讀技能最前面的「Windows 本機安裝對照」。先問我毛片檔名與片型，聽打完先跟我討論要留哪些段落，確認後才動剪。繁體中文，只用本機工具，付費 API 先告知並等我確認。不要自動發布。',
+  goal: '使用 goal-management 技能寫這一期的目標管理表。先讀技能指定的語氣守則與歷年原文，再問我這次要填上一期成果、訂新一期目標，還是兩個都做。繁體中文，內容不外送。'
+};
+const VIDEO_AGENT_CLI = { xiaoguan: 'claude', goal: 'claude' };
+const videoAgentHref = key => 'ytcli://' + (VIDEO_AGENT_CLI[key] || 'codex') + '/' + btoa(String.fromCharCode(...new TextEncoder().encode(VIDEO_AGENT_PROMPTS[key]))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+window.launchVideoAgent = key => { if (Object.hasOwn(VIDEO_AGENT_PROMPTS, key)) window.location.href = videoAgentHref(key); };
+window.openTalkcraft = () => document.getElementById('talkcraftModal').classList.add('open');
+window.openVideoAutopilot = () => document.getElementById('videoAutopilotModal').classList.add('open');
+window.openXiaoguanEdit = () => document.getElementById('xiaoguanEditModal').classList.add('open');
+window.openGoalMgmt = () => document.getElementById('goalMgmtModal').classList.add('open');
 const ICON_OPTIONS = ['🗂️','🎙️','📝','📚','📌','📎','📦','⚙️','🛠️','💡','📊','🧾','📁','🔧','🔍','🚀','⭐','✅','⚖️','🌐'];
 const DEFAULT_TOOLS = [
+  { id: 'n8n-workflows', title: 'n8n 工作流程', description: '開啟 n8n 自動化工作流程管理頁；需連線 Tailscale', icon: '🔄', actionType: 'link', href: 'https://n8n-server.tailadc2b9.ts.net/home/workflows', order: 0.6, createdAt: '2026-10-05T00:00:00+08:00' },
+  { id: 'video-talkcraft', title: 'Talkcraft 口播動畫', description: '稿子＋配音做成動態解說片；點卡看教學，🚀 開 Codex 製片', icon: '🎨', actionType: 'modal', modalFn: 'openTalkcraft', infoFn: 'openTalkcraft', launchHref: videoAgentHref('talkcraft'), order: 2.6, createdAt: '2026-10-02T00:00:00+08:00' },
+  { id: 'video-autopilot', title: 'HAO剪片（Video Autopilot）', description: '素材、頻道設定與 Editkin 剪輯流程；點卡看教學，🚀 開 Codex', icon: '🎞️', actionType: 'modal', modalFn: 'openVideoAutopilot', infoFn: 'openVideoAutopilot', launchHref: videoAgentHref('autopilot'), order: 2.7, createdAt: '2026-10-02T00:00:00+08:00' },
+  { id: 'video-editing-xiaoguan', title: '剪片小幫手（小關版）', description: '毛片 → 聽打 → 初剪 → 字幕 BGM → 審片；點卡看教學，🚀 開 Claude 剪片', icon: '✂️', actionType: 'modal', modalFn: 'openXiaoguanEdit', infoFn: 'openXiaoguanEdit', launchHref: videoAgentHref('xiaoguan'), order: 2.8, createdAt: '2026-10-05T00:00:00+08:00' },
   // order -1：Firestore 裡既有卡片的 order 是 0 起跳，給 -1 才排得到第一格（normalizeOrder 會重編成 0）
   { id: 'ai-workbench', title: 'AI 工作台（本機）', description: '啟動 7 個 Hermes 分頁：3 AGY／2 Claude／2 Codex', icon: '🚀', actionType: 'link', href: 'aiwork://start', launchHref: 'aiwork://start', order: -1, createdAt: '2026-08-08T00:00:00+08:00' },
   { id: 'tool-manager', title: 'AI 工具分類管理', description: '收藏、分類、搜尋與批次分析常用 AI 工具', icon: '🗂️', actionType: 'link', href: '/tool-manager/', order: 0, createdAt: '2026-04-29T00:00:00+08:00' },
@@ -1608,7 +1719,9 @@ const DEFAULT_TOOLS = [
   { id: 'tradingview-desktop-mcp', title: 'TV 桌面直連（MCP）', description: 'CDP 直連本機 TradingView Desktop；即時讀取指標/副圖數值、畫線、自動截圖、Pine Script 編譯；支援 tv 指令', icon: '📈', actionType: 'modal', modalFn: 'openTvDesktopMcp', infoFn: 'openTvDesktopMcp', order: 27, createdAt: '2026-09-21T00:00:00+08:00' },
   { id: 'tradingview-chart-mcp', title: 'TV 背景快照（MCP）', description: 'Selenium 瀏覽器池背景拍圖，傳回多週期高清圖檔給 AI 視覺模型；已綁定 ulOiLJv4 圖表版面', icon: '📷', actionType: 'modal', modalFn: 'openTvChartMcp', infoFn: 'openTvChartMcp', order: 28, createdAt: '2026-09-21T00:00:00+08:00' },
   { id: 'pve-vm102-console', title: 'PVE 主控台 VM 102（內網）', description: 'Proxmox 10.123.17.47 上 VM 102 的網頁主控台；僅公司內網可連', icon: '🗄️', actionType: 'link', href: 'https://10.123.17.47:8006/#v1:0:=qemu%2F102:4:=jsconsole::::::', order: -2, createdAt: '2026-09-30T00:00:00+08:00' },
-  { id: 'sic-status-page', title: 'SIC 機房狀態（內網）', description: 'Uptime Kuma 狀態頁：15 項核心設備掉線與硬體健康一頁看完；異常同步推播 Telegram；僅公司內網可連', icon: '📡', actionType: 'link', href: 'http://10.123.17.49:3001/status/sic', order: 0.5, createdAt: '2026-09-30T00:00:00+08:00' }
+  { id: 'sic-status-page', title: 'SIC 機房狀態（內網）', description: 'Uptime Kuma 狀態頁：15 項核心設備掉線與硬體健康一頁看完；異常同步推播 Telegram；僅公司內網可連', icon: '📡', actionType: 'link', href: 'http://10.123.17.49:3001/status/sic', order: 0.5, createdAt: '2026-09-30T00:00:00+08:00' },
+  { id: 'goal-management', title: '目標管理卡片', description: '半年一次的目標管理表，AI 用你的口氣填成果、擬新目標；點卡看教學，🚀 開 Claude 寫目標', icon: '🎯', actionType: 'modal', modalFn: 'openGoalMgmt', infoFn: 'openGoalMgmt', launchHref: videoAgentHref('goal'), order: 29, createdAt: '2026-10-07T00:00:00+08:00' },
+  { id: 'courses', title: '線上課程入口', description: '公司購買的 Hahow 課程入口頁：Power Query、Excel x AI、邏輯表達力；帳密另外提供，不在頁面上', icon: '🎓', actionType: 'link', href: '/courses/', order: 30, createdAt: '2026-10-07T00:00:00+08:00' }
 ];
 
 let toolsState = DEFAULT_TOOLS.map(tool => ({ ...tool }));

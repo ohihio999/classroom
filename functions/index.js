@@ -1,3 +1,4 @@
+// v1.0.1 (2026-10-07) - 每月檢查通知信的連結 MC_URL 改用公司網域 tools.sii.com.tw。
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { defineSecret } = require('firebase-functions/params');
@@ -345,7 +346,7 @@ const MC_WASH = [
   { key: 'first',  label: '上半月' },
   { key: 'second', label: '下半月' }
 ];
-const MC_URL = 'https://my-teaching-tools-2b36c.web.app/monthly-check/';
+const MC_URL = 'https://tools.sii.com.tw/monthly-check/';
 
 // 以台北時間算月份字串；offset 為月份位移（-1 = 上個月）
 function mcMonthStr(offset = 0) {

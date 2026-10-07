@@ -1,6 +1,11 @@
 """
 影音工具本機服務（影音網址下載 / 影片轉 MP3 / 影音合併 / 影片壓縮 / 圖檔轉 PDF）
 
+v1.26 2026-10-07 [Claude Code / Opus 5.5] #course 加執行者選單（使用者裁定，預設留 agy）：主鍵左邊可選
+                 agy／Claude Code／Codex／只建任務不送出，走 ytcli://<cli>/…（run.ps1 v2.0 本來就支援三家）。
+                 選「只建任務不送出」時不開任何視窗，建好後按「複製指令」貼進現有對話。sendToAgy() 改為 sendToCli()。
+                 起因：複製指令鍵要先送出 agy 才會出現，沒辦法只複製不送。選單不記憶，每次開頁回到 agy。
+
 v1.25 2026-09-27 [Claude Code / Opus 5.5] 程式接口的預設產物對齊網頁預設（使用者裁定）：呼叫端完全沒給 artifacts 與
                  skillTreeMode 時，改為技能樹模式 2（含教學）＋全景學習手冊，與網頁預設勾選一致。
                  起因：Codex 依 skill 舊預設建課，4 堂課漏了技能樹與全景學習手冊。有給 artifacts 的呼叫行為不變。
@@ -3242,13 +3247,19 @@ PAGE = r"""<!doctype html>
       <button id="courseOutPick" onclick="pickCourseOutput()">選擇資料夾</button>
     </div>
     <div class="row" style="margin-top:14px">
+      <select id="courseExecutor" onchange="syncCourseExecutor()" title="任務建好後交給誰跑" style="flex:0 0 auto;width:auto">
+        <option value="agy" selected>執行者：agy（預設）</option>
+        <option value="claude">執行者：Claude Code</option>
+        <option value="codex">執行者：Codex</option>
+        <option value="none">只建任務，不送出</option>
+      </select>
       <button class="go" id="courseCreate" onclick="startCourseCreate()">🚀 建立任務並送 agy</button>
-      <button class="ghost hide" id="courseCopyPrompt" onclick="copyCoursePrompt()">複製指令（備援）</button>
+      <button class="ghost hide" id="courseCopyPrompt" onclick="copyCoursePrompt()">複製指令</button>
     </div>
     <div class="note">
-      按這一顆就好：建立任務 → 自動組指令 → 開新視窗跑 agy，中途不用再按別的。<br>
+      按這一顆就好：建立任務 → 自動組指令 → 開新視窗交給左邊選的執行者，中途不用再按別的。<br>
       AI 收到指令後只會做你上面勾起來的項目，沒勾的不會產出。<br>
-      要改貼給 Claude／Codex 或別台機器時，按旁邊的「複製指令（備援）」。
+      要貼進現有的對話（例如領隊模式）或別台機器時，選「只建任務，不送出」，建好後按「複製指令」。
     </div>
     <div class="out" id="courseResult" style="white-space:pre-wrap"></div>
 
@@ -3779,9 +3790,23 @@ function toBase64Url(str) {
   return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-function sendToAgy(prompt) {
-  if (!prompt) return;
-  window.location.href = 'ytcli://agy/' + toBase64Url(prompt);
+// 執行者選單：值就是 ytcli://<cli>/ 的 cli 名稱；none＝只建任務不送出。每次開頁都回到 agy。
+const COURSE_EXECUTORS = { agy: 'agy', claude: 'Claude Code', codex: 'Codex' };
+
+function courseExecutor() {
+  const value = $('courseExecutor').value;
+  return COURSE_EXECUTORS[value] ? value : 'none';
+}
+
+function syncCourseExecutor() {
+  const cli = courseExecutor();
+  $('courseCreate').textContent = cli === 'none'
+    ? '📝 只建立任務' : `🚀 建立任務並送 ${COURSE_EXECUTORS[cli]}`;
+}
+
+function sendToCli(cli, prompt) {
+  if (!prompt || !COURSE_EXECUTORS[cli]) return;
+  window.location.href = `ytcli://${cli}/` + toBase64Url(prompt);
 }
 
 async function copyCoursePrompt() {
@@ -3796,7 +3821,7 @@ async function copyCoursePrompt() {
     document.execCommand('copy');
     area.remove();
   }
-  $('courseResult').textContent = '✅ AI 指令已複製。現在回到目前的 Hermes 對話貼上並送出。';
+  $('courseResult').textContent = '✅ AI 指令已複製。現在回到要執行的 AI 對話貼上並送出。';
 }
 
 // 只把這次勾到的產物寫進指令，避免 AI 照舊做滿五份。
@@ -4021,11 +4046,14 @@ async function startCourseCreate() {
     const paths = data.manifestPaths || [data.manifestPath];
     lastCoursePrompt = buildCoursePrompt(paths, st);
     $('courseCopyPrompt').classList.remove('hide');
-    result.textContent = paths.length > 1
+    const cli = courseExecutor();
+    const sent = cli === 'none'
+      ? '▶ 沒有送出。按旁邊的「複製指令」，貼到要執行的 AI 對話。'
+      : `▶ 已送出 ${COURSE_EXECUTORS[cli]}` + (paths.length > 1 ? `（${paths.length} 堂課依序跑）` : '') + '，請看新開的視窗。';
+    result.textContent = (paths.length > 1
       ? `✅ 已建立 ${paths.length} 個任務：\n` + paths.map(x => '　• ' + x).join('\n')
-        + `\n▶ 已送出 agy（${paths.length} 堂課依序跑），請看新開的視窗。`
-      : `✅ 任務已建立：${paths[0]}\n▶ 已送出 agy，請看新開的視窗。`;
-    sendToAgy(lastCoursePrompt);
+      : `✅ 任務已建立：${paths[0]}`) + '\n' + sent;
+    sendToCli(cli, lastCoursePrompt);
     refreshCourseProgress();
   } catch (error) {
     lastCoursePrompt = '';

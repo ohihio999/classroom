@@ -1,7 +1,8 @@
 <#
   collect.ps1 — AI 額度收集腳本（AI 額度儀表板後端）
-  版號：v2.2.0
+  版號：v2.3.0
   版更記錄：
+  - v2.3.0 (2026-10-05) Claude 每 15 分鐘查詢、失敗退避並保留最後成功用量；帳號池獨立更新。
   - v2.2.0 (2026-09-19) Antigravity 額度改成可按帳號分開保存：取得額度的同一個本機端點另呼叫
     `GetUserStatus` 只為了辨識登入 email，再用 repo 外的 `~\.agy-failover\accounts.json` 換成
     a1／a2／a3 代號，寫入 `ai_usage/agy_acct_<代號>`（最後一次看到的額度）。email 不寫入 Firestore；
@@ -60,6 +61,23 @@ $result = [ordered]@{
 }
 
 # ---------- Claude ----------
+$claudeCachePath = Join-Path $env:USERPROFILE ".ai-usage-collector\claude-cache.json"
+$claudeCache = @{ failures = 0; nextAttempt = 0; lastSuccess = $null; error = $null }
+if (Test-Path -LiteralPath $claudeCachePath) {
+    try {
+        $stored = Get-Content -LiteralPath $claudeCachePath -Raw | ConvertFrom-Json
+        $claudeCache = @{ failures = [int]$stored.failures; nextAttempt = [double]$stored.nextAttempt; lastSuccess = $stored.lastSuccess; error = $stored.error }
+    } catch {}
+}
+$claudeNow = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+if ($claudeNow -lt $claudeCache.nextAttempt) {
+    if ($claudeCache.lastSuccess) {
+        $result.claude = $claudeCache.lastSuccess
+        $result.claude | Add-Member -NotePropertyName error -NotePropertyValue $claudeCache.error -Force
+    } else {
+        $result.claude = @{ status = "error"; error = "等待下次用量查詢（限流時延長等待）" }
+    }
+} else {
 try {
     $cred = Get-Content "$env:USERPROFILE\.claude\.credentials.json" -Raw | ConvertFrom-Json
     $r = Invoke-RestMethod -Uri "https://api.anthropic.com/api/oauth/usage" -TimeoutSec 30 -Headers @{
@@ -68,6 +86,7 @@ try {
     }
     $claude = [ordered]@{
         status   = "ok"
+        asOf     = $result.collectedAt
         fiveHour = @{ percent = [math]::Round($r.five_hour.utilization, 1); resetsAt = $r.five_hour.resets_at }
         sevenDay = @{ percent = [math]::Round($r.seven_day.utilization, 1); resetsAt = $r.seven_day.resets_at }
     }
@@ -80,9 +99,30 @@ try {
         }
     }
     $result.claude = $claude
+    $claudeCache = @{ failures = 0; nextAttempt = $claudeNow + 900; lastSuccess = $claude; error = $null }
 } catch {
-    $result.claude = @{ status = "error"; error = $_.Exception.Message }
-    Write-Log "Claude 失敗: $($_.Exception.Message)"
+    $claudeCache.failures++
+    $wait = [math]::Min(21600, 900 * [math]::Pow(2, [math]::Min(4, $claudeCache.failures - 1)))
+    try {
+        $retry = $_.Exception.Response.Headers.GetValues("Retry-After") | Select-Object -First 1
+        if ($retry -match '^\d+$') { $wait = [math]::Max($wait, [double]$retry) }
+        elseif ($retry) { $wait = [math]::Max($wait, ([DateTimeOffset]::Parse($retry).ToUnixTimeSeconds() - $claudeNow)) }
+    } catch {}
+    $claudeCache.nextAttempt = $claudeNow + $wait
+    $claudeCache.error = "用量查詢暫時失敗，已延長等待；最後成功資料不是即時用量"
+    if ($claudeCache.lastSuccess) {
+        $result.claude = $claudeCache.lastSuccess
+        $result.claude | Add-Member -NotePropertyName error -NotePropertyValue $claudeCache.error -Force
+    } else {
+        $result.claude = @{ status = "error"; error = $claudeCache.error }
+    }
+    Write-Log "Claude 查詢失敗，等待 $wait 秒後重試"
+}
+try {
+    New-Item -ItemType Directory -Path (Split-Path $claudeCachePath) -Force | Out-Null
+    $claudeCache | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath ($claudeCachePath + ".tmp") -Encoding UTF8
+    Move-Item -LiteralPath ($claudeCachePath + ".tmp") -Destination $claudeCachePath -Force
+} catch { Write-Log "Claude 快取寫入失敗" }
 }
 
 # ---------- Codex ----------

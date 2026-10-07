@@ -1,0 +1,93 @@
+<!--
+  版本：v1.1
+  版更記錄：
+  v1.1 (2026-10-07) [Claude Code／Opus 5.5] - 卡片外觀改成 Hahow「我的學習」樣式：課程封面圖、左上講師頭像、右上「上課囉」斜角標、底部綠色邊條，整張卡片可點。封面與頭像下載存在 img/（來源為 Hahow 公開課程資料）。上課進度與評價是帳號個人資料，靜態頁拿不到，不顯示。順序比照 Hahow 畫面：Power Query、Excel x AI、邏輯表達力。
+  v1.0 (2026-10-07) [Claude Code／Opus 5.5] - 初始版本：公司線上課程入口，列出 Hahow 三堂課的上課連結與觀看說明。本頁只放連結，不含任何帳號密碼。
+-->
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SIC 線上課程</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft JhengHei', sans-serif; background: #f1f5f5; min-height: 100vh; }
+    .header { background: #1976D2; color: white; padding: 20px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.2); position: relative; }
+    .header h1 { font-size: 22px; font-weight: 600; }
+    .header a.back { position: absolute; left: 16px; top: 50%; transform: translateY(-50%); color: white; text-decoration: none; font-size: 14px; opacity: 0.9; }
+    .wrap { width: min(100%, 1180px); margin: 0 auto; padding: 22px 24px 40px; }
+    .notice { background: #fff8e1; border-left: 4px solid #f9a825; border-radius: 8px; padding: 14px 16px; margin-bottom: 34px; font-size: 14px; color: #5d4037; line-height: 1.6; }
+    .notice strong { color: #4e342e; }
+
+    .courses { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 44px 38px; align-items: stretch; }
+    .course-card { position: relative; display: flex; flex-direction: column; background: white; border-bottom: 6px solid #00bea4; box-shadow: 0 1px 4px rgba(0,0,0,0.12); text-decoration: none; color: inherit; transition: transform 0.15s, box-shadow 0.15s; }
+    .course-card:hover { transform: translateY(-3px); box-shadow: 0 6px 16px rgba(0,0,0,0.16); }
+    .course-card:focus-visible { outline: 2px solid #222; outline-offset: 4px; }
+    .course-cover { position: relative; aspect-ratio: 1000 / 620; overflow: hidden; background: #dfe6e6; }
+    .course-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .ribbon { position: absolute; top: 18px; right: -42px; width: 150px; padding: 5px 0; background: #00bea4; color: white; font-size: 14px; text-align: center; transform: rotate(45deg); letter-spacing: 1px; }
+    .course-avatar { position: absolute; top: -26px; left: 6px; z-index: 2; width: 62px; height: 62px; border-radius: 50%; border: 3px solid white; background: white; box-shadow: 0 1px 4px rgba(0,0,0,0.25); overflow: hidden; }
+    .course-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .course-body { padding: 26px 20px 22px; display: flex; flex-direction: column; gap: 14px; flex: 1; }
+    .course-name { font-size: 22px; font-weight: 400; color: #4a4a4a; line-height: 1.5; flex: 1; }
+    .course-go { font-size: 14px; color: #00a892; }
+
+    .foot { margin-top: 30px; font-size: 12px; color: #999; text-align: center; }
+    @media (max-width: 960px) {
+      .wrap { padding: 20px 16px 32px; }
+      .courses { grid-template-columns: 1fr; gap: 44px; max-width: 420px; margin: 0 auto; }
+      .header a.back { position: static; transform: none; display: block; margin-bottom: 6px; text-align: left; }
+    }
+  </style>
+</head>
+<body>
+<div class="header">
+  <a class="back" href="/">‹ 工具首頁</a>
+  <h1>🎓 SIC 線上課程</h1>
+</div>
+<div class="wrap">
+  <div class="notice">
+    <strong>觀看說明：</strong>課程在 Hahow 好學校平台上，需以公司的 Hahow 帳號登入後才能觀看。
+    點下方卡片會另開分頁到課程教室；畫面要求登入時，請輸入資訊人員另外提供的公司帳號密碼。
+    <br><strong>請注意：</strong>帳號密碼僅供公司同仁使用，請勿外流，也請勿修改密碼或帳號資料。
+  </div>
+  <div class="courses">
+    <a class="course-card" href="https://hahow.in/classroom/6146f0bb91c00f0007d87d06/lessons/61a3ab0f8a8bec000765bc0c/main" target="_blank" rel="noopener noreferrer">
+      <div class="course-avatar"><img src="img/avatar-powerquery.png" alt=""></div>
+      <div class="course-cover">
+        <img src="img/cover-powerquery.png" alt="Excel 高效神器：Power Query實戰教學 課程封面">
+        <span class="ribbon">上課囉</span>
+      </div>
+      <div class="course-body">
+        <div class="course-name">Excel 高效神器：Power Query實戰教學</div>
+        <div class="course-go">前往 Hahow 上課 ›</div>
+      </div>
+    </a>
+    <a class="course-card" href="https://hahow.in/classroom/60a37d9758ebab68b1891e03/lessons/6790c45e7ba1e0c3b3e19fb1/main" target="_blank" rel="noopener noreferrer">
+      <div class="course-avatar"><img src="img/avatar-excel-ai.png" alt=""></div>
+      <div class="course-cover">
+        <img src="img/cover-excel-ai.jpg" alt="資料變決策！Excel x AI 升級職場數據分析力 課程封面">
+        <span class="ribbon">上課囉</span>
+      </div>
+      <div class="course-body">
+        <div class="course-name">資料變決策！Excel x AI 升級職場數據分析力</div>
+        <div class="course-go">前往 Hahow 上課 ›</div>
+      </div>
+    </a>
+    <a class="course-card" href="https://hahow.in/classroom/5fc4a352d375951a03cc0d45/lessons/607835865333ec084b4e810f/main" target="_blank" rel="noopener noreferrer">
+      <div class="course-avatar"><img src="img/avatar-logic.png" alt=""></div>
+      <div class="course-cover">
+        <img src="img/cover-logic.png" alt="邏輯表達力-周震宇的口語邏輯優化課 課程封面">
+        <span class="ribbon">上課囉</span>
+      </div>
+      <div class="course-body">
+        <div class="course-name">邏輯表達力-周震宇的口語邏輯優化課</div>
+        <div class="course-go">前往 Hahow 上課 ›</div>
+      </div>
+    </a>
+  </div>
+  <div class="foot">課程由公司購買，僅供內部同仁學習使用。</div>
+</div>
+</body>
+</html>
