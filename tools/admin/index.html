@@ -1,6 +1,7 @@
 <!--
-  版本：v6.33
+  版本：v6.34
   版更記錄：
+  v6.34 (2026-10-21) [Claude Code / Opus 5.5] - 新增「總管理中心（本機）」卡片（🧭 → http://127.0.0.1:8778/，🚀 走新協定 ctrlcenter://open），排第一格（order -3，在 PVE -2 前面）：所有網站、本機工具、admin 卡片與待辦的入口心智圖。程式在 C:\Code\control-center\，協定註冊在 HKCU\Software\Classes\ctrlcenter → start.bat v0.2.0：先探 8778 有沒有在聽，有就只開瀏覽器，沒有才啟動服務。卡片只含 127.0.0.1 網址，不含內網資料。CARD_CONTENT_VERSION 33→34。
   v6.33 (2026-10-07) [Claude Code / Opus 5.5] - 新增「線上課程入口」連結卡片（🎓 → /courses/）：公司購買的 Hahow 三堂課入口頁（Power Query、Excel x AI、邏輯表達力），同事由工具首頁進入；卡片與頁面都不含帳號密碼。排在最後（order 30）。CARD_CONTENT_VERSION 32→33。
   v6.32 (2026-10-07) [Claude Code / Opus 5.5] - 新增「目標管理卡片」（🎯 → modal 說明書，🚀 走 ytcli://claude/ 開 Claude 載入 goal-management 技能）：半年一次的公司個人目標管理表代筆，AI 讀歷年原文與語氣守則，用使用者的口氣填上一期成果、擬新一期目標與方法手段，先交 md 草稿。目標原文與語氣守則都放在 Vault，不在本 repo 也不在技能資料夾；卡片不含任何目標內容。排在最後（order 29）。CARD_CONTENT_VERSION 31→32。
   v6.31 (2026-10-05) [Claude Code / Opus 5.5] - 新增「剪片小幫手（小關版）」卡片（✂️ → modal 說明書，🚀 走 ytcli://claude/ 開 Claude 載入 video-editing-xiaoguan 技能）：來源為小關（球長／關登元）分享的 Claude 剪片工作流，本機安裝在 C:\Code\video-editing-xiaoguan\，審片用該資料夾的 審片小幫手.bat。排在 Video Autopilot 後面（order 2.8）。同版把「Video Autopilot 剪輯」卡片與說明書標題改名為「HAO剪片（Video Autopilot）」，與技能說明的【HAO剪片】標註一致，方便和小關版區分。CARD_CONTENT_VERSION 30→31。
@@ -1665,7 +1666,7 @@ const getGroqKeyFn = httpsCallable(functions, 'getGroqKey');
 const getAssemblyAIKeyFn = httpsCallable(functions, 'getAssemblyAIKey');
 const ALLOWED_EMAIL = 'ohihio@gmail.com';
 const TOOLS_COL = 'admin_tools';
-const CARD_CONTENT_VERSION = 33;
+const CARD_CONTENT_VERSION = 34;
 const VIDEO_AGENT_PROMPTS = {
   talkcraft: '使用 video-talkcraft 技能製作影片。先讀 C:/Code/video-tools-launcher/LOCAL-SETUP.md，使用 C:/Code/video-talkcraft 的現有安裝與專屬 Python 環境。先問我稿子、配音、圖片所在位置，以及發布平台與畫幅；先做首鏡預覽。繁體中文，使用本機能力與現有訂閱，付費 API 先告知並等我確認。不要自動發布。',
   autopilot: '使用 video-autopilot 技能與已配置的 editkin MCP。先讀 C:/Code/video-tools-launcher/LOCAL-SETUP.md，再讀 C:/Code/video-autopilot-kit/SETUP.md，先問品牌、內容類型與製作設定三區。請使用本機媒體引擎與現有訂閱，先確認 MCP 可用及本次需要的能力；缺少時說明，不可偽造完成。先問素材路徑，工程限配置的 workspace，由我審片及發布。付費 API 先告知並等我確認。',
@@ -1718,6 +1719,7 @@ const DEFAULT_TOOLS = [
   { id: 'jev-ultrafast-local', title: 'Jev 瀏覽器 Agent（本機）', description: '極速視覺瀏覽器 Agent 決策儀表板；沒開按 🚀 啟動 8773', icon: '🌐', actionType: 'link', href: 'http://127.0.0.1:8773/', launchHref: 'jev://start', order: 26, createdAt: '2026-09-21T00:00:00+08:00' },
   { id: 'tradingview-desktop-mcp', title: 'TV 桌面直連（MCP）', description: 'CDP 直連本機 TradingView Desktop；即時讀取指標/副圖數值、畫線、自動截圖、Pine Script 編譯；支援 tv 指令', icon: '📈', actionType: 'modal', modalFn: 'openTvDesktopMcp', infoFn: 'openTvDesktopMcp', order: 27, createdAt: '2026-09-21T00:00:00+08:00' },
   { id: 'tradingview-chart-mcp', title: 'TV 背景快照（MCP）', description: 'Selenium 瀏覽器池背景拍圖，傳回多週期高清圖檔給 AI 視覺模型；已綁定 ulOiLJv4 圖表版面', icon: '📷', actionType: 'modal', modalFn: 'openTvChartMcp', infoFn: 'openTvChartMcp', order: 28, createdAt: '2026-09-21T00:00:00+08:00' },
+  { id: 'control-center-local', title: '總管理中心（本機）', description: '所有網站、工具與待辦的入口心智圖；沒開按 🚀 啟動 8778', icon: '🧭', actionType: 'link', href: 'http://127.0.0.1:8778/', launchHref: 'ctrlcenter://open', order: -3, createdAt: '2026-10-21T00:00:00+08:00' },
   { id: 'pve-vm102-console', title: 'PVE 主控台 VM 102（內網）', description: 'Proxmox 10.123.17.47 上 VM 102 的網頁主控台；僅公司內網可連', icon: '🗄️', actionType: 'link', href: 'https://10.123.17.47:8006/#v1:0:=qemu%2F102:4:=jsconsole::::::', order: -2, createdAt: '2026-09-30T00:00:00+08:00' },
   { id: 'sic-status-page', title: 'SIC 機房狀態（內網）', description: 'Uptime Kuma 狀態頁：15 項核心設備掉線與硬體健康一頁看完；異常同步推播 Telegram；僅公司內網可連', icon: '📡', actionType: 'link', href: 'http://10.123.17.49:3001/status/sic', order: 0.5, createdAt: '2026-09-30T00:00:00+08:00' },
   { id: 'goal-management', title: '目標管理卡片', description: '半年一次的目標管理表，AI 用你的口氣填成果、擬新目標；點卡看教學，🚀 開 Claude 寫目標', icon: '🎯', actionType: 'modal', modalFn: 'openGoalMgmt', infoFn: 'openGoalMgmt', launchHref: videoAgentHref('goal'), order: 29, createdAt: '2026-10-07T00:00:00+08:00' },
