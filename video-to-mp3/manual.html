@@ -1,0 +1,218 @@
+<!doctype html>
+<!--
+  影音工具操作說明
+  v1.0 2026-10-31 [Claude Code / Opus 5.5] 初版（使用者要求：程式右上角放「打開操作說明」連結）。
+  功能有變動時要一起改這份。
+-->
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>影音工具操作說明</title>
+<style>
+  :root {
+    --bg: #0f1216; --card: #171c23; --line: #262d38; --text: #e6edf3;
+    --muted: #8b98a8; --accent: #4d9fff; --warn: #e3b341;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: 16px; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.75 system-ui, "Microsoft JhengHei", sans-serif; }
+  .layout { max-width: 1040px; margin: 0 auto; padding: 24px 16px 64px;
+    display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 32px; }
+  nav { position: sticky; top: 16px; align-self: start; font-size: 14px; }
+  nav a { display: block; padding: 4px 8px; border-radius: 6px; color: var(--muted); text-decoration: none; }
+  nav a:hover { background: var(--card); color: var(--text); }
+  nav .sub { padding-left: 20px; font-size: 13px; }
+  h1 { font-size: 24px; margin: 0 0 4px; }
+  h2 { font-size: 20px; margin: 40px 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+  h3 { font-size: 16px; margin: 26px 0 8px; }
+  p { margin: 8px 0; }
+  ol, ul { margin: 8px 0; padding-left: 22px; }
+  li { margin: 4px 0; }
+  a { color: var(--accent); }
+  code { background: var(--card); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px;
+    font: 13px Consolas, "Microsoft JhengHei", monospace; overflow-wrap: anywhere; }
+  .lead { color: var(--muted); }
+  .tip, .warn { background: var(--card); border: 1px solid var(--line); border-left: 4px solid var(--accent);
+    border-radius: 8px; padding: 10px 14px; margin: 12px 0; }
+  .warn { border-left-color: var(--warn); }
+  .table { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 14px; }
+  th, td { border: 1px solid var(--line); padding: 7px 10px; text-align: left; vertical-align: top; }
+  th { background: var(--card); white-space: nowrap; }
+  @media (max-width: 760px) {
+    .layout { display: block; }
+    nav { position: static; margin-bottom: 20px; border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+<nav aria-label="目錄">
+  <a href="#start">開始使用</a>
+  <a href="#course">課程整理中心</a>
+  <a class="sub" href="#steps">基本流程</a>
+  <a class="sub" href="#source">選來源</a>
+  <a class="sub" href="#refs">參考資料</a>
+  <a class="sub" href="#refmap">每堂各配資料夾</a>
+  <a class="sub" href="#name">課程名稱</a>
+  <a class="sub" href="#outputs">產出項目</a>
+  <a class="sub" href="#executor">交給誰做</a>
+  <a class="sub" href="#progress">看進度</a>
+  <a class="sub" href="#where">檔案放哪裡</a>
+  <a href="#media">影音處理</a>
+  <a href="#ytdl">萬用下載</a>
+  <a href="#lexicon">字幕詞庫</a>
+  <a href="#materials">素材整理</a>
+  <a href="#faq">常見問題</a>
+</nav>
+<main>
+  <h1>影音工具操作說明</h1>
+  <p class="lead">在網頁上操作，由這台電腦處理。上方有五個分頁，下面依分頁說明。</p>
+
+  <h2 id="start">開始使用</h2>
+  <ul>
+    <li>工具網址是 <a href="/">http://127.0.0.1:8767/</a>。</li>
+    <li>打不開就雙擊 <code>video-to-mp3\start.bat</code> 啟動服務。</li>
+    <li>關掉網頁不會中斷課程任務，進度都存在各課程資料夾裡。</li>
+  </ul>
+
+  <h2 id="course">課程整理中心</h2>
+  <p>把錄音、錄影或網址，整理成逐字稿、摘要、培訓報告、心智圖、技能樹和全景學習手冊。實際內容由你選的 AI 產出。</p>
+
+  <h3 id="steps">基本流程</h3>
+  <ol>
+    <li>選來源（網址、單一檔案或資料夾）。</li>
+    <li>需要的話加入參考資料。</li>
+    <li>確認課程名稱。</li>
+    <li>勾選要產出的項目。</li>
+    <li>選執行者，按「建立任務」。</li>
+    <li>在下方「課程進度」看做到哪裡。</li>
+  </ol>
+
+  <h3 id="source">選來源</h3>
+  <div class="table"><table>
+    <tr><th>來源</th><th>怎麼選</th><th>會建幾堂課</th></tr>
+    <tr><td>網址</td><td>直接貼上。YouTube、Facebook、Instagram、X 等都可以</td><td>1 堂</td></tr>
+    <tr><td>單一檔案</td><td>在來源欄貼完整路徑</td><td>1 堂</td></tr>
+    <tr><td>資料夾</td><td>按「選資料夾」，再勾要做的項目</td><td>第一層每個媒體檔各 1 堂；每個子資料夾 1 堂，裡面的檔案依檔名合併</td></tr>
+  </table></div>
+  <div class="warn"><b>本機檔案會被搬走：</b>建立任務時，錄音或錄影會剪進課程資料夾並改名，原位置不會留下。非 MP3 的音檔之後會轉成 MP3，原音檔進資源回收桶。</div>
+
+  <h3 id="refs">參考資料</h3>
+  <p>把講義、簡報、活動資訊一起給 AI。分析時會和逐字稿一起看，人名和專有名詞也優先照參考資料寫。只出現在參考資料、課堂沒講的內容，會標註「（參考資料）」。</p>
+  <div class="table"><table>
+    <tr><th>給法</th><th>做法</th></tr>
+    <tr><td>貼文字</td><td>貼進文字框。有寫「講題：」「講師：」會優先拿來命名</td></tr>
+    <tr><td>加入簡報資料夾</td><td>連子資料夾一起收，可以加很多個</td></tr>
+    <tr><td>加入單一檔案</td><td>一次選一個，可以重複加</td></tr>
+    <tr><td>每堂各配一個資料夾</td><td>多堂課時使用，見下一節</td></tr>
+  </table></div>
+  <p><b>支援格式：</b>pptx（含備忘稿）、pdf、docx、txt、md 會自動抽出文字；圖片、舊版 ppt／doc、掃描版 PDF 由 AI 直接開檔看。其他格式會略過。</p>
+  <div class="tip"><b>AI 會先問你一件事：</b>開始讀參考資料前，它會告訴你檔案總共多大，並問你要「1 留一份在課程夾」或「2 不留、只記原檔位置」。參考檔建任務時會先複製進課程夾的 <code>參考資料</code>，選 2 才刪副本；你的原檔都不會動。資料夾批次時每堂各問一次。</div>
+
+  <h3 id="refmap">每堂各配一個資料夾</h3>
+  <p>一批錄音、每堂有自己的資料夾時使用，例如研討會每場一個照片資料夾。</p>
+  <ol>
+    <li>來源按「選資料夾」，選放錄音的資料夾，取消勾選不要的檔案。</li>
+    <li>參考資料區按「每堂各配一個資料夾（選上層）」，選裝著那些子資料夾的上層資料夾。</li>
+    <li>檢查對照表：每一列可以改配對的資料夾和課名。課名留空就用原檔名。</li>
+    <li>確認後按建立任務。</li>
+  </ol>
+  <p><b>自動配對規則：</b></p>
+  <ul>
+    <li>比錄音開始時間和資料夾最早的拍攝時間，相差 10 分鐘內才配。</li>
+    <li>完全對不上、而且錄音和資料夾數量相同時，才改看順序。</li>
+    <li>不到 1 分鐘的錄音多半是通話，不會自動配，會標 ⚠️。</li>
+    <li>沒配到任何一堂的資料夾會列在表格下方，由你決定。</li>
+  </ul>
+  <div class="tip">同時貼的文字和加入的資料夾，會給這批每一堂課共用。照片要 AI 逐張看，張數多時會比較慢，也更耗額度。</div>
+
+  <h3 id="name">課程名稱</h3>
+  <p>影片檔、課程資料夾和所有文件都用這個名字，建立前請看一眼。</p>
+  <ul>
+    <li><b>沒有參考資料：</b>用影片標題、檔名或資料夾名。</li>
+    <li><b>有參考資料：</b>自動帶入 <code>YYYYMMDD_課名</code>。課名依序取自：貼文字的「講題：」或「主題：」、簡報或 PDF 標題、貼文字第一行、檔名。有「講師：」會接在後面。</li>
+    <li><b>日期：</b>優先取來源檔名開頭的日期，沒有就用檔案修改日；網址來源用當天。</li>
+    <li><b>手動修改：</b>你改過的名字不會被蓋掉，但不會自動加日期。旁邊會多一顆「採用」讓你選建議名。</li>
+    <li><b>資料夾來源：</b>只勾一項時用課程名稱欄；勾多項時各用原檔名，或用對照表裡的課名。</li>
+  </ul>
+
+  <h3 id="outputs">產出項目</h3>
+  <div class="table"><table>
+    <tr><th>項目</th><th>說明</th></tr>
+    <tr><td>全景學習手冊</td><td>一個 HTML，內含摘要、心智圖、培訓報告、技能樹分頁</td></tr>
+    <tr><td>摘要、心智圖、培訓報告、技能樹</td><td>各一份文件；技能樹可選含教學、含最小案例</td></tr>
+    <tr><td>逐字稿</td><td>可選轉錄引擎，自動模式會依序嘗試</td></tr>
+    <tr><td>校對逐字稿</td><td>修專有名詞與人名，原稿保留</td></tr>
+    <tr><td>留言分析</td><td>YouTube 網址專用，一律會做</td></tr>
+    <tr><td>MP3、下載 MP4</td><td>MP4 只適用網址來源，可選畫質</td></tr>
+    <tr><td>完成後壓縮影片</td><td>全部做完才壓，比原檔小才取代，原檔進資源回收桶</td></tr>
+  </table></div>
+  <p>沒勾的項目 AI 不會做。AssemblyAI 說話者辨識要付費，只有你明確選它才會用。</p>
+
+  <h3 id="executor">交給誰做</h3>
+  <div class="table"><table>
+    <tr><th>選項</th><th>按下去之後</th></tr>
+    <tr><td>agy（預設）、Claude Code、Codex</td><td>建立任務，開新視窗交給它</td></tr>
+    <tr><td>只建任務，不送出</td><td>只建任務，再按「複製指令」貼進現有的 AI 對話</td></tr>
+  </table></div>
+
+  <h3 id="progress">看進度</h3>
+  <ul>
+    <li>「課程進度」會列出每堂課，按「重新整理」更新，點課名可開資料夾。</li>
+    <li>刪除鍵要按兩下，而且只把課程從清單移除，資料夾、影音和文件都保留。</li>
+  </ul>
+
+  <h3 id="where">檔案放哪裡</h3>
+  <div class="table"><table>
+    <tr><th>東西</th><th>位置</th></tr>
+    <tr><td>影片、MP3、同名字幕、進度檔</td><td>歸檔根目錄（預設 <code>D:\2026_已整理課程</code>）底下的課程資料夾</td></tr>
+    <tr><td>所有 <code>.md</code> 文件</td><td>課程資料夾的 <code>文件</code>。它是捷徑式的連結，實際存在 Vault</td></tr>
+    <tr><td>參考檔副本</td><td>課程資料夾的 <code>參考資料</code>（選「不留」就沒有）</td></tr>
+    <tr><td>參考資料的文字</td><td><code>文件\課程名_參考資料.md</code></td></tr>
+  </table></div>
+  <p>本機來源的文件在 Vault 的 <code>30_研究\課程逐字稿整理</code>，網址來源在 <code>30_研究\YouTube</code>。</p>
+
+  <h2 id="media">影音處理</h2>
+  <p>選「處理項目」，在路徑列前往資料夾，勾檔案後按「開始」。</p>
+  <div class="table"><table>
+    <tr><th>項目</th><th>結果</th></tr>
+    <tr><td>影片轉 MP3</td><td>同資料夾產生同檔名的 MP3</td></tr>
+    <tr><td>錄音檔合併、錄影檔合併</td><td>同資料夾產生合併檔；只能合併相同編碼格式的檔案</td></tr>
+    <tr><td>影片檔壓縮</td><td>把勾選的影片壓小</td></tr>
+  </table></div>
+
+  <h2 id="ytdl">萬用下載</h2>
+  <ol>
+    <li>貼網址，一行一個，可以一次貼多個。</li>
+    <li>勾 MP4、MP3，兩個都勾就各存一份。</li>
+    <li>確認存放資料夾，按「開始下載」。</li>
+  </ol>
+
+  <h2 id="lexicon">字幕詞庫</h2>
+  <p>讓轉錄更準，會影響之後的逐字稿。</p>
+  <ul>
+    <li><b>小抄詞：</b>辨識前先告訴 Whisper 會出現哪些名字。</li>
+    <li><b>錯字對照：</b>辨識後直接替換，處理小抄救不回來的錯字。</li>
+  </ul>
+
+  <h2 id="materials">素材整理</h2>
+  <p>顯示素材初步分類後的交接清單和下一步。這一頁只看不動，不會自動搬檔或呼叫 AI。</p>
+
+  <h2 id="faq">常見問題</h2>
+  <h3>課程名稱沒有照參考資料改？</h3>
+  <p>可能是你手動改過名字，或資料夾來源勾了多項。多項時請用「每堂各配一個資料夾」的對照表設定課名。</p>
+  <h3>可以用同一個資料夾給多堂課嗎？</h3>
+  <p>可以，但對照表會提醒，也會佔更多空間，因為每堂各複製一份。</p>
+  <h3>AI 沒有問我要不要留參考檔？</h3>
+  <p>非互動執行時沒人能回答，它會維持複製，並在進度紀錄裡註明沒問到。</p>
+  <h3>沒有課程資訊檔？</h3>
+  <p>建課時會去 Google 行事曆找同一天、標題相符的行程，找不到或授權失效就略過，不影響其他產物。授權失效時，在 <code>video-to-mp3</code> 資料夾執行 <code>python server.py --calendar-auth</code>。</p>
+  <h3>產出的 HTML 想畫線或改字？</h3>
+  <p>用另一個工具 <code>C:\Code\html-marker</code>：把 HTML 拖到 <code>start.bat</code> 上，就能畫螢光、改字並存回原檔。重新產生 HTML 時，手動改的內容會被蓋掉。</p>
+</main>
+</div>
+</body>
+</html>

@@ -1861,6 +1861,126 @@ class TestCourseReferences(unittest.TestCase):
         self.assertIn("【參考資料處理方式】", server.PAGE)
 
 
+class TestReferenceFolderPlan(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp_dir.name)
+        self.output_root = self.root / "out"
+        self.source = self.root / "1030"
+        self.source.mkdir()
+        self.refs = self.root / "照片"
+        self.refs.mkdir()
+        patcher = mock.patch.object(server, "probe_duration", side_effect=self._duration)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.durations = {}
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+
+    def _duration(self, path):
+        return self.durations.get(Path(path).name, 600.0)
+
+    def _recording(self, name, seconds=600.0):
+        (self.source / name).write_bytes(b"audio")
+        self.durations[name] = seconds
+
+    def _photo_folder(self, name, *times):
+        from PIL import Image
+        folder = self.refs / name
+        folder.mkdir()
+        for index, value in enumerate(times):
+            exif = Image.Exif()
+            exif[306] = value
+            Image.new("RGB", (4, 4)).save(folder / f"{index}.jpg", exif=exif)
+        return folder
+
+    def test_matches_by_time_not_name_order(self):
+        self._recording("20261030_102311.m4a")
+        self._recording("20261030_111913.mp3")
+        self._photo_folder("01_甲", "2026:10:30 11:19:40", "2026:10:30 11:30:00")
+        self._photo_folder("02_乙", "2026:10:30 10:23:50")
+        plan = server.plan_reference_folders(str(self.source), str(self.refs))
+        by_name = {row["name"]: row for row in plan["entries"]}
+        self.assertEqual(by_name["20261030_102311.m4a"]["folder"], "02_乙")
+        self.assertEqual(by_name["20261030_111913.mp3"]["folder"], "01_甲")
+        self.assertEqual(by_name["20261030_102311.m4a"]["matchBy"], "時間")
+        self.assertEqual(plan["unmatchedFolders"], [])
+        self.assertEqual({f["cleanName"] for f in plan["folders"]}, {"甲", "乙"})
+
+    def test_short_recording_and_far_folder_stay_unmatched(self):
+        self._recording("20261030_102311.m4a")
+        self._recording("WeChat_20261030_102330.m4a", 14.0)
+        self._photo_folder("01_甲", "2026:10:30 10:23:50")
+        self._photo_folder("共用現場", "2026:10:30 08:59:00", "2026:10:30 12:36:00")
+        plan = server.plan_reference_folders(str(self.source), str(self.refs))
+        by_name = {row["name"]: row for row in plan["entries"]}
+        self.assertEqual(by_name["20261030_102311.m4a"]["folder"], "01_甲")
+        self.assertTrue(by_name["WeChat_20261030_102330.m4a"]["tooShort"])
+        self.assertEqual(by_name["WeChat_20261030_102330.m4a"]["folder"], "")
+        self.assertEqual(plan["unmatchedFolders"], ["共用現場"])
+
+    def test_falls_back_to_order_only_when_counts_equal(self):
+        self._recording("20200101_080000_a.m4a")
+        self._recording("20200101_090000_b.m4a")
+        self._photo_folder("01_甲", "2026:10:30 10:00:00")
+        self._photo_folder("02_乙", "2026:10:30 11:00:00")
+        rows = server.plan_reference_folders(str(self.source), str(self.refs))["entries"]
+        self.assertEqual([(r["folder"], r["matchBy"]) for r in rows], [("01_甲", "順序"), ("02_乙", "順序")])
+        self._photo_folder("03_丙", "2026:10:30 12:00:00")
+        rows = server.plan_reference_folders(str(self.source), str(self.refs))["entries"]
+        self.assertEqual([r["folder"] for r in rows], ["", ""])
+
+    def test_batch_gives_each_course_its_own_folder(self):
+        self._recording("20261030_102311.m4a")
+        self._recording("20261030_111913.mp3")
+        first = self._photo_folder("01_甲", "2026:10:30 10:23:50")
+        second = self._photo_folder("02_乙", "2026:10:30 11:19:40")
+        results = server.create_course_batch(
+            "mp3_folder", str(self.source), "1030", output_root=str(self.output_root),
+            options={"references": {"text": "共用說明", "paths": []}},
+            entry_plans={
+                "20261030_102311.m4a": {"courseName": "20261030_甲", "referencePath": str(first)},
+                "20261030_111913.mp3": {"courseName": "20261030_乙", "referencePath": str(second)},
+            })
+        manifests = {m["courseName"]: m for m, _ in results}
+        self.assertEqual(set(manifests), {"20261030_甲", "20261030_乙"})
+        self.assertEqual(manifests["20261030_甲"]["references"]["sources"], [str(first)])
+        self.assertEqual(manifests["20261030_乙"]["references"]["sources"], [str(second)])
+        self.assertTrue(manifests["20261030_甲"]["references"]["hasPastedText"])
+        self.assertTrue(Path(manifests["20261030_甲"]["courseDir"], "20261030_甲.m4a").is_file())
+        self.assertTrue(next(first.iterdir()).is_file())    # 原資料夾不動
+
+    def test_entry_without_folder_gets_no_references(self):
+        self._recording("20261030_102311.m4a")
+        results = server.create_course_batch(
+            "mp3_folder", str(self.source), "1030", output_root=str(self.output_root),
+            entry_plans={"20261030_102311.m4a": {"courseName": "", "referencePath": ""}})
+        self.assertEqual(results[0][0]["courseName"], "20261030_102311")
+        self.assertNotIn("references", results[0][0])
+
+    def test_bad_input_rejected(self):
+        self._recording("a.m4a")
+        with self.assertRaises(ValueError):
+            server.plan_reference_folders(str(self.source), str(self.root / "不存在"))
+        with self.assertRaises(ValueError):
+            server.plan_reference_folders(str(self.source), str(self.refs))     # 沒有子資料夾
+        self._photo_folder("01_甲", "2026:10:30 10:00:00")
+        with self.assertRaises(ValueError):
+            server.plan_reference_folders(str(self.root / "不存在"), str(self.refs))
+
+    def test_manual_link_and_file(self):
+        self.assertIn('href="/manual"', server.PAGE)
+        self.assertIn("打開操作說明", server.PAGE)
+        manual = (Path(server.__file__).parent / "manual.html").read_text(encoding="utf-8")
+        for topic in ("參考資料", "每堂各配一個資料夾", "萬用下載", "字幕詞庫", "素材整理"):
+            self.assertIn(topic, manual)
+
+    def test_page_has_map_controls(self):
+        for marker in ('id="courseRefMapBox"', "/api/course/reference-map", "entryPlans"):
+            self.assertIn(marker, server.PAGE)
+
+
 class TestAdminIntegration(unittest.TestCase):
     def test_admin_has_pipeline_card_and_content_version(self):
         admin = Path(__file__).parents[2] / "tools" / "admin" / "index.html"

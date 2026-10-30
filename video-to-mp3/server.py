@@ -1,6 +1,12 @@
 """
 影音工具本機服務（影音網址下載 / 影片轉 MP3 / 影音合併 / 影片壓縮 / 圖檔轉 PDF）
 
+v1.29 2026-10-31 [Claude Code / Opus 5.5] 右上角加「打開操作說明」連結，說明書在同資料夾 manual.html（使用者要求）。
+
+v1.28 2026-10-31 [Claude Code / Opus 5.5] #course 參考資料可選上層資料夾，每堂課對應一個子資料夾（使用者要求）。
+                 /api/course/reference-map 依錄音開始時間與資料夾最早的拍攝時間自動配對（差 10 分鐘內），
+                 對不到才看順序；1 分鐘以內的錄音多半是通話，不自動配。網頁列對照表可改，建課走 entryPlans。
+
 v1.27 2026-10-30 [Claude Code / Opus 5.5] #course 加「參考資料」（使用者要求）：可貼文字、加入簡報資料夾或單檔。
                  (1) 建課時把檔案複製進 <課程夾>\參考資料\（來源保留），文字抽成 文件\<課程名>_參考資料.md；
                      pptx（含備忘稿）、pdf、docx、txt、md 由 8767 抽字，圖片、ppt、doc、抽不到字的 PDF 列進
@@ -1843,9 +1849,122 @@ def select_course_entries(folder, include=None) -> list:
     return picked
 
 
+# ── 每堂課對應一個參考資料夾（v1.28，2026-10-31）──────────────────────────
+REFERENCE_MATCH_TOLERANCE_SECONDS = 600
+SHORT_RECORDING_SECONDS = 60
+RECORDING_TIME_RES = (
+    re.compile(r"(?:^|\D)(20\d{2})(\d{2})(\d{2})[_-](\d{2})(\d{2})(\d{2})(?:\D|$)"),
+    re.compile(r"(?:^|\D)(20\d{2})-(\d{2})-(\d{2})[ _](\d{2})-(\d{2})-(\d{2})(?:\D|$)"),
+)
+
+
+def recording_start(path: Path, duration: float) -> datetime | None:
+    """錄音開始時間：檔名裡的時間最準；沒有就用修改時間減長度（修改時間是錄完的時候）。"""
+    for pattern in RECORDING_TIME_RES:
+        match = pattern.search(path.stem)
+        if match:
+            try:
+                return datetime(*map(int, match.groups()))
+            except ValueError:
+                pass
+    try:
+        return datetime.fromtimestamp(path.stat().st_mtime - duration)
+    except (OSError, ValueError):
+        return None
+
+
+def _photo_taken_at(path: Path) -> datetime | None:
+    try:
+        from PIL import Image
+        with Image.open(path) as image:
+            exif = image.getexif()
+            text = exif.get_ifd(0x8769).get(36867) or exif.get(306)
+        return datetime.strptime(str(text).strip(), "%Y:%m:%d %H:%M:%S")
+    except Exception:       # 壞圖、沒 EXIF、沒裝 Pillow 都改看檔案時間
+        return None
+
+
+def reference_folder_start(files: list) -> datetime | None:
+    """資料夾的開始時間：最早的拍攝時間；沒有拍攝時間才看檔案修改時間。"""
+    taken = [t for t in (_photo_taken_at(f) for f in files
+                         if f.suffix.lower() in REFERENCE_IMAGE_EXTENSIONS) if t]
+    if taken:
+        return min(taken)
+    stamps = []
+    for item in files:
+        try:
+            stamps.append(item.stat().st_mtime)
+        except OSError:
+            pass
+    return datetime.fromtimestamp(min(stamps)) if stamps else None
+
+
+def plan_reference_folders(source: str, reference_root: str) -> dict:
+    """列出每堂課建議對應的參考子資料夾。時間對不上就留空，交給使用者決定，不硬配。"""
+    root = Path(str(reference_root or "").strip())
+    if not root.is_dir():
+        raise ValueError(f"找不到參考資料的上層資料夾：{reference_root}")
+    entries = list_course_entries(source)
+    if not entries:
+        raise ValueError("來源要選裝著多個錄音的資料夾，才能每堂對應一個參考資料夾")
+    folders = []
+    for item in sorted((p for p in root.iterdir() if p.is_dir()), key=lambda p: p.name.lower()):
+        if item.name.startswith(("_", ".")):
+            continue
+        files = [row[0] for row in collect_reference_files([str(item)])]
+        if files:
+            start = reference_folder_start(files)
+            folders.append({
+                "name": item.name, "path": str(item), "fileCount": len(files), "start": start,
+                # 01_SUSE_可控AI工廠 的序號只是排序用，不是課名
+                "cleanName": re.sub(r"^\d+[\s._\-、]*", "", item.name) or item.name,
+            })
+    if not folders:
+        raise ValueError("上層資料夾底下沒有含參考資料的子資料夾")
+
+    rows = []
+    for item in entries:
+        first = list_part_media(item)[0] if item.is_dir() else item
+        duration = probe_duration(str(first)) if item.is_file() else 0.0
+        rows.append({
+            "name": item.name,
+            "stem": item.name if item.is_dir() else item.stem,
+            "start": recording_start(first, duration),
+            "tooShort": item.is_file() and 0 < duration <= SHORT_RECORDING_SECONDS,
+            "date": reference_name_date(source, item.name),
+            "folder": "", "matchBy": "",
+        })
+    pairs = sorted(
+        (abs((row["start"] - folder["start"]).total_seconds()), r_index, f_index)
+        for r_index, row in enumerate(rows) if row["start"] and not row["tooShort"]
+        for f_index, folder in enumerate(folders) if folder["start"])
+    used_rows, used_folders = set(), set()
+    for gap, r_index, f_index in pairs:
+        if gap <= REFERENCE_MATCH_TOLERANCE_SECONDS and r_index not in used_rows and f_index not in used_folders:
+            rows[r_index].update(folder=folders[f_index]["name"], matchBy="時間")
+            used_rows.add(r_index)
+            used_folders.add(f_index)
+    candidates = [row for row in rows if not row["tooShort"]]
+    if not used_rows and len(candidates) == len(folders):
+        # 檔案時間全對不上（例如複製過）才看順序，數量一樣才算數
+        for row, folder in zip(candidates, folders):
+            row.update(folder=folder["name"], matchBy="順序")
+        used_folders = set(range(len(folders)))
+
+    def clock(value):
+        return value.strftime("%H:%M") if value else ""
+
+    return {
+        "root": str(root),
+        "entries": [dict(row, start=clock(row["start"])) for row in rows],
+        "folders": [dict(folder, start=clock(folder["start"])) for folder in folders],
+        "unmatchedFolders": [f["name"] for i, f in enumerate(folders) if i not in used_folders],
+    }
+
+
 def create_course_batch(source_type: str, source_val: str, course_name: str = "",
                         options: dict | None = None, output_root: str | None = None,
-                        include=None, entry_name: str = "") -> list:
+                        include=None, entry_name: str = "", entry_plans: dict | None = None) -> list:
     """一次建立多份 manifest。
 
     使用者選到**資料夾**（mp3_folder）＝容器：第一層的每個媒體檔各一堂課，
@@ -1854,6 +1973,7 @@ def create_course_batch(source_type: str, source_val: str, course_name: str = ""
 
     `include` 是網頁上勾選的第一層項目名稱；None 代表整批全要。
     `entry_name` 是只勾一項時使用者要的課程名；勾多項時不適用，各堂仍用自己的名字。
+    `entry_plans` 是每堂自己的設定：{項目名稱: {"courseName": 課名, "referencePath": 參考資料夾}}，優先於 entry_name。
     """
     source_val = str(source_val or "").strip()
     source_type = resolve_course_source_type(source_type, source_val)
@@ -1878,9 +1998,18 @@ def create_course_batch(source_type: str, source_val: str, course_name: str = ""
             per_name = item.stem
         if entry_name and len(entries) == 1:
             per_name = entry_name
+        per_options = options
+        plan = (entry_plans or {}).get(item.name) or {}
+        if str(plan.get("courseName") or "").strip():
+            per_name = str(plan["courseName"]).strip()
+        if str(plan.get("referencePath") or "").strip():
+            shared = dict((options or {}).get("references") or {})
+            shared["text"] = shared.get("text", "")
+            shared["paths"] = list(shared.get("paths", [])) + [str(plan["referencePath"]).strip()]
+            per_options = dict(options or {}, references=shared)
         try:
             results.append(create_course_manifest(
-                per_type, str(item), per_name, options=options, output_root=output_root))
+                per_type, str(item), per_name, options=per_options, output_root=output_root))
         except (ValueError, OSError) as exc:
             # 全有全無：一個檔搬不動，這批已經建好的課程也全部撤回，不留下半批。
             leftovers = []
@@ -3506,7 +3635,8 @@ PAGE = r"""<!doctype html>
 </style>
 </head>
 <body>
-<header>
+<header style="position:relative">
+  <a id="manualLink" href="/manual" target="_blank" rel="noopener" style="position:absolute;top:20px;right:24px;color:var(--accent);font-size:14px">打開操作說明</a>
   <h1>🎬 影音工具</h1>
   <div class="sub">網頁操作、本機處理。檔案不上傳，轉檔輸出寫回原資料夾。</div>
   <div class="tabs">
@@ -3595,8 +3725,14 @@ PAGE = r"""<!doctype html>
     <div class="row" style="margin-top:8px">
       <button id="courseRefPickFolder" onclick="pickCourseReference('folder')">加入簡報資料夾</button>
       <button id="courseRefPickFile" onclick="pickCourseReference('file')">加入單一檔案</button>
+      <button id="courseRefPickRoot" onclick="pickCourseRefRoot()" title="來源選裝著多個錄音的資料夾時使用">每堂各配一個資料夾（選上層）</button>
     </div>
     <ul class="files" id="courseRefList"></ul>
+    <div class="note hide" id="courseRefMapBox">
+      <div id="courseRefMapHead"></div>
+      <table style="width:100%;margin-top:6px;border-collapse:collapse"><tbody id="courseRefMapRows"></tbody></table>
+      <div id="courseRefMapFoot" style="margin-top:6px"></div>
+    </div>
     <div class="note" id="courseRefNote">
       支援 pptx（含備忘稿）、pdf、docx、txt、md、圖片、ppt、doc；資料夾會連子資料夾一起收。檔案是<b>複製</b>進課程夾的「參考資料」，原檔不動。
     </div>
@@ -3844,6 +3980,7 @@ function setCourseType(type) { $('courseType').value = type || ''; }
 function markCourseSourceDirty() {
   const source = $('courseSource').value.trim();
   courseNameManual = false;
+  clearCourseRefMap();
   setCourseType(/^https?:\/\//i.test(source) ? 'url' : '');
   syncCourseArtifacts();
 }
@@ -3855,7 +3992,96 @@ let courseNameManual = false;
 
 function courseRefText() { return $('courseRefText').value.trim(); }
 
+// 每堂各配一個資料夾（v1.28）：對照表只顯示有勾的課，使用者改過的選擇留在 courseRefMap。
+let courseRefMap = null;
+
+function clearCourseRefMap() {
+  courseRefMap = null;
+  renderCourseRefMap();
+}
+
+async function pickCourseRefRoot() {
+  const result = $('courseResult');
+  if (!courseArtifactState().batch) {
+    result.textContent = '❌ 來源要先選裝著多個錄音的資料夾，才能每堂各配一個參考資料夾。';
+    return;
+  }
+  result.textContent = '請在本機視窗選擇參考資料的上層資料夾…';
+  try {
+    const picked = await coursePost('/api/course/pick', { kind: 'reference', sourceType: 'folder', initial: '' });
+    if (picked.cancelled) { result.textContent = '已取消選擇。'; return; }
+    result.textContent = '正在比對錄音與資料夾的時間…';
+    courseRefMap = await coursePost('/api/course/reference-map', { source: $('courseSource').value.trim(), root: picked.picked });
+    courseRefMap.entries.forEach(row => { row.courseName = row.folder ? courseRefMapName(row) : ''; });
+    result.textContent = `✅ 已比對：${picked.picked}，請確認下面的對照表。`;
+  } catch (error) {
+    courseRefMap = null;
+    result.textContent = `❌ ${error.message}`;
+  }
+  renderCourseRefMap();
+}
+
+function courseRefMapName(row) {
+  const folder = courseRefMap.folders.find(item => item.name === row.folder);
+  return folder ? `${row.date}_${folder.cleanName}` : '';
+}
+
+function renderCourseRefMap() {
+  const box = $('courseRefMapBox');
+  const rows = $('courseRefMapRows');
+  box.classList.toggle('hide', !courseRefMap);
+  rows.replaceChildren();
+  if (!courseRefMap) return;
+  $('courseRefMapHead').textContent = `每堂課對應的參考資料（${courseRefMap.root}）：可以改，課名留空就用原檔名。`;
+  const shown = courseRefMap.entries.filter(row => courseEntryChecked.has(row.name));
+  shown.forEach(row => {
+    const tr = document.createElement('tr');
+    const label = document.createElement('td');
+    label.textContent = (row.tooShort ? '⚠️ 不到 1 分鐘，可能是通話：' : '') + row.name + (row.start ? `（${row.start}）` : '');
+    const pickCell = document.createElement('td');
+    const select = document.createElement('select');
+    select.append(new Option('不配參考資料', ''));
+    courseRefMap.folders.forEach(folder => {
+      select.append(new Option(`${folder.name}（${folder.fileCount} 個檔${folder.start ? '，' + folder.start + ' 起' : ''}）`, folder.name));
+    });
+    select.value = row.folder;
+    const nameCell = document.createElement('td');
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.spellcheck = false;
+    input.placeholder = row.stem;
+    input.value = row.courseName;
+    input.oninput = () => { row.courseName = input.value; };
+    select.onchange = () => {
+      row.folder = select.value;
+      row.matchBy = '手動';
+      row.courseName = courseRefMapName(row);
+      input.value = row.courseName;
+    };
+    pickCell.append(select);
+    nameCell.append(input);
+    tr.append(label, pickCell, nameCell);
+    rows.append(tr);
+  });
+  const chosen = new Set(shown.map(row => row.folder).filter(Boolean));
+  const idle = courseRefMap.folders.map(item => item.name).filter(name => !chosen.has(name));
+  const repeated = shown.filter(row => row.folder).length !== chosen.size;
+  $('courseRefMapFoot').textContent = (idle.length ? `沒配到任何一堂：${idle.join('、')}。` : '')
+    + (repeated ? '⚠️ 有資料夾同時配給好幾堂。' : '');
+}
+
+function courseEntryPlans() {
+  if (!courseRefMap) return undefined;
+  const plans = {};
+  courseRefMap.entries.filter(row => courseEntryChecked.has(row.name)).forEach(row => {
+    const folder = courseRefMap.folders.find(item => item.name === row.folder);
+    plans[row.name] = { courseName: row.courseName.trim(), referencePath: folder ? folder.path : '' };
+  });
+  return plans;
+}
+
 function renderCourseRefs() {
+  renderCourseRefMap();
   $('courseRefList').innerHTML = courseRefPaths.map((path, i) =>
     `<li>${esc(path)} <button onclick="removeCourseRef(${i})">移除</button></li>`).join('');
   const box = $('courseRefSuggest');
@@ -4247,6 +4473,7 @@ async function pickCourseSource(mode) {
     $('courseSource').value = data.picked;
     setCourseType(data.sourceType);
     courseNameManual = false;
+    clearCourseRefMap();
     $('courseName').value = data.courseName;
     syncCourseArtifacts();
     await previewCourseSource();
@@ -4514,7 +4741,9 @@ async function startCourseCreate() {
   await refreshReferenceName();
   const st = courseArtifactState();
   const refText = courseRefText();
-  st.hasRefs = !!refText || courseRefPaths.length > 0;
+  const entryPlans = st.batch ? courseEntryPlans() : undefined;
+  st.hasRefs = !!refText || courseRefPaths.length > 0
+    || !!(entryPlans && Object.values(entryPlans).some(plan => plan.referencePath));
   if (st.batch && !courseEntryChecked.size) {
     result.textContent = '❌ 清單裡一項都沒勾，請至少勾一項再建立任務。';
     return;
@@ -4531,6 +4760,7 @@ async function startCourseCreate() {
         courseName: $('courseName').value.trim(),
         // 資料夾來源只建被勾起來的那幾項；網址與單一檔案不送這個欄位
         include: st.batch ? [...courseEntryChecked] : undefined,
+        entryPlans,
         // 只勾一項時，上面的課程名稱欄才代表這堂課；沒參考資料也沒手動改過時，欄裡只是資料夾名，不送。
         entryName: st.batch && courseSingleEntry() && (courseNameManual || (courseRefSuggestion && courseRefSuggestion.courseName))
           ? $('courseName').value.trim() : undefined,
@@ -4550,7 +4780,7 @@ async function startCourseCreate() {
           enginePriority: st.priority,
           skillTreeMode: st.mode,
           minimumExample: st.mode === 3,
-          references: st.hasRefs ? { text: refText, paths: courseRefPaths } : undefined
+          references: (refText || courseRefPaths.length) ? { text: refText, paths: courseRefPaths } : undefined
         }
       })
     });
@@ -4562,6 +4792,7 @@ async function startCourseCreate() {
     $('courseRefText').value = '';
     courseRefPaths = [];
     courseRefSuggestion = null;
+    courseRefMap = null;
     renderCourseRefs();
     $('courseCopyPrompt').classList.remove('hide');
     const cli = courseExecutor();
@@ -4750,6 +4981,11 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(code, payload, ctype)
                 return
 
+        if url.path == "/manual":
+            self._send(200, (Path(__file__).resolve().parent / "manual.html").read_bytes(),
+                       "text/html; charset=utf-8")
+            return
+
         if url.path in ("/", "/index.html"):
             page = (PAGE
                     .replace("%DEFAULT_VIDEO%", json.dumps(DEFAULT_VIDEO_DIR))
@@ -4856,6 +5092,19 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self._json({"courseName": course_name, "sourceType": resolved_type})
 
+        elif url.path == "/api/course/reference-map":
+            length = int(self.headers.get("Content-Length", 0))
+            try:
+                payload = json.loads(self.rfile.read(length) or b"{}")
+                if not isinstance(payload, dict):
+                    raise ValueError("JSON body 必須是 object")
+                plan = plan_reference_folders(str(payload.get("source") or "").strip(),
+                                              str(payload.get("root") or ""))
+            except (json.JSONDecodeError, ValueError, TypeError, OSError) as exc:
+                self._json({"error": str(exc)}, 400)
+                return
+            self._json(plan)
+
         elif url.path == "/api/course/reference-name":
             length = int(self.headers.get("Content-Length", 0))
             try:
@@ -4951,6 +5200,9 @@ class Handler(BaseHTTPRequestHandler):
                 include = payload.get("include")
                 if include is not None and not isinstance(include, list):
                     raise ValueError("include 必須是陣列")
+                entry_plans = payload.get("entryPlans")
+                if entry_plans is not None and not isinstance(entry_plans, dict):
+                    raise ValueError("entryPlans 必須是 object")
                 results = create_course_batch(
                     (payload.get("sourceType") or "").strip(),
                     (payload.get("source") or "").strip(),
@@ -4959,6 +5211,7 @@ class Handler(BaseHTTPRequestHandler):
                     output_root=(payload.get("outputRoot") or COURSE_ROOT).strip(),
                     include=include,
                     entry_name=str(payload.get("entryName") or "").strip(),
+                    entry_plans=entry_plans,
                 )
             except (json.JSONDecodeError, ValueError, TypeError, OSError) as exc:
                 self._json({"error": str(exc)}, 400)
