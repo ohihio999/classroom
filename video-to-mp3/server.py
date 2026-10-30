@@ -1,6 +1,9 @@
 """
 影音工具本機服務（影音網址下載 / 影片轉 MP3 / 影音合併 / 影片壓縮 / 圖檔轉 PDF）
 
+v1.30 2026-10-31 [Claude Code / Opus 5.5] 參考檔不再問留不留，一律複製進課程夾；圖片複製時壓成 JPG、長邊 2000、Q85
+                 （使用者看過投影片比較檔後裁定）。只縮不放大；已是 JPG 又壓得比原檔大就留原檔；壓不動的照原樣複製。
+
 v1.29 2026-10-31 [Claude Code / Opus 5.5] 右上角加「打開操作說明」連結，說明書在同資料夾 manual.html（使用者要求）。
 
 v1.28 2026-10-31 [Claude Code / Opus 5.5] #course 參考資料可選上層資料夾，每堂課對應一個子資料夾（使用者要求）。
@@ -1035,6 +1038,8 @@ COURSE_REFERENCE_DIR_NAME = "參考資料"
 REFERENCE_TEXT_EXTENSIONS = {".txt", ".md"}
 REFERENCE_PARSED_EXTENSIONS = REFERENCE_TEXT_EXTENSIONS | {".pptx", ".pdf", ".docx"}
 REFERENCE_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
+REFERENCE_IMAGE_LONG_SIDE = 2000
+REFERENCE_IMAGE_QUALITY = 85
 REFERENCE_EXTENSIONS = REFERENCE_PARSED_EXTENSIONS | REFERENCE_IMAGE_EXTENSIONS | {".ppt", ".doc"}
 # 取標題時簡報優先：講者自己下的標題比散落的文字檔可靠。
 REFERENCE_TITLE_PRIORITY = {".pptx": 0, ".pdf": 1, ".docx": 2, ".md": 3, ".txt": 3}
@@ -1256,6 +1261,40 @@ def _unique_path(path: Path) -> Path:
     return candidate
 
 
+def copy_reference_image(source: Path, target: Path) -> tuple:
+    """把圖片壓成 JPG 放到 target（副檔名會換成 .jpg），回傳 (實際路徑, 有沒有壓縮)。原檔不動。"""
+    final = _unique_path(target.with_suffix(".jpg"))
+    try:
+        from PIL import Image, ImageOps
+        with Image.open(source) as opened:
+            icc = opened.info.get("icc_profile")
+            image = ImageOps.exif_transpose(opened)
+            exif = image.getexif().tobytes()
+            if image.mode in ("RGBA", "LA", "PA") or "transparency" in image.info:
+                # JPG 沒有透明，透明處墊白底，投影片截圖才不會變黑
+                rgba = image.convert("RGBA")
+                image = Image.new("RGB", rgba.size, "white")
+                image.paste(rgba, mask=rgba.getchannel("A"))
+            else:
+                image = image.convert("RGB")
+            image.thumbnail((REFERENCE_IMAGE_LONG_SIDE, REFERENCE_IMAGE_LONG_SIDE), Image.LANCZOS)
+            options = {"icc_profile": icc} if icc else {}
+            image.save(final, "JPEG", quality=REFERENCE_IMAGE_QUALITY, optimize=True,
+                       subsampling="4:2:0", exif=exif, **options)
+        shutil.copystat(source, final)
+    except Exception:   # 壞圖、怪格式、沒裝 Pillow 都不能擋建課，照原樣複製交給 AI 判斷；真的磁碟滿，下面複製時會報錯
+        final.unlink(missing_ok=True)
+    if final.exists():
+        # 原圖本來就壓得很小時，再壓一次反而變大又更糊
+        if source.suffix.lower() in (".jpg", ".jpeg") and final.stat().st_size >= source.stat().st_size:
+            shutil.copy2(source, final)
+            return final, False
+        return final, True
+    raw = _unique_path(target)
+    shutil.copy2(source, raw)
+    return raw, False
+
+
 def remove_course_references(info: dict) -> None:
     """撤銷建課用：只刪這次複製進來的檔案與抽字 MD，來源檔不動。"""
     targets = [entry.get("copiedTo", "") for entry in info.get("files", [])] + [info.get("textFile", "")]
@@ -1283,12 +1322,17 @@ def attach_course_references(clean_name: str, course_dir: Path, docs_dir: Path, 
     sections = [f"## 使用者貼上的文字\n\n{refs['text']}"] if refs["text"] else []
     try:
         for source, relative in collect_reference_files(refs["paths"], exclude_dir=course_dir):
-            target = _unique_path(copied_dir / relative)
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(source, target)
+            (copied_dir / relative).parent.mkdir(parents=True, exist_ok=True)
+            compressed = False
+            if source.suffix.lower() in REFERENCE_IMAGE_EXTENSIONS:
+                target, compressed = copy_reference_image(source, copied_dir / relative)
+            else:
+                target = _unique_path(copied_dir / relative)
+                shutil.copy2(source, target)
             info["copiedDir"] = str(copied_dir)
             info["totalBytes"] += target.stat().st_size
-            entry = {"name": relative.as_posix(), "copiedTo": str(target), "status": "direct_read", "chars": 0}
+            entry = {"name": relative.as_posix(), "copiedTo": str(target), "status": "direct_read", "chars": 0,
+                     "compressed": compressed}
             info["files"].append(entry)
             if source.suffix.lower() in REFERENCE_PARSED_EXTENSIONS:
                 try:
@@ -1619,7 +1663,6 @@ def create_course_manifest(source_type: str, source_val: str, course_name: str,
                 transcription_criterion + engine_criteria.get(engine, "")),
             "reference_review": _stage_for(
                 references is not None,
-                "開始前已當場問過使用者參考檔要留一份在課程夾或只記原檔位置，evidence 記錄答案（沒人能回答就維持複製並註明）；"
                 "已讀完 references.textFile 全文，並直接開過 references.needsDirectRead 列的每個檔案"
                 "（打不開的寫進 evidence，不得假裝看過）；evidence 記錄讀了幾份，並列出參考資料裡的專有名詞、人名與主要章節"),
             "transcript_review": _stage_for(
@@ -4623,11 +4666,7 @@ function buildCoursePrompt(manifestPaths, st) {
         + (st.isUrl ? '網址來源例外：全景學習手冊 HTML 寫進「文件」（Vault），不放 courseDir 第一層；MD 頂端連結改用同資料夾相對路徑。' : '')
       : '')
     + (st.hasRefs
-      ? '\n【參考資料】manifest 有 references 時，reference_review 要讀完 references.textFile 全文，並直接開 references.needsDirectRead 列的檔案（圖片、舊版 ppt／doc、抽不到字的 PDF）。校對的專有名詞與人名優先以參考資料為準；摘要、培訓報告、心智圖、技能樹都要把參考資料和逐字稿一起分析，只出現在參考資料、課堂沒講的內容標註「（參考資料）」。課程名稱已定案，不要自行改名。'
-        + '\n【參考資料處理方式】開始讀參考資料前，先當場問我：「這次的 PPT、照片、參考文件要 1 留一份在課程夾，還是 2 不留、只記原檔位置？」問的時候要說檔案總共多大（references.totalBytes 換算成 MB 或 GB；只有貼文字就說沒有檔案）。這是「中途不要停下來」的唯一例外，等我回答再繼續；批次時每堂各問一次。'
-        + '選 2：只刪 references.files 各項 copiedTo 指的檔案與變空的「參考資料」資料夾，原檔不動，needsDirectRead 改指原檔（原檔在 references.sources）。'
-        + '當下沒人能回答（非互動執行）就維持複製，evidence 註明未問到。'
-        + '每次答案追加到 D:\\本機MD檔\\20_專案\\_進行中\\20261030-8767參考資料處理習慣-進度.md 的紀錄表；連續 3 次答案相同就提醒我可以寫進程式，等我同意才改。'
+      ? '\n【參考資料】manifest 有 references 時，reference_review 要讀完 references.textFile 全文，並直接開 references.needsDirectRead 列的檔案（圖片、舊版 ppt／doc、抽不到字的 PDF）。校對的專有名詞與人名優先以參考資料為準；摘要、培訓報告、心智圖、技能樹都要把參考資料和逐字稿一起分析，只出現在參考資料、課堂沒講的內容標註「（參考資料）」。課程名稱已定案，不要自行改名。課程夾「參考資料」裡的圖片是壓縮過的副本（JPG、長邊 2000、Q85），字看不清楚才開 references.sources 裡的原檔；不要刪這些副本，也不要問我要不要留。'
       : '')
     + multi;
 }

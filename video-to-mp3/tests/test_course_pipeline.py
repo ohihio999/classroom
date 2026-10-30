@@ -23,13 +23,15 @@ _VAULT_ORIG = None
 def setUpModule():
     global _VAULT_TMP, _VAULT_ORIG
     _VAULT_TMP = tempfile.TemporaryDirectory()
-    _VAULT_ORIG = (server.VAULT_COURSE_MD_ROOT, server.VAULT_URL_MD_ROOT)
+    _VAULT_ORIG = (server.VAULT_COURSE_MD_ROOT, server.VAULT_URL_MD_ROOT, server.CALENDAR_TOKEN_FILE)
     server.VAULT_COURSE_MD_ROOT = str(Path(_VAULT_TMP.name) / "課程逐字稿整理")
     server.VAULT_URL_MD_ROOT = str(Path(_VAULT_TMP.name) / "YouTube")
+    # 2026-10-31：權杖有效時，每個建課測試都會真的連 Google 查行事曆，又慢又碰真實帳號。
+    server.CALENDAR_TOKEN_FILE = Path(_VAULT_TMP.name) / "沒有權杖.json"
 
 
 def tearDownModule():
-    server.VAULT_COURSE_MD_ROOT, server.VAULT_URL_MD_ROOT = _VAULT_ORIG
+    server.VAULT_COURSE_MD_ROOT, server.VAULT_URL_MD_ROOT, server.CALENDAR_TOKEN_FILE = _VAULT_ORIG
     _VAULT_TMP.cleanup()
 
 
@@ -1853,12 +1855,79 @@ class TestCourseReferences(unittest.TestCase):
         deck.write_bytes(b"12345")
         manifest, _ = self._create({"text": "", "paths": [str(deck)]})
         self.assertEqual(manifest["references"]["totalBytes"], 5)
-        self.assertIn("totalBytes", server.PAGE)
+
+    def _photo(self, path, size, **save):
+        from PIL import Image
+        import random
+        rng = random.Random(1)
+        noise = Image.frombytes("RGB", size, rng.randbytes(size[0] * size[1] * 3))
+        noise.save(path, **save)
+        return path
+
+    def test_big_jpg_shrinks_to_spec_and_original_kept(self):
+        from PIL import Image
+        src = self._photo(self.deck_dir / "投影片.jpg", (3000, 1500), quality=98)
+        before = src.read_bytes()
+        target, compressed = server.copy_reference_image(src, self.root / "壓縮後.jpg")
+        self.assertTrue(compressed)
+        with Image.open(target) as image:
+            self.assertEqual(image.size, (2000, 1000))
+            self.assertEqual(image.format, "JPEG")
+        self.assertEqual(src.read_bytes(), before)
+
+    def test_small_image_not_enlarged(self):
+        from PIL import Image
+        src = self._photo(self.deck_dir / "小圖.png", (400, 300))
+        target, compressed = server.copy_reference_image(src, self.root / "小圖.png")
+        self.assertEqual(target.suffix, ".jpg")
+        with Image.open(target) as image:
+            self.assertEqual(image.size, (400, 300))
+
+    def test_small_jpg_kept_when_recompress_is_bigger(self):
+        src = self._photo(self.deck_dir / "已壓.jpg", (200, 200), quality=30)
+        target, compressed = server.copy_reference_image(src, self.root / "已壓.jpg")
+        self.assertFalse(compressed)
+        self.assertEqual(target.read_bytes(), src.read_bytes())
+
+    def test_transparent_png_gets_white_background(self):
+        from PIL import Image
+        src = self.deck_dir / "透明.png"
+        Image.new("RGBA", (10, 10), (0, 0, 0, 0)).save(src)
+        target, _ = server.copy_reference_image(src, self.root / "透明.png")
+        with Image.open(target) as image:
+            self.assertGreater(min(image.convert("RGB").getpixel((5, 5))), 240)
+
+    def test_exif_rotation_applied(self):
+        from PIL import Image
+        src = self.deck_dir / "直拍.jpg"
+        exif = Image.Exif()
+        exif[274] = 6       # 順時針轉 90 度才是正的
+        self._photo(src, (300, 100), quality=95, exif=exif)
+        target, _ = server.copy_reference_image(src, self.root / "直拍.jpg")
+        with Image.open(target) as image:
+            self.assertEqual(image.size, (100, 300))
+
+    def test_broken_image_copied_as_is(self):
+        src = self.deck_dir / "壞圖.png"
+        src.write_bytes(b"not an image")
+        target, compressed = server.copy_reference_image(src, self.root / "壞圖.png")
+        self.assertFalse(compressed)
+        self.assertEqual(target.suffix, ".png")
+        self.assertEqual(target.read_bytes(), b"not an image")
+
+    def test_same_stem_png_and_jpg_do_not_overwrite(self):
+        self._photo(self.deck_dir / "同名.png", (300, 200))
+        self._photo(self.deck_dir / "同名.jpg", (300, 200), quality=95)
+        manifest, _ = self._create({"text": "", "paths": [str(self.deck_dir)]})
+        copied = [Path(entry["copiedTo"]) for entry in manifest["references"]["files"]]
+        self.assertEqual(len(set(copied)), 2)
+        self.assertTrue(all(path.is_file() for path in copied))
+        self.assertEqual(manifest["references"]["totalBytes"], sum(path.stat().st_size for path in copied))
 
     def test_page_has_reference_controls(self):
         self.assertIn('id="courseRefText"', server.PAGE)
         self.assertIn("/api/course/reference-name", server.PAGE)
-        self.assertIn("【參考資料處理方式】", server.PAGE)
+        self.assertNotIn("【參考資料處理方式】", server.PAGE)
 
 
 class TestReferenceFolderPlan(unittest.TestCase):
