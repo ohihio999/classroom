@@ -1671,6 +1671,196 @@ class TestUrlSourceDedup(unittest.TestCase):
         self.assertIn("dedup.mode 是 reuse", page)
 
 
+def _make_pptx(path, slides):
+    """最小可解析的 pptx：slides 是 (標題, 內文, 備忘稿) 依放映順序；檔名序號故意倒過來。"""
+    import zipfile
+    a = 'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"'
+    p = 'xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"'
+    r = 'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"'
+    rel = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+    count = len(slides)
+    with zipfile.ZipFile(path, "w") as z:
+        ids = "".join(f'<p:sldId id="{256 + i}" r:id="rId{i + 1}"/>' for i in range(count))
+        z.writestr("ppt/presentation.xml", f"<p:presentation {p} {r}><p:sldIdLst>{ids}</p:sldIdLst></p:presentation>")
+        rows = "".join(f'<Relationship Id="rId{i + 1}" Type="{rel}/slide" Target="slides/slide{count - i}.xml"/>'
+                       for i in range(count))
+        z.writestr("ppt/_rels/presentation.xml.rels", f"<Relationships>{rows}</Relationships>")
+        for i, (title, body, notes) in enumerate(slides):
+            number = count - i
+            z.writestr(f"ppt/slides/slide{number}.xml", (
+                f"<p:sld {p} {a}><p:sp><p:ph type=\"title\"/><a:p><a:r><a:t>{title}</a:t></a:r></a:p></p:sp>"
+                f"<p:sp><a:p><a:r><a:t>{body}</a:t></a:r></a:p></p:sp></p:sld>"))
+            if notes:
+                z.writestr(f"ppt/slides/_rels/slide{number}.xml.rels", (
+                    f'<Relationships><Relationship Id="rId1" Type="{rel}/notesSlide" '
+                    f'Target="../notesSlides/notesSlide{number}.xml"/></Relationships>'))
+                z.writestr(f"ppt/notesSlides/notesSlide{number}.xml", (
+                    f"<p:notes {p} {a}><a:p><a:r><a:t>{notes}</a:t></a:r></a:p><a:p><a:r><a:t>{number}</a:t></a:r></a:p></p:notes>"))
+
+
+class TestCourseReferences(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp_dir.name)
+        self.output_root = self.root / "out"
+        self.media = self.root / "錄音 01.mp3"
+        self.media.write_bytes(b"audio")
+        self.deck_dir = self.root / "簡報"
+        (self.deck_dir / "附件").mkdir(parents=True)
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+
+    def _create(self, references, name="測試課"):
+        return server.create_course_manifest(
+            "local_mp3", str(self.media), name,
+            options={"references": references}, output_root=str(self.output_root))
+
+    def test_pptx_follows_show_order_and_keeps_notes(self):
+        deck = self.deck_dir / "deck.pptx"
+        _make_pptx(deck, [("零信任導入實務", "第一張內文", "這張的講者備忘"), ("第二張", "第二張內文", "")])
+        text, title = server.extract_pptx(deck)
+        self.assertEqual(title, "零信任導入實務")
+        self.assertLess(text.index("零信任導入實務"), text.index("第二張內文"))
+        self.assertIn("這張的講者備忘", text)
+        self.assertNotIn("\n2\n", text)     # 備忘稿的頁碼不算內容
+
+    def test_manifest_copies_extracts_and_keeps_originals(self):
+        deck = self.deck_dir / "deck.pptx"
+        _make_pptx(deck, [("零信任導入實務", "內文甲", "")])
+        (self.deck_dir / "附件" / "講義.txt").write_text("講義內容乙", encoding="cp950")
+        (self.deck_dir / "附件" / "現場.png").write_bytes(b"png")
+        (self.deck_dir / "~$deck.pptx").write_bytes(b"lock")
+        (self.deck_dir / "無關.exe").write_bytes(b"x")
+        manifest, _ = self._create({"text": "貼上文字丙", "paths": [str(self.deck_dir)]})
+
+        self.assertTrue(deck.is_file())
+        info = manifest["references"]
+        self.assertEqual(manifest["stages"]["reference_review"]["status"], "pending")
+        names = sorted(entry["name"] for entry in info["files"])
+        self.assertEqual(names, ["簡報/deck.pptx", "簡報/附件/現場.png", "簡報/附件/講義.txt"])
+        for entry in info["files"]:
+            self.assertTrue(Path(entry["copiedTo"]).is_file())
+        merged = Path(info["textFile"]).read_text(encoding="utf-8")
+        for expected in ("貼上文字丙", "內文甲", "講義內容乙"):
+            self.assertIn(expected, merged)
+        self.assertEqual(len(info["needsDirectRead"]), 1)
+        self.assertTrue(info["needsDirectRead"][0].endswith("現場.png"))
+        self.assertIn("參考資料", manifest["stages"]["summary"]["completion_criteria"])
+
+    def test_no_references_keeps_stage_skipped(self):
+        manifest, _ = server.create_course_manifest(
+            "local_mp3", str(self.media), "沒附", output_root=str(self.output_root))
+        self.assertNotIn("references", manifest)
+        self.assertEqual(manifest["stages"]["reference_review"]["status"], "skipped")
+        self.assertNotIn("參考資料", manifest["stages"]["summary"]["completion_criteria"])
+
+    def test_broken_pptx_goes_to_direct_read_without_blocking(self):
+        (self.deck_dir / "壞檔.pptx").write_bytes(b"not a zip")
+        manifest, _ = self._create({"text": "", "paths": [str(self.deck_dir)]})
+        entry = manifest["references"]["files"][0]
+        self.assertEqual(entry["status"], "extract_failed")
+        self.assertEqual(len(manifest["references"]["needsDirectRead"]), 1)
+
+    def test_invalid_reference_rejected_before_touching_source(self):
+        with self.assertRaises(ValueError):
+            self._create({"text": "", "paths": [str(self.root / "不存在")]})
+        (self.deck_dir / "無關.exe").write_bytes(b"x")
+        with self.assertRaises(ValueError):
+            self._create({"text": "", "paths": [str(self.deck_dir)]})
+        self.assertTrue(self.media.is_file())
+
+    def test_rollback_removes_copies_only(self):
+        deck = self.deck_dir / "deck.pptx"
+        _make_pptx(deck, [("標題文字", "內文", "")])
+        manifest, _ = self._create({"text": "", "paths": [str(deck)]})
+        text_file = Path(manifest["references"]["textFile"])
+        server.rollback_course_manifest(manifest)
+        self.assertTrue(deck.is_file())
+        self.assertFalse(text_file.exists())
+        self.assertFalse(Path(manifest["courseDir"]).exists())
+        self.assertTrue(self.media.is_file())
+
+    def test_suggest_name_priority(self):
+        deck = self.deck_dir / "deck.pptx"
+        _make_pptx(deck, [("零信任導入實務", "內文", "")])
+        self.assertEqual(
+            server.suggest_name_from_references("講題：AI 資安趨勢\n講師：王小明（某公司）", [str(deck)])["courseName"],
+            "AI 資安趨勢_王小明")
+        self.assertEqual(
+            server.suggest_name_from_references("隨手筆記第一行", [str(deck)])["courseName"], "零信任導入實務")
+        self.assertEqual(
+            server.suggest_name_from_references("隨手筆記第一行\n第二行", [])["courseName"], "隨手筆記第一行")
+        self.assertEqual(server.suggest_name_from_references("", [])["courseName"], "")
+
+    def test_suggest_name_skips_generic_pdf_title_and_uses_first_page(self):
+        import fitz
+        pdf = self.root / "講義.pdf"
+        with fitz.open() as doc:
+            page = doc.new_page()
+            page.insert_text((72, 72), "Network Security Basics")
+            doc.set_metadata({"title": "PowerPoint 簡報"})
+            doc.save(pdf)
+        self.assertEqual(server.suggest_name_from_references("", [str(pdf)])["courseName"], "Network Security Basics")
+
+    def test_suggest_name_adds_date_and_strips_category_tag(self):
+        text = "【線上聚會】Claude MAX 俱樂部線上聚會\n時間：2026-10-30"
+        self.assertEqual(
+            server.suggest_name_from_references(text, [], "20261030")["courseName"],
+            "20261030_Claude MAX 俱樂部線上聚會")
+        self.assertEqual(
+            server.suggest_name_from_references("20261030 已帶日期的課", [], "20261031")["courseName"],
+            "20261030 已帶日期的課")
+
+    def test_reference_name_date_order(self):
+        folder = self.root / "OBS"
+        folder.mkdir()
+        named = folder / "2026-10-30 19-01-13.mp4"
+        named.write_bytes(b"x")
+        self.assertEqual(server.reference_name_date(str(folder), named.name), "20261030")
+        self.assertEqual(server.reference_name_date(str(named)), "20261030")
+        plain = folder / "錄影.mp4"
+        plain.write_bytes(b"x")
+        os.utime(plain, (datetime(2026, 5, 6, 12).timestamp(),) * 2)
+        self.assertEqual(server.reference_name_date(str(plain)), "20260506")
+        today = datetime.now().strftime("%Y%m%d")
+        self.assertEqual(server.reference_name_date("https://youtu.be/abc"), today)
+
+    def test_folder_with_one_entry_uses_entry_name(self):
+        folder = self.root / "OBS"
+        folder.mkdir()
+        (folder / "2026-10-30 19-01-13.mp4").write_bytes(b"x")
+        (folder / "另一堂.mp4").write_bytes(b"y")
+        results = server.create_course_batch(
+            "mp3_folder", str(folder), "OBS", output_root=str(self.output_root),
+            include=["2026-10-30 19-01-13.mp4"], entry_name="20261030_聚會")
+        manifest = results[0][0]
+        self.assertEqual(manifest["courseName"], "20261030_聚會")
+        self.assertEqual(Path(manifest["courseDir"]).name, "20261030_聚會")
+        self.assertTrue((Path(manifest["courseDir"]) / "20261030_聚會.mp4").is_file())
+
+    def test_folder_with_many_entries_ignores_entry_name(self):
+        folder = self.root / "OBS"
+        folder.mkdir()
+        (folder / "甲.mp4").write_bytes(b"x")
+        (folder / "乙.mp4").write_bytes(b"y")
+        results = server.create_course_batch(
+            "mp3_folder", str(folder), "OBS", output_root=str(self.output_root), entry_name="不該用")
+        self.assertEqual(sorted(m["courseName"] for m, _ in results), ["乙", "甲"])
+
+    def test_total_bytes_recorded_for_question(self):
+        deck = self.deck_dir / "講義.txt"
+        deck.write_bytes(b"12345")
+        manifest, _ = self._create({"text": "", "paths": [str(deck)]})
+        self.assertEqual(manifest["references"]["totalBytes"], 5)
+        self.assertIn("totalBytes", server.PAGE)
+
+    def test_page_has_reference_controls(self):
+        self.assertIn('id="courseRefText"', server.PAGE)
+        self.assertIn("/api/course/reference-name", server.PAGE)
+        self.assertIn("【參考資料處理方式】", server.PAGE)
+
+
 class TestAdminIntegration(unittest.TestCase):
     def test_admin_has_pipeline_card_and_content_version(self):
         admin = Path(__file__).parents[2] / "tools" / "admin" / "index.html"

@@ -1,6 +1,17 @@
 """
 影音工具本機服務（影音網址下載 / 影片轉 MP3 / 影音合併 / 影片壓縮 / 圖檔轉 PDF）
 
+v1.27 2026-10-30 [Claude Code / Opus 5.5] #course 加「參考資料」（使用者要求）：可貼文字、加入簡報資料夾或單檔。
+                 (1) 建課時把檔案複製進 <課程夾>\參考資料\（來源保留），文字抽成 文件\<課程名>_參考資料.md；
+                     pptx（含備忘稿）、pdf、docx、txt、md 由 8767 抽字，圖片、ppt、doc、抽不到字的 PDF 列進
+                     references.needsDirectRead 由 AI 直接開。
+                 (2) manifest 新增 reference_review 階段，校對與下游產物的 completion_criteria 要求納入參考資料。
+                     參考檔留不留先不寫死（使用者裁定）：指令要求執行的 AI 當場問，習慣確定後才改進程式。
+                 (3) 新增 /api/course/reference-name：依參考資料的講題／簡報標題建議課程名，前面加日期
+                     （YYYYMMDD_，取來源檔名開頭日期，沒有就用修改日），沒手動改過就自動帶入。
+                     資料夾來源只勾一項時也算單堂，用這個名字（/api/course/batch 的 entryName）；勾多項才各用原名。
+                 (4) 問使用者參考檔留不留時要附總大小（references.totalBytes）。
+
 v1.26 2026-10-07 [Claude Code / Opus 5.5] #course 加執行者選單（使用者裁定，預設留 agy）：主鍵左邊可選
                  agy／Claude Code／Codex／只建任務不送出，走 ytcli://<cli>/…（run.ps1 v2.0 本來就支援三家）。
                  選「只建任務不送出」時不開任何視窗，建好後按「複製指令」貼進現有對話。sendToAgy() 改為 sendToCli()。
@@ -206,6 +217,8 @@ import urllib.error
 import urllib.request
 import uuid
 import webbrowser
+import xml.etree.ElementTree as ET
+import zipfile
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -642,6 +655,8 @@ def rollback_course_manifest(manifest: dict) -> list:
     failed = _restore_moved(moved)
     course_dir = Path(manifest.get("courseDir", ""))
     try:
+        if manifest.get("references"):
+            remove_course_references(manifest["references"])
         (course_dir / "course-manifest.json").unlink(missing_ok=True)
         if manifest.get("reusedDir"):
             # 沿用既有課程夾：資料夾與接合點都是原本就有的，只收掉 manifest 就好。
@@ -1009,6 +1024,350 @@ def calendar_info_manifest(manifest_path: Path) -> int:
     return 0 if stage["status"] == "completed" else 1
 
 
+# ── 參考資料（v1.27，2026-10-30）──────────────────────────────────────────
+COURSE_REFERENCE_DIR_NAME = "參考資料"
+REFERENCE_TEXT_EXTENSIONS = {".txt", ".md"}
+REFERENCE_PARSED_EXTENSIONS = REFERENCE_TEXT_EXTENSIONS | {".pptx", ".pdf", ".docx"}
+REFERENCE_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
+REFERENCE_EXTENSIONS = REFERENCE_PARSED_EXTENSIONS | REFERENCE_IMAGE_EXTENSIONS | {".ppt", ".doc"}
+# 取標題時簡報優先：講者自己下的標題比散落的文字檔可靠。
+REFERENCE_TITLE_PRIORITY = {".pptx": 0, ".pdf": 1, ".docx": 2, ".md": 3, ".txt": 3}
+REFERENCE_GENERIC_TITLES = {"powerpoint 簡報", "powerpoint presentation", "untitled", "無標題", "簡報1"}
+REFERENCE_LABEL_PREFIX = r"^[ \t#>*\-]*(?:"
+REFERENCE_LABEL_SUFFIX = r")[ \t]*[:：][ \t]*(.+)$"
+REFERENCE_TITLE_RE = re.compile(
+    REFERENCE_LABEL_PREFIX + r"講題|主題|課程名稱|課程主題|課程|題目|標題|活動名稱|title|topic"
+    + REFERENCE_LABEL_SUFFIX, re.I | re.M)
+REFERENCE_SPEAKER_RE = re.compile(
+    REFERENCE_LABEL_PREFIX + r"講師|講者|主講人|主講|老師|speaker" + REFERENCE_LABEL_SUFFIX, re.I | re.M)
+OOXML_REL_NS = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
+
+
+def read_reference_text(path: Path) -> str:
+    raw = path.read_bytes()
+    for encoding in ("utf-8-sig", "cp950"):
+        try:
+            return raw.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return raw.decode("utf-8", errors="replace")
+
+
+def _ooxml_paragraphs(xml_bytes: bytes) -> list:
+    """pptx／docx 共用：取每個段落（a:p、w:p）裡的文字。"""
+    paragraphs = []
+    for node in ET.fromstring(xml_bytes).iter():
+        if node.tag.endswith("}p"):
+            text = "".join(t.text or "" for t in node.iter() if t.tag.endswith("}t")).strip()
+            if text:
+                paragraphs.append(text)
+    return paragraphs
+
+
+def _ooxml_rels(archive: zipfile.ZipFile, rels_name: str) -> list:
+    """回傳 (Id, Type, 壓縮檔內路徑)。"""
+    if rels_name not in archive.namelist():
+        return []
+    # xx/_rels/yy.xml.rels 的相對路徑是對 xx/ 算的
+    base = rels_name.split("/_rels/")[0]
+    rows = []
+    for rel in ET.fromstring(archive.read(rels_name)):
+        target = rel.get("Target", "")
+        parts = [] if target.startswith("/") else base.split("/")
+        for piece in target.lstrip("/").split("/"):
+            if piece == "..":
+                parts = parts[:-1]
+            elif piece != ".":
+                parts.append(piece)
+        rows.append((rel.get("Id", ""), rel.get("Type", ""), "/".join(parts)))
+    return rows
+
+
+def _pptx_slide_names(archive: zipfile.ZipFile) -> list:
+    """依 presentation.xml 的放映順序列投影片；檔名序號不等於放映順序。"""
+    names = set(archive.namelist())
+    ordered = []
+    if "ppt/presentation.xml" in names:
+        targets = {rid: part for rid, _, part in _ooxml_rels(archive, "ppt/_rels/presentation.xml.rels")}
+        for node in ET.fromstring(archive.read("ppt/presentation.xml")).iter():
+            if node.tag.endswith("}sldId"):
+                part = targets.get(node.get(OOXML_REL_NS + "id", ""))
+                if part in names:
+                    ordered.append(part)
+    if ordered:
+        return ordered
+    numbered = [n for n in names if re.fullmatch(r"ppt/slides/slide\d+\.xml", n)]
+    return sorted(numbered, key=lambda n: int(re.search(r"(\d+)\.xml$", n).group(1)))
+
+
+def _pptx_first_title(slide_xml: bytes) -> str:
+    """第一張投影片的標題版面配置區；舊簡報沒標 placeholder 時由呼叫端退回第一段。"""
+    for shape in ET.fromstring(slide_xml).iter():
+        if not shape.tag.endswith("}sp"):
+            continue
+        kinds = {node.get("type") for node in shape.iter() if node.tag.endswith("}ph")}
+        if kinds & {"title", "ctrTitle"}:
+            text = " ".join(_ooxml_paragraphs(ET.tostring(shape))).strip()
+            if text:
+                return text
+    return ""
+
+
+def extract_pptx(path: Path) -> tuple:
+    """抽投影片文字與備忘稿，回傳 (全文, 標題)。不依賴 python-pptx。"""
+    sections, title = [], ""
+    with zipfile.ZipFile(path) as archive:
+        for index, name in enumerate(_pptx_slide_names(archive), 1):
+            slide_xml = archive.read(name)
+            lines = _ooxml_paragraphs(slide_xml)
+            if index == 1:
+                title = _pptx_first_title(slide_xml) or (lines[0] if lines else "")
+            rels_name = name.replace("ppt/slides/", "ppt/slides/_rels/") + ".rels"
+            notes = []
+            for _, kind, part in _ooxml_rels(archive, rels_name):
+                if kind.endswith("/notesSlide") and part in archive.namelist():
+                    # 備忘稿裡的純數字是投影片頁碼，不是內容
+                    notes = [t for t in _ooxml_paragraphs(archive.read(part)) if not t.isdigit()]
+            if lines or notes:
+                body = "\n".join(lines)
+                if notes:
+                    body += "\n\n備忘稿：\n" + "\n".join(notes)
+                sections.append(f"### 投影片 {index}\n\n{body}")
+    return "\n\n".join(sections), title
+
+
+def extract_docx(path: Path) -> tuple:
+    with zipfile.ZipFile(path) as archive:
+        lines = _ooxml_paragraphs(archive.read("word/document.xml"))
+    return "\n\n".join(lines), (lines[0] if lines else "")
+
+
+def extract_pdf(path: Path) -> tuple:
+    import fitz
+    with fitz.open(path) as doc:
+        pages = [page.get_text().strip() for page in doc]
+        title = (doc.metadata or {}).get("title", "") or ""
+    sections = [f"### 第 {i} 頁\n\n{text}" for i, text in enumerate(pages, 1) if text]
+    if not _usable_reference_title(title):
+        first_page = next((text for text in pages if text), "")
+        title = _reference_title_line(first_page)
+    return "\n\n".join(sections), title
+
+
+def extract_reference_file(path: Path) -> tuple:
+    """回傳 (全文, 標題)；不支援抽字的副檔名回空字串。"""
+    suffix = path.suffix.lower()
+    if suffix == ".pptx":
+        return extract_pptx(path)
+    if suffix == ".docx":
+        return extract_docx(path)
+    if suffix == ".pdf":
+        return extract_pdf(path)
+    if suffix in REFERENCE_TEXT_EXTENSIONS:
+        text = read_reference_text(path)
+        return text, _reference_labeled_title(text) or _reference_title_line(text)
+    return "", ""
+
+
+def _usable_reference_title(title: str) -> bool:
+    title = str(title or "").strip()
+    if not 2 <= len(title) <= 80 or title.lower() in REFERENCE_GENERIC_TITLES:
+        return False
+    if re.search(r"\.(pptx?|docx?|pdf|key)$", title, re.I) or re.match(r"https?://", title, re.I):
+        return False
+    # 純日期、頁碼這類行沒有命名價值
+    return bool(re.search(r"[^\d\s\-/.:：年月日]", title))
+
+
+def _reference_title_line(text: str) -> str:
+    """第一個夠格當標題的非空行。"""
+    for line in str(text or "").splitlines():
+        line = re.sub(r"^[ \t#>*\-]+", "", line).strip()
+        if _usable_reference_title(line):
+            return line
+    return ""
+
+
+def _reference_labeled_title(text: str) -> str:
+    for match in REFERENCE_TITLE_RE.finditer(str(text or "")):
+        title = match.group(1).strip()
+        if _usable_reference_title(title):
+            return title
+    return ""
+
+
+def normalize_course_references(raw) -> dict | None:
+    """檢查前端送來的 options.references；什麼都沒給回 None。"""
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise ValueError("references 必須是 object")
+    text = raw.get("text", "")
+    paths = raw.get("paths", [])
+    if not isinstance(text, str) or not isinstance(paths, list):
+        raise ValueError("references.text 必須是字串、references.paths 必須是陣列")
+    clean_paths = []
+    for value in paths:
+        value = str(value or "").strip().rstrip("\\/")
+        if not value or value in clean_paths:
+            continue
+        path = Path(value)
+        if not path.exists():
+            raise ValueError(f"找不到參考資料：{value}")
+        if not collect_reference_files([value]):
+            raise ValueError(f"這裡沒有可用的參考資料（簡報、PDF、Word、文字檔或圖片）：{value}")
+        clean_paths.append(value)
+    if not text.strip() and not clean_paths:
+        return None
+    return {"text": text.strip(), "paths": clean_paths}
+
+
+def collect_reference_files(paths: list, exclude_dir: Path | None = None) -> list:
+    """把資料夾展開成 (來源檔, 參考資料夾內相對路徑)；遞迴收支援的副檔名，略過 Office 暫存檔。"""
+    found = []
+    for value in paths:
+        root = Path(value)
+        if root.is_dir():
+            items = [(f, Path(root.name) / f.relative_to(root)) for f in sorted(root.rglob("*"))
+                     if f.is_file()]
+        else:
+            items = [(root, Path(root.name))]
+        for item, relative in items:
+            if item.suffix.lower() not in REFERENCE_EXTENSIONS or item.name.startswith("~$"):
+                continue
+            if exclude_dir is not None and exclude_dir in item.parents:
+                continue
+            found.append((item, relative))
+    return found
+
+
+def _unique_path(path: Path) -> Path:
+    """同名不覆蓋：加 _2、_3。"""
+    candidate, suffix = path, 2
+    while candidate.exists():
+        candidate = path.with_name(f"{path.stem}_{suffix}{path.suffix}")
+        suffix += 1
+    return candidate
+
+
+def remove_course_references(info: dict) -> None:
+    """撤銷建課用：只刪這次複製進來的檔案與抽字 MD，來源檔不動。"""
+    targets = [entry.get("copiedTo", "") for entry in info.get("files", [])] + [info.get("textFile", "")]
+    for target in filter(None, targets):
+        Path(target).unlink(missing_ok=True)
+    copied_dir = Path(info.get("copiedDir") or "")
+    if not info.get("copiedDir") or not copied_dir.is_dir():
+        return
+    folders = [p for p in copied_dir.rglob("*") if p.is_dir()]
+    for folder in sorted(folders, key=lambda p: len(p.parts), reverse=True) + [copied_dir]:
+        try:
+            folder.rmdir()
+        except OSError:
+            pass
+
+
+def attach_course_references(clean_name: str, course_dir: Path, docs_dir: Path, refs: dict) -> dict:
+    """複製參考檔進課程夾、抽字寫進 文件\\<課程名>_參考資料.md，回傳 manifest 的 references。
+
+    單檔抽字失敗不擋建課，改列進 needsDirectRead 交給 AI 直接開；複製失敗才算失敗並收掉已複製的。
+    """
+    copied_dir = course_dir / COURSE_REFERENCE_DIR_NAME
+    info = {"textFile": "", "copiedDir": "", "sources": refs["paths"], "totalBytes": 0,
+            "hasPastedText": bool(refs["text"]), "files": [], "needsDirectRead": []}
+    sections = [f"## 使用者貼上的文字\n\n{refs['text']}"] if refs["text"] else []
+    try:
+        for source, relative in collect_reference_files(refs["paths"], exclude_dir=course_dir):
+            target = _unique_path(copied_dir / relative)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, target)
+            info["copiedDir"] = str(copied_dir)
+            info["totalBytes"] += target.stat().st_size
+            entry = {"name": relative.as_posix(), "copiedTo": str(target), "status": "direct_read", "chars": 0}
+            info["files"].append(entry)
+            if source.suffix.lower() in REFERENCE_PARSED_EXTENSIONS:
+                try:
+                    text = extract_reference_file(target)[0].strip()
+                except Exception as exc:    # 壞檔、加密檔不能擋建課
+                    entry["status"], entry["error"] = "extract_failed", str(exc)[:200]
+                else:
+                    if text:
+                        entry["status"], entry["chars"] = "extracted", len(text)
+                        sections.append(f"## {relative.as_posix()}\n\n{text}")
+                    else:
+                        entry["status"] = "no_text"     # 掃描版 PDF、全圖簡報
+            if entry["status"] != "extracted":
+                info["needsDirectRead"].append(str(target))
+        text_file = _unique_path(docs_dir / f"{clean_name}_參考資料.md")
+        text_file.write_text(
+            f"# {clean_name} 參考資料\n\n"
+            + ("> 由 8767 建課時產生：使用者提供的文字與參考檔抽出的內容；原檔在課程夾「參考資料」。\n\n"
+               if info["files"] else "> 由 8767 建課時產生：使用者貼上的文字。\n\n")
+            + ("\n\n".join(sections) or "（沒有抽得出文字的內容，請直接看原檔。）") + "\n",
+            encoding="utf-8")
+        info["textFile"] = str(text_file)
+    except OSError as exc:
+        remove_course_references(info)
+        raise ValueError(f"參考資料複製失敗，已收掉複製到一半的檔案：{exc}") from exc
+    return info
+
+
+def reference_name_date(source: str, entry: str = "") -> str:
+    """建議名前面的日期：來源檔名開頭的日期 → 來源修改日 → 今天。網址來源沒有檔案，用今天。"""
+    source = str(source or "").strip()
+    path = Path(source) / entry if source and entry else Path(source)
+    if source and not re.match(r"https?://", source, re.I):
+        match = re.match(r"^((?:19|20)\d{2})[-_]?(\d{2})[-_]?(\d{2})", path.name)
+        if match:
+            return "".join(match.groups())
+        try:
+            return datetime.fromtimestamp(path.stat().st_mtime).strftime("%Y%m%d")
+        except OSError:
+            pass
+    return datetime.now().strftime("%Y%m%d")
+
+
+def suggest_name_from_references(text: str, paths: list, date_text: str = "") -> dict:
+    """依參考資料建議課程名。順序：貼文字的「講題：」→ 簡報等檔案標題 → 貼文字第一行 → 單檔檔名或資料夾名。
+    有給 date_text 就加成 YYYYMMDD_ 前綴；標題自己帶日期開頭就不重複加。"""
+    text = str(text or "")
+    title, basis = _reference_labeled_title(text), "貼上文字的標示"
+    if not title:
+        files = collect_reference_files(paths)
+        files.sort(key=lambda row: REFERENCE_TITLE_PRIORITY.get(row[0].suffix.lower(), 9))
+        for source, relative in files:
+            if source.suffix.lower() not in REFERENCE_PARSED_EXTENSIONS:
+                continue
+            try:
+                candidate = extract_reference_file(source)[1].strip()
+            except Exception:
+                continue
+            if _usable_reference_title(candidate):
+                title, basis = candidate, f"{relative.name} 的標題"
+                break
+    if not title:
+        title, basis = _reference_title_line(text), "貼上文字的第一行"
+    if not title and paths:
+        title, basis = Path(paths[0]).stem if Path(paths[0]).is_file() else Path(paths[0]).name, "參考資料名稱"
+    if not title:
+        return {"courseName": "", "basis": ""}
+    # 【線上聚會】這類開頭分類標籤不是課名的一部分
+    stripped = re.sub(r"^\s*[【\[][^】\]]*[】\]]\s*", "", title)
+    if _usable_reference_title(stripped):
+        title = stripped
+    speaker = REFERENCE_SPEAKER_RE.search(text)
+    if speaker:
+        name = re.split(r"[\s（(,，、/]", speaker.group(1).strip(), maxsplit=1)[0]
+        if name and name not in title:
+            title = f"{title}_{name}"
+    title = re.sub(r"\s+", " ", title)[:80]
+    if date_text and not LEADING_DATE_RE.match(title):
+        title = f"{date_text}_{title}"
+    try:
+        return {"courseName": sanitize_course_name(title), "basis": basis}
+    except ValueError:
+        return {"courseName": "", "basis": ""}
+
+
 def create_course_manifest(source_type: str, source_val: str, course_name: str,
                            options: dict | None = None, output_root: str | None = None) -> tuple:
     """建立不覆蓋既有資料夾的 course-manifest.json，供 AI 跨 Session 續跑。"""
@@ -1018,6 +1377,7 @@ def create_course_manifest(source_type: str, source_val: str, course_name: str,
         raise ValueError("課程來源無效或不存在")
     clean_name = sanitize_course_name(course_name)
     supplied = dict(options or {})
+    references_input = normalize_course_references(supplied.get("references"))
     if "skillTreeMode" not in supplied and supplied.get("artifacts") is None:
         skill_mode = DEFAULT_SKILL_TREE_MODE   # v1.25：什麼都沒指定＝網頁預設（技能樹含教學）
     else:
@@ -1136,6 +1496,21 @@ def create_course_manifest(source_type: str, source_val: str, course_name: str,
     local_mp3_stage = not is_url and (artifacts["mp3"] or audio_to_mp3)
     calendar_stage = write_course_calendar_info(
         clean_name, course_dir, course_dir / COURSE_DOCS_LINK_NAME, moved_files)
+    references = None
+    if references_input:
+        try:
+            references = attach_course_references(
+                clean_name, course_dir, course_dir / COURSE_DOCS_LINK_NAME, references_input)
+        except ValueError:
+            # 跟上面接合點失敗同一套回滾；沿用既有課程夾時資料夾本來就在，不拆。
+            _restore_moved(moved_files)
+            if reused_dir is None:
+                try:
+                    os.rmdir(str(course_dir / COURSE_DOCS_LINK_NAME))
+                    course_dir.rmdir()
+                except OSError:
+                    pass
+            raise
     if is_url:
         want_video = artifacts["video"]
         quality_text = "最佳畫質" if quality == "best" else quality
@@ -1236,6 +1611,11 @@ def create_course_manifest(source_type: str, source_val: str, course_name: str,
             "transcription": _stage_for(
                 artifacts["transcript"],
                 transcription_criterion + engine_criteria.get(engine, "")),
+            "reference_review": _stage_for(
+                references is not None,
+                "開始前已當場問過使用者參考檔要留一份在課程夾或只記原檔位置，evidence 記錄答案（沒人能回答就維持複製並註明）；"
+                "已讀完 references.textFile 全文，並直接開過 references.needsDirectRead 列的每個檔案"
+                "（打不開的寫進 evidence，不得假裝看過）；evidence 記錄讀了幾份，並列出參考資料裡的專有名詞、人名與主要章節"),
             "transcript_review": _stage_for(
                 artifacts["review"],
                 "校對版逐字稿存在且非空；raw 逐字稿未被覆蓋；"
@@ -1284,6 +1664,13 @@ def create_course_manifest(source_type: str, source_val: str, course_name: str,
                    if is_url else "HTML、srt、words.json 與媒體檔留在 courseDir 不進 Vault")),
         },
     }
+    if references is not None:
+        manifest["references"] = references
+        stages = manifest["stages"]
+        stages["transcript_review"]["completion_criteria"] += "；專有名詞與人名優先以參考資料的寫法為準"
+        for stage_name in ("summary", "training_report", "mindmap", "skill_tree"):
+            stages[stage_name]["completion_criteria"] += (
+                "；已把參考資料與逐字稿一起分析，只出現在參考資料、課堂沒講的內容標註「（參考資料）」")
     if is_url:
         # 網址來源的去重資訊與處理紀錄（2026-09-17 使用者裁定 Q1～Q14）。
         manifest["options"]["keepMedia"] = keep_media
@@ -1458,7 +1845,7 @@ def select_course_entries(folder, include=None) -> list:
 
 def create_course_batch(source_type: str, source_val: str, course_name: str = "",
                         options: dict | None = None, output_root: str | None = None,
-                        include=None) -> list:
+                        include=None, entry_name: str = "") -> list:
     """一次建立多份 manifest。
 
     使用者選到**資料夾**（mp3_folder）＝容器：第一層的每個媒體檔各一堂課，
@@ -1466,6 +1853,7 @@ def create_course_batch(source_type: str, source_val: str, course_name: str = ""
     網址與單一檔案各自只有一堂課，回傳 1 份。整批共用同一組 options。
 
     `include` 是網頁上勾選的第一層項目名稱；None 代表整批全要。
+    `entry_name` 是只勾一項時使用者要的課程名；勾多項時不適用，各堂仍用自己的名字。
     """
     source_val = str(source_val or "").strip()
     source_type = resolve_course_source_type(source_type, source_val)
@@ -1488,6 +1876,8 @@ def create_course_batch(source_type: str, source_val: str, course_name: str = ""
         else:
             per_type = "local_video" if item.suffix.lower() in VIDEO_EXTENSIONS else "local_mp3"
             per_name = item.stem
+        if entry_name and len(entries) == 1:
+            per_name = entry_name
         try:
             results.append(create_course_manifest(
                 per_type, str(item), per_name, options=options, output_root=output_root))
@@ -2412,8 +2802,17 @@ root.lift()
 root.focus_force()
 kwargs = {"initialdir": initial} if initial and os.path.isdir(initial) else {}
 if mode == "folder":
-    title = "選擇課程歸檔目錄" if source_type == "output" else "選擇課程媒體資料夾"
+    title = {"output": "選擇課程歸檔目錄", "reference": "選擇參考資料（簡報）資料夾"}.get(source_type, "選擇課程媒體資料夾")
     picked = filedialog.askdirectory(parent=root, title=title, mustexist=True, **kwargs)
+elif source_type == "reference":
+    picked = filedialog.askopenfilename(
+        parent=root,
+        title="選擇參考資料檔案",
+        filetypes=[("簡報、PDF、Word、文字檔、圖片",
+                    "*.pptx *.ppt *.pdf *.docx *.doc *.txt *.md *.png *.jpg *.jpeg *.webp"),
+                   ("所有檔案", "*.*")],
+        **kwargs,
+    )
 else:
     picked = filedialog.askopenfilename(
         parent=root,
@@ -2438,6 +2837,8 @@ def course_picker_options(kind: str, source_type: str) -> dict:
     """
     if kind == "output":
         return {"mode": "folder", "sourceType": "output"}
+    if kind == "reference":
+        return {"mode": "folder" if source_type == "folder" else "file", "sourceType": "reference"}
     if kind != "source":
         raise ValueError("不支援的選擇器類型")
     if source_type in {"folder", BATCH_SOURCE, MULTI_PART_SOURCE}:
@@ -3189,8 +3590,19 @@ PAGE = r"""<!doctype html>
         <span class="tally" id="coursePreviewTally"></span>
       </div>
     </div>
-    <div class="label" style="margin-top:12px">課程名稱（自動帶入後仍可修改）</div>
-    <input type="text" id="courseName" spellcheck="false" placeholder="會自動抓影片標題、檔名或資料夾名">
+    <div class="label" style="margin-top:12px">參考資料（選填：貼文字，或加入簡報資料夾／檔案，分析時會一起納入）</div>
+    <textarea id="courseRefText" rows="5" spellcheck="false" style="width:100%;resize:vertical" placeholder="貼上課程說明、講義文字、活動資訊…&#10;有寫「講題：…」「講師：…」會優先拿來命名" onchange="refreshReferenceName()"></textarea>
+    <div class="row" style="margin-top:8px">
+      <button id="courseRefPickFolder" onclick="pickCourseReference('folder')">加入簡報資料夾</button>
+      <button id="courseRefPickFile" onclick="pickCourseReference('file')">加入單一檔案</button>
+    </div>
+    <ul class="files" id="courseRefList"></ul>
+    <div class="note" id="courseRefNote">
+      支援 pptx（含備忘稿）、pdf、docx、txt、md、圖片、ppt、doc；資料夾會連子資料夾一起收。檔案是<b>複製</b>進課程夾的「參考資料」，原檔不動。
+    </div>
+    <div class="note hide" id="courseRefSuggest"></div>
+    <div class="label" style="margin-top:12px">課程名稱（自動帶入後仍可修改；影片檔、資料夾都用這個名字）</div>
+    <input type="text" id="courseName" spellcheck="false" placeholder="會自動抓參考資料的標題、影片標題、檔名或資料夾名" oninput="courseNameManual = !!this.value.trim()">
     <div class="label" style="margin-top:16px">要產出哪些東西（沒勾的 AI 就不做）</div>
     <div class="picks artifact-grid">
       <label class="pick primary" id="w-htmlBundle"><input type="checkbox" id="a-htmlBundle" checked onchange="syncCourseArtifacts()"> 📚 全景學習手冊</label>
@@ -3431,8 +3843,89 @@ function setCourseType(type) { $('courseType').value = type || ''; }
 // 本機路徑要問後端才知道是檔案還是資料夾，等 blur 或選擇器回來再定。
 function markCourseSourceDirty() {
   const source = $('courseSource').value.trim();
+  courseNameManual = false;
   setCourseType(/^https?:\/\//i.test(source) ? 'url' : '');
   syncCourseArtifacts();
+}
+
+// 參考資料（v1.27）：手動改過課程名就不再自動蓋，只在下方提示建議名，由使用者決定要不要採用。
+let courseRefPaths = [];
+let courseRefSuggestion = null;
+let courseNameManual = false;
+
+function courseRefText() { return $('courseRefText').value.trim(); }
+
+function renderCourseRefs() {
+  $('courseRefList').innerHTML = courseRefPaths.map((path, i) =>
+    `<li>${esc(path)} <button onclick="removeCourseRef(${i})">移除</button></li>`).join('');
+  const box = $('courseRefSuggest');
+  const hasName = !!(courseRefSuggestion && courseRefSuggestion.courseName);
+  box.classList.toggle('hide', !hasName);
+  if (!hasName) return;
+  const inputName = $('courseName').value.trim();
+  box.textContent = courseRefSuggestion.courseName === inputName
+    ? `課程名稱已依參考資料帶入（來源：${courseRefSuggestion.basis}）。`
+    : `參考資料建議的課程名稱：${courseRefSuggestion.courseName}（來源：${courseRefSuggestion.basis}） `;
+  if (courseRefSuggestion.courseName !== inputName) {
+    const use = document.createElement('button');
+    use.textContent = '採用';
+    use.onclick = () => { $('courseName').value = courseRefSuggestion.courseName; courseNameManual = false; renderCourseRefs(); };
+    box.appendChild(use);
+  }
+}
+
+// 資料夾來源只勾一項就是單堂課；勾多項才是批次，每堂用自己的名字，不能全套同一個建議名。
+function courseSingleEntry() {
+  return courseEntryChecked.size === 1 ? [...courseEntryChecked][0] : '';
+}
+
+function courseUsesOneName() {
+  return !courseArtifactState().batch || !!courseSingleEntry();
+}
+
+function applyCourseRefName() {
+  if (courseRefSuggestion && courseRefSuggestion.courseName && !courseNameManual && courseUsesOneName()) {
+    $('courseName').value = courseRefSuggestion.courseName;
+  }
+  renderCourseRefs();
+}
+
+async function refreshReferenceName() {
+  const text = courseRefText();
+  if (!text && !courseRefPaths.length) {
+    courseRefSuggestion = null;
+    renderCourseRefs();
+    return;
+  }
+  try {
+    courseRefSuggestion = await coursePost('/api/course/reference-name', {
+      text, paths: courseRefPaths, source: $('courseSource').value.trim(),
+      entry: courseArtifactState().batch ? courseSingleEntry() : ''
+    });
+  } catch (error) {
+    courseRefSuggestion = null;
+    $('courseResult').textContent = `❌ ${error.message}`;
+  }
+  applyCourseRefName();
+}
+
+async function pickCourseReference(mode) {
+  const result = $('courseResult');
+  result.textContent = '請在本機視窗選擇參考資料…';
+  try {
+    const data = await coursePost('/api/course/pick', { kind: 'reference', sourceType: mode, initial: '' });
+    if (data.cancelled) { result.textContent = '已取消選擇。'; return; }
+    if (!courseRefPaths.includes(data.picked)) courseRefPaths.push(data.picked);
+    result.textContent = `✅ 已加入參考資料：${data.picked}`;
+    await refreshReferenceName();
+  } catch (error) {
+    result.textContent = `❌ ${error.message}`;
+  }
+}
+
+function removeCourseRef(i) {
+  courseRefPaths.splice(i, 1);
+  refreshReferenceName();
 }
 
 async function resolveCourseSource() {
@@ -3445,8 +3938,8 @@ async function resolveCourseSource() {
     const data = await coursePost('/api/course/name', { sourceType: 'auto', source });
     if ($('courseSource').value.trim() !== source) return;
     setCourseType(data.sourceType);
-    $('courseName').value = data.courseName;
-    result.textContent = `✅ ${courseTypeLabel(data.sourceType)}；課程名稱已帶入：${data.courseName}`;
+    if (!courseNameManual) $('courseName').value = data.courseName;
+    result.textContent = `✅ ${courseTypeLabel(data.sourceType)}；課程名稱已帶入：${$('courseName').value}`;
   } catch (error) {
     result.textContent = `❌ ${error.message}`;
   } finally {
@@ -3454,6 +3947,7 @@ async function resolveCourseSource() {
   }
   syncCourseArtifacts();
   await previewCourseSource();
+  await refreshReferenceName();
 }
 
 // 產物勾選：把相依前置自動補上並鎖住，順便回推 skillTreeMode。
@@ -3655,6 +4149,7 @@ function courseEntryToggle(name, on) {
   const row = $('coursePreviewList').querySelector(`li[data-name="${cssEscape(name)}"]`);
   if (row) row.classList.toggle('off', !on);
   renderCourseTally();
+  refreshReferenceName();
 }
 
 function courseEntryPickAll(on) {
@@ -3665,6 +4160,7 @@ function courseEntryPickAll(on) {
     row.classList.toggle('off', !on);
   });
   renderCourseTally();
+  refreshReferenceName();
 }
 
 function renderCourseTally() {
@@ -3750,10 +4246,12 @@ async function pickCourseSource(mode) {
     if (data.cancelled) { result.textContent = '已取消選擇。'; return; }
     $('courseSource').value = data.picked;
     setCourseType(data.sourceType);
+    courseNameManual = false;
     $('courseName').value = data.courseName;
     syncCourseArtifacts();
     await previewCourseSource();
-    result.textContent = `✅ 已選擇：${data.picked}\n${courseTypeLabel(data.sourceType)}　課程名稱：${data.courseName}`;
+    await refreshReferenceName();
+    result.textContent = `✅ 已選擇：${data.picked}\n${courseTypeLabel(data.sourceType)}　課程名稱：${$('courseName').value}`;
   } catch (error) {
     result.textContent = `❌ ${error.message}`;
   } finally {
@@ -3897,6 +4395,13 @@ function buildCoursePrompt(manifestPaths, st) {
         + (st.want.comments ? '這次另有「留言分析.md」：外層改成五個分頁，第五頁名稱「留言分析」，同樣保留原 HTML 版面。' : '')
         + (st.isUrl ? '網址來源例外：全景學習手冊 HTML 寫進「文件」（Vault），不放 courseDir 第一層；MD 頂端連結改用同資料夾相對路徑。' : '')
       : '')
+    + (st.hasRefs
+      ? '\n【參考資料】manifest 有 references 時，reference_review 要讀完 references.textFile 全文，並直接開 references.needsDirectRead 列的檔案（圖片、舊版 ppt／doc、抽不到字的 PDF）。校對的專有名詞與人名優先以參考資料為準；摘要、培訓報告、心智圖、技能樹都要把參考資料和逐字稿一起分析，只出現在參考資料、課堂沒講的內容標註「（參考資料）」。課程名稱已定案，不要自行改名。'
+        + '\n【參考資料處理方式】開始讀參考資料前，先當場問我：「這次的 PPT、照片、參考文件要 1 留一份在課程夾，還是 2 不留、只記原檔位置？」問的時候要說檔案總共多大（references.totalBytes 換算成 MB 或 GB；只有貼文字就說沒有檔案）。這是「中途不要停下來」的唯一例外，等我回答再繼續；批次時每堂各問一次。'
+        + '選 2：只刪 references.files 各項 copiedTo 指的檔案與變空的「參考資料」資料夾，原檔不動，needsDirectRead 改指原檔（原檔在 references.sources）。'
+        + '當下沒人能回答（非互動執行）就維持複製，evidence 註明未問到。'
+        + '每次答案追加到 D:\\本機MD檔\\20_專案\\_進行中\\20261030-8767參考資料處理習慣-進度.md 的紀錄表；連續 3 次答案相同就提醒我可以寫進程式，等我同意才改。'
+      : '')
     + multi;
 }
 
@@ -4005,7 +4510,11 @@ async function startCourseCreate() {
   const result = $('courseResult');
   // 使用者可能貼完網址就直接按，還沒觸發過 blur 判定；先補判一次再送。
   if (!$('courseType').value && $('courseSource').value.trim()) await resolveCourseSource();
+  // 貼完文字直接按建立時，textarea 的 change 才剛觸發，這裡等建議名回來再送。
+  await refreshReferenceName();
   const st = courseArtifactState();
+  const refText = courseRefText();
+  st.hasRefs = !!refText || courseRefPaths.length > 0;
   if (st.batch && !courseEntryChecked.size) {
     result.textContent = '❌ 清單裡一項都沒勾，請至少勾一項再建立任務。';
     return;
@@ -4022,6 +4531,9 @@ async function startCourseCreate() {
         courseName: $('courseName').value.trim(),
         // 資料夾來源只建被勾起來的那幾項；網址與單一檔案不送這個欄位
         include: st.batch ? [...courseEntryChecked] : undefined,
+        // 只勾一項時，上面的課程名稱欄才代表這堂課；沒參考資料也沒手動改過時，欄裡只是資料夾名，不送。
+        entryName: st.batch && courseSingleEntry() && (courseNameManual || (courseRefSuggestion && courseRefSuggestion.courseName))
+          ? $('courseName').value.trim() : undefined,
         outputRoot: $('courseOut').value.trim() || DEFAULTS.course,
         options: {
           artifacts: {
@@ -4037,7 +4549,8 @@ async function startCourseCreate() {
           transcriptEngine: st.engine,
           enginePriority: st.priority,
           skillTreeMode: st.mode,
-          minimumExample: st.mode === 3
+          minimumExample: st.mode === 3,
+          references: st.hasRefs ? { text: refText, paths: courseRefPaths } : undefined
         }
       })
     });
@@ -4045,6 +4558,11 @@ async function startCourseCreate() {
     if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
     const paths = data.manifestPaths || [data.manifestPath];
     lastCoursePrompt = buildCoursePrompt(paths, st);
+    // 參考資料是這堂課專屬的，清掉才不會誤帶進下一堂。
+    $('courseRefText').value = '';
+    courseRefPaths = [];
+    courseRefSuggestion = null;
+    renderCourseRefs();
     $('courseCopyPrompt').classList.remove('hide');
     const cli = courseExecutor();
     const sent = cli === 'none'
@@ -4338,6 +4856,21 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self._json({"courseName": course_name, "sourceType": resolved_type})
 
+        elif url.path == "/api/course/reference-name":
+            length = int(self.headers.get("Content-Length", 0))
+            try:
+                payload = json.loads(self.rfile.read(length) or b"{}")
+                if not isinstance(payload, dict):
+                    raise ValueError("JSON body 必須是 object")
+                references = normalize_course_references(payload) or {"text": "", "paths": []}
+                suggestion = suggest_name_from_references(
+                    references["text"], references["paths"],
+                    reference_name_date(str(payload.get("source") or ""), str(payload.get("entry") or "")))
+            except (json.JSONDecodeError, ValueError, TypeError, OSError) as exc:
+                self._json({"error": str(exc)}, 400)
+                return
+            self._json(suggestion)
+
         elif url.path == "/api/course/pick":
             length = int(self.headers.get("Content-Length", 0))
             try:
@@ -4425,6 +4958,7 @@ class Handler(BaseHTTPRequestHandler):
                     options=payload.get("options") or {},
                     output_root=(payload.get("outputRoot") or COURSE_ROOT).strip(),
                     include=include,
+                    entry_name=str(payload.get("entryName") or "").strip(),
                 )
             except (json.JSONDecodeError, ValueError, TypeError, OSError) as exc:
                 self._json({"error": str(exc)}, 400)
