@@ -1,6 +1,18 @@
 <!--
-  版本：v6.34
+  版本：v6.46
   版更記錄：
+  v6.46 (2026-11-16) [Claude Code / Opus 5.5] - 新增「公司年度行事曆」卡片（📅 → modal 說明書）：對 AI 說「做明年行事曆」，AI 以去年定案檔為版型，讀人事總處辦公日曆表標國定假日、加公司固定特休、重算每月休日，匯出上傳用 SIC_CAL-YYYY.pdf；之後說「行事曆加 11/23 放假」即可追加。技能正本 C:\Users\admin\.codex\skills\sic-calendar\SKILL.md，程式 C:\Code\sic-calendar\sic_cal.py。卡片不含公司地址電話。排在最後（order 37）。CARD_CONTENT_VERSION 43→44。
+  v6.45 (2026-11-15) [Claude Code / Opus 5.5] - 新增「整理桌面／整理檔案」卡片（🗂️ → modal 說明書）：對 AI 說「整理桌面」或「整理檔案」，AI 讀內容判讀、截圖依 30 分鐘時段成段放同一夾、改可搜尋檔名，出 Excel 對照表等你確認後一律搬到 D 槽既有結構，留還原紀錄。技能正本 C:\Users\admin\.codex\skills\file-organizer\SKILL.md。卡片不含任何個人檔案內容。排在最後（order 36）。CARD_CONTENT_VERSION 42→43。
+  v6.44 (2026-11-14) [Claude Code / Opus 5.5] - Antigravity 帳號因違反服務條款停權，停用相關入口：「AI 工作台」改為 4 個分頁（拿掉 3 個 AGY 分頁，桌面捷徑同步改）；「AI 額度儀表板」拿掉 🚀（agyswitch:// 會啟動多帳號切換 agy-switcher），說明改為切換已停用。CARD_CONTENT_VERSION 41→42。
+  v6.43 (2026-11-13) [Claude Code / Opus 5.5] - 新增「活動報名（代填＋行事曆）」卡片（📝 → modal 說明書）：對 AI 說「去報名 <網址>」，AI 讀 Vault 報名表固定資料、在你這台 Windows Chrome 代填，不按送出；你送出後建 Google 行事曆並附完整議程與 classroom 狀態標記。技能正本 C:\Users\admin\.claude\skills\event-signup\SKILL.md。卡片不含任何個人資料。排在最後（order 35）。CARD_CONTENT_VERSION 40→41。
+  v6.42 (2026-11-09) [Claude Code / Opus 5.5] - 新增「筆記本・桌曆・月曆簽收」連結卡片（📒 → /gift-receipt/），排在最後（order 34）。CARD_CONTENT_VERSION 39→40。
+  v6.41 (2026-10-31) [Claude Code / Opus 5.5] - 移除「素材一條龍」「素材資料整理分類」兩張卡片與後者的說明書 modal：兩個技能已照使用者裁定移到 _停用skills，照片走「整理照片」、課程包走課程整理入口。卡片內容未改，CARD_CONTENT_VERSION 維持 39；Firestore 舊文件因不在 DEFAULT_TOOLS 內不會再顯示。
+  v6.40 (2026-10-31) [Claude Code / Opus 5.5] - 新增「檢查文章（FB 寫作教練）」卡片（✍️ → modal 說明書，🚀 走 ytcli://claude/ 開 Claude 載入 fb-writing-coach 技能）：主口令「檢查文章」，只改錯字、補標點，再標出卡住的句子，不代寫；另有排版與訓練口令。貼文樣本與練習紀錄都放在 Vault，卡片不含任何文章內容。排在最後（order 33）。CARD_CONTENT_VERSION 38→39。
+  v6.39 (2026-10-31) [Claude Code / Opus 5.5] - 新增兩張本機工具卡片，都是點卡看說明書、🚀 啟動：「HTML 畫線改字（本機）」（🖍️，htmlmarker://open，程式 C:\Code\html-marker\）、「照片分類器（本機）」（🏞️，photosorter://open，程式 C:\Code\photo-sorter\）。兩個協定由 C:\Code\html-marker\加入卡片啟動鈕.reg 註冊，指向各自資料夾的 launch.bat（不帶參數，避免協定網址被當成檔案路徑）。卡片不含個人檔案內容。CARD_CONTENT_VERSION 37→38。
+  v6.38 (2026-10-24) [Claude Code / Opus 5.5] - 「整理照片」改成按下去先選 AI：說明書 ① 放三顆按鈕 Claude／Codex／Codex2（Codex2 走 ytcli://codex2/，需本機 run.ps1 v2.1）；卡片拿掉直接開 Claude 的 🚀，點卡開說明書再選。launchVideoAgent／videoAgentHref 加選填的 cli 參數。CARD_CONTENT_VERSION 36→37。
+  v6.37 (2026-10-23) [Claude Code / Opus 5.5] - 新增「整理照片」卡片（📸 → modal 說明書，🚀 走 ytcli://claude/ 開 Claude 載入 photo-organizer 技能）：照片相關整理的唯一入口，先清點、依日期＋GPS 自動切段，再一段一段用數字選項問，最後歸檔到年度照片集，可選去模糊、壓縮 q90、輕量改名。規則正本在 Vault 照片分類清單表，卡片不含任何照片內容或個人路徑。排在素材一條龍前面（order 18.9）。CARD_CONTENT_VERSION 35→36。
+  v6.36 (2026-10-22) [Claude Code / Opus 5.5] - 支援直連說明書：網址帶 #open=<卡片 id>（例 /admin/#open=hv-skill-main）登入後直接打開該卡片的說明書 modal，開完把 #open 從網址清掉；給總管理中心心智圖的說明書型卡片用（原本只能開到 admin 首頁）。不動卡片內容，CARD_CONTENT_VERSION 不變。
+  v6.35 (2026-10-22) [Claude Code / Opus 5.5] - 「Jev 瀏覽器 Agent（本機）」卡片加 📖 說明書鈕（infoFn openJevGuide → jevGuideModal）：它是做什麼的、用到哪兩個 AI（TypeSafe 決策＋打字小模型，後者金鑰未設）、三種用法、要不要投入的建議；說明欄改成一句話講用途。CARD_CONTENT_VERSION 34→35。
   v6.34 (2026-10-21) [Claude Code / Opus 5.5] - 新增「總管理中心（本機）」卡片（🧭 → http://127.0.0.1:8778/，🚀 走新協定 ctrlcenter://open），排第一格（order -3，在 PVE -2 前面）：所有網站、本機工具、admin 卡片與待辦的入口心智圖。程式在 C:\Code\control-center\，協定註冊在 HKCU\Software\Classes\ctrlcenter → start.bat v0.2.0：先探 8778 有沒有在聽，有就只開瀏覽器，沒有才啟動服務。卡片只含 127.0.0.1 網址，不含內網資料。CARD_CONTENT_VERSION 33→34。
   v6.33 (2026-10-07) [Claude Code / Opus 5.5] - 新增「線上課程入口」連結卡片（🎓 → /courses/）：公司購買的 Hahow 三堂課入口頁（Power Query、Excel x AI、邏輯表達力），同事由工具首頁進入；卡片與頁面都不含帳號密碼。排在最後（order 30）。CARD_CONTENT_VERSION 32→33。
   v6.32 (2026-10-07) [Claude Code / Opus 5.5] - 新增「目標管理卡片」（🎯 → modal 說明書，🚀 走 ytcli://claude/ 開 Claude 載入 goal-management 技能）：半年一次的公司個人目標管理表代筆，AI 讀歷年原文與語氣守則，用使用者的口氣填上一期成果、擬新一期目標與方法手段，先交 md 草稿。目標原文與語氣守則都放在 Vault，不在本 repo 也不在技能資料夾；卡片不含任何目標內容。排在最後（order 29）。CARD_CONTENT_VERSION 31→32。
@@ -720,43 +732,6 @@
   </div>
 </div>
 
-<!-- material-inbox-classifier modal（v6.24） -->
-<div class="modal-overlay" id="materialInboxClassifierModal" onclick="closeOnOverlay(event)">
-  <div class="modal" style="max-height:90vh">
-    <button class="modal-close" onclick="closeMaterialInboxClassifier()">✕</button>
-    <div class="modal-title">🗂️ 素材資料整理分類</div>
-    <div class="modal-sub">先產生分類對照表，收到你的確認後才搬移與改名</div>
-
-    <div class="step" style="background:#fff3cd;border-radius:10px;padding:12px">
-      <div class="step-label">🚀 執行方式</div>
-      <div style="font-size:13px;color:#333;line-height:1.8">
-        按卡片右上角的 🚀「執行素材分類」會開啟 AGY。AGY 先讀取
-        <code>D:\2026_待整理素材</code>，列出錄音／錄影分組與「原路徑 → 新路徑」左右對照表，然後停下等待你輸入<strong>確認執行</strong>。未確認前不會搬檔、改名或刪檔。
-      </div>
-    </div>
-
-    <div class="step">
-      <div class="step-label">① 分類規則</div>
-      <div style="font-size:13px;color:#ccc;line-height:1.8">
-        同一活動的錄音／錄影使用同一活動名稱加 <strong>01、02…</strong>；不同活動使用不同活動名稱；單段活動不強加 01。<br>
-        所有影音直接放在 <code>D:\2026_待整理素材\_初步分類</code> 根層；活動照片、課程 PPT、誤拍、日常截圖與生活照片維持原分類。
-      </div>
-    </div>
-
-    <div class="step">
-      <div class="step-label">② 實際流程</div>
-      <div style="font-size:13px;color:#ccc;line-height:1.8">
-        盤點 → 詢問「1、2、3、4 哪些同場」→ 顯示左右對照表 → 你輸入「確認執行」→ 才搬移／改名 → 回報成功、失敗、跳過與衝突。<br>
-        分類成果由你自行查看，AI 不代替你宣告驗證通過。
-      </div>
-    </div>
-
-    <div style="font-size:12px;color:#aaa;margin-top:16px">
-      技能正本：<code>C:\Users\admin\.codex\skills\material-inbox-classifier\SKILL.md</code>
-    </div>
-  </div>
-</div>
-
 <!-- seminar-organizer modal（保留舊說明，已不再由工具卡片入口使用） -->
 <div class="modal-overlay" id="seminarOrganizerModal" onclick="closeOnOverlay(event)">
   <div class="modal" style="max-height:90vh">
@@ -1189,6 +1164,130 @@ D:\本機MD檔\30_研究\課程逐字稿整理\&lt;同名&gt;\　課程包 MD �
       <div style="font-size:12px;color:#aaa;margin-top:6px">
         <code>.codex\skills</code> 是同一份（目錄接合點），Claude／Codex／Hermes 都吃得到。
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- event-signup modal（v6.43） -->
+<div class="modal-overlay" id="eventSignupModal" onclick="closeOnOverlay(event)">
+  <div class="modal" style="max-height:90vh">
+    <button class="modal-close" onclick="closeEventSignup()">✕</button>
+    <div class="modal-title">📝 活動報名（代填＋行事曆）</div>
+    <div class="modal-sub">研討會、講座、課程的報名表交給 AI 填；送出由你按，送出後 AI 把活動連議程放進行事曆</div>
+
+    <div class="step">
+      <div class="step-label">① 怎麼叫</div>
+      <div class="cmd-box">去報名 https://活動報名頁網址</div>
+      <div style="font-size:12px;color:#888;margin-top:6px">也可以說「幫我報名」「幫我填報名表」。</div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">② AI 會做什麼</div>
+      <div class="cmd-box" style="font-family:sans-serif;line-height:1.75">
+        1. 讀 Vault <code>99_系統\報名表固定資料.md</code> 的欄位值（Email 預設 Gmail）。<br>
+        2. 確認連到的是<strong>你這台 Windows 的 Chrome</strong>；沒連上會請你打開 Claude 擴充功能側邊欄。<br>
+        3. 在「Claude」分頁群組開報名頁代填，順便抓議程與講者。<br>
+        4. 列出填了什麼、缺哪些欄位，<strong>不按送出</strong>。
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">③ 你送出後</div>
+      <div class="cmd-box" style="font-family:sans-serif;line-height:1.75">
+        跟 AI 說「我送出了」→ 建 Google 行事曆：時間、地點、活動頁、報名狀態、<strong>完整議程</strong>，
+        並附狀態標記（已報名／審核中），<a href="/calendar-dashboard/">行程總覽</a>會亮燈。<br>
+        之後說「審核通過」只改審核狀態。
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">技能正本</div>
+      <div class="cmd-box">C:\Users\admin\.claude\skills\event-signup\SKILL.md</div>
+    </div>
+  </div>
+</div>
+
+<!-- file-organizer modal（v6.45） -->
+<div class="modal-overlay" id="fileOrganizerModal" onclick="closeOnOverlay(event)">
+  <div class="modal" style="max-height:90vh">
+    <button class="modal-close" onclick="closeFileOrganizer()">✕</button>
+    <div class="modal-title">🗂️ 整理桌面／整理檔案</div>
+    <div class="modal-sub">散檔讀內容判讀、改可搜尋檔名，確認後一律搬到 D 槽既有結構，C 槽不再堆東西</div>
+
+    <div class="step">
+      <div class="step-label">① 怎麼叫</div>
+      <div class="cmd-box">整理桌面　／　整理檔案 &lt;資料夾路徑&gt;</div>
+      <div style="font-size:12px;color:#888;margin-top:6px">Claude、Codex、Hermes 都讀同一份技能。</div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">② AI 會做什麼</div>
+      <div class="cmd-box" style="font-family:sans-serif;line-height:1.75">
+        1. 清點散檔：文件讀內容、影片截畫面、圖片拼縮圖表；捷徑與程式專案不碰。<br>
+        2. <strong>截圖依時間成段</strong>：間隔 30 分鐘內算同一段，整段在講同一件事就放同一夾。<br>
+        3. 照檔名規則改成「類別_日期_描述」，找重複檔，可疑內容只標記不動。<br>
+        4. 出 Excel 對照表，<strong>你回「照表執行」才搬</strong>，不想動的列打勾就跳過。<br>
+        5. 搬到 D 槽：截圖／影片進照片集、文件進年度文件夾、私密內容進私密夾；留還原紀錄。
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">③ 想反悔</div>
+      <div class="cmd-box" style="font-family:sans-serif;line-height:1.75">
+        跟 AI 說「照還原紀錄還原」，檔案搬回原位；重複檔在資源回收筒自己還原。
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">技能正本</div>
+      <div class="cmd-box">C:\Users\admin\.codex\skills\file-organizer\SKILL.md</div>
+    </div>
+  </div>
+</div>
+
+<!-- sic-calendar modal（v6.46） -->
+<div class="modal-overlay" id="sicCalendarModal" onclick="closeOnOverlay(event)">
+  <div class="modal" style="max-height:90vh">
+    <button class="modal-close" onclick="closeSicCalendar()">✕</button>
+    <div class="modal-title">📅 公司年度行事曆</div>
+    <div class="modal-sub">每年一次：照去年定案檔的版型做明年的 SIC_CAL-YYYY.xlsx，再匯出上傳用的 PDF</div>
+
+    <div class="step">
+      <div class="step-label">① 怎麼叫</div>
+      <div class="cmd-box">做明年行事曆　／　行事曆加 11/23 放假</div>
+      <div style="font-size:12px;color:#888;margin-top:6px">先把人事總處「政府行政機關辦公日曆表」網頁存成 PDF 放進行事曆資料夾。</div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">② AI 會做什麼</div>
+      <div class="cmd-box" style="font-family:sans-serif;line-height:1.75">
+        1. 讀政府版月曆，列出平日放假與補假日給你確認。<br>
+        2. 一次問完：有沒有要加減的日子、公司固定特休哪幾天（未定可先空著）。<br>
+        3. 拿去年定案檔當版型產新檔：週末粉紅、國定假日橘、固定特休藍，<strong>每月休日自動重算</strong>。<br>
+        4. 匯出 <strong>SIC_CAL-YYYY.pdf</strong>（A4 一頁，含下方日數表）供上傳公司內部。<br>
+        5. 之後要追加或取消放假日，說一句就改，休日跟著重算；改前自動備份到 _備份。
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="step">
+      <div class="step-label">技能正本</div>
+      <div class="cmd-box">C:\Users\admin\.codex\skills\sic-calendar\SKILL.md</div>
     </div>
   </div>
 </div>
@@ -1648,6 +1747,123 @@ D:\本機MD檔\30_研究\課程逐字稿整理\&lt;同名&gt;\　課程包 MD �
   </div>
 </div>
 
+<div class="modal-overlay" id="fbWritingModal" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="modal" style="max-height:90vh">
+    <button class="modal-close" onclick="document.getElementById('fbWritingModal').classList.remove('open')">✕</button>
+    <div class="modal-title">✍️ 檢查文章（FB 寫作教練）</div>
+    <div class="modal-sub">文章由你自己寫，AI 只改錯字、補標點，再指出卡住的句子，不會替你改寫。</div>
+    <div class="step"><div class="step-label">① 啟動</div>
+      <button class="copy-btn" onclick="launchVideoAgent('fbcheck')">🚀 開啟 Claude 檢查文章</button>
+      <div class="cmd-box">檢查文章</div>
+      <p>說完把文章貼上。語音稿也可以。</p>
+    </div>
+    <div class="step"><div class="step-label">② 拿到結果</div>
+      <p>你會拿到改好錯字和標點的全文、錯字改動清單、不確定要你決定的字，以及最多兩句讀起來卡住的句子。其他字詞和語序都不會動。</p>
+    </div>
+    <div class="step"><div class="step-label">③ 想進一步討論</div>
+      <p>說「為什麼卡」「給方向」「問我問題」或「當讀者」。AI 只給原因、方向和問題，句子由你自己改。</p>
+    </div>
+    <div class="step"><div class="step-label">④ 發文前排版</div>
+      <div class="cmd-box">FB 排版</div>
+      <p>只加換行和空行，腳本會確認文字沒被改動。想檢討就說「這篇複盤」，結果會記進練習紀錄。</p>
+    </div>
+    <div class="yt-note">貼文樣本與練習紀錄都在 Vault，位置寫在技能裡；本卡片與技能資料夾不含任何文章內容。技能正本：<code>%USERPROFILE%\.codex\skills\fb-writing-coach\SKILL.md</code>。</div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="htmlMarkerModal" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="modal" style="max-height:90vh">
+    <button class="modal-close" onclick="document.getElementById('htmlMarkerModal').classList.remove('open')">✕</button>
+    <div class="modal-title">🖍️ HTML 畫線改字</div>
+    <div class="modal-sub">在瀏覽器裡對 HTML 檔畫螢光、改字，存檔時直接改原檔。心智圖、全景學習手冊這類網頁也能用。</div>
+    <div class="step"><div class="step-label">① 開啟檔案</div>
+      <p>在 HTML 檔按右鍵選「畫線改字」；或按卡片右上 🚀，再選要開的檔案。</p>
+    </div>
+    <div class="step"><div class="step-label">② 畫螢光、改字</div>
+      <p>用工具列切換 🖍 螢光和 ✏️ 改字，改完按 💾 存檔。按鈕上的數字是還沒存的修改數。</p>
+    </div>
+    <div class="step"><div class="step-label">③ 存檔時要知道的事</div>
+      <p>工具會回原始碼找到那段文字再改，找不到或分不出位置就回報，不會猜。存檔前會先備份到工具資料夾的 <code>_備份</code>。</p>
+    </div>
+    <div class="yt-note">純本機工具，只在這台電腦能用，網址是 127.0.0.1:8764。程式在 <code>C:\Code\html-marker\</code>。🚀 第一次使用前，要先雙擊 <code>C:\Code\html-marker\加入卡片啟動鈕.reg</code>。</div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="photoSorterModal" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="modal" style="max-height:90vh">
+    <button class="modal-close" onclick="document.getElementById('photoSorterModal').classList.remove('open')">✕</button>
+    <div class="modal-title">🏞️ 照片分類器</div>
+    <div class="modal-sub">邊看圖邊挑照片：左邊資料夾樹、右邊縮圖，看大圖時按一個鍵就能刪除或標記分享。</div>
+    <div class="step"><div class="step-label">① 看圖</div>
+      <p>Enter 或雙擊切換縮圖與全螢幕大圖，Esc 回縮圖。大圖用 ← → 或滾輪翻頁；左鍵按住看 100%，放開恢復；F 看整張。</p>
+    </div>
+    <div class="step"><div class="step-label">② 分類</div>
+      <p><b>D</b>：照片送資源回收筒，並移除工具建立的分享連結。<br>
+      <b>G</b>：保留原圖並加入分享，再按一次取消。<br>
+      <b>Ctrl+Z</b>：復原這次開啟期間的 D／G。Ctrl、Shift 可以多選。</p>
+    </div>
+    <div class="step"><div class="step-label">③ 要注意</div>
+      <p>分享用硬連結，兩個位置共用同一份圖片，用其他軟體改其中一份可能影響另一份。若 Windows 提示無法回收、將永久刪除，請按取消。</p>
+    </div>
+    <div class="yt-note">支援 JPG、PNG、BMP、TIFF、WebP、HEIC、HEIF、AVIF 和 GIF 動畫，不處理影片、RAW、PSD。程式在 <code>C:\Code\photo-sorter\</code>。🚀 第一次使用前，要先雙擊 <code>C:\Code\html-marker\加入卡片啟動鈕.reg</code>。</div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="photoOrganizerModal" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="modal" style="max-height:90vh">
+    <button class="modal-close" onclick="document.getElementById('photoOrganizerModal').classList.remove('open')">✕</button>
+    <div class="modal-title">📸 整理照片</div>
+    <div class="modal-sub">照片整理的唯一入口：手機整支匯出、一趟旅行、活動、截圖、FB／微信存下來的圖混在一起都可以丟進來。AI 先清點、自動切段，再一段一段問你，最後歸到年度照片集。</div>
+    <div class="step"><div class="step-label">① 叫 AI 整理</div>
+      <p>選一個 AI 來做（三個都裝好同一份技能）：</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="copy-btn" onclick="launchVideoAgent('photo','claude')">🚀 Claude</button>
+        <button class="copy-btn" onclick="launchVideoAgent('photo','codex')">🚀 Codex</button>
+        <button class="copy-btn" onclick="launchVideoAgent('photo','codex2')">🚀 Codex2（第二帳號）</button>
+      </div>
+      <div class="cmd-box">整理照片</div>
+      <p>沒給資料夾它會先問，並列出常用位置讓你選。子資料夾一律一起掃。</p>
+    </div>
+    <div class="step"><div class="step-label">② 它會問你的事（都用數字選項，一次一題）</div>
+      <p>旅行從哪天到哪天（附 GPS 證據；離開北北基就算旅行）、每天的景點名稱、一天 20 張以上的日子要不要獨立成事件、錄影錄音怎麼處理（研討會／課程流程／跟著照片／先集中／不動）。</p>
+    </div>
+    <div class="step"><div class="step-label">③ 截圖和存下來的圖</div>
+      <p>截圖一張一張判斷跟旅程有沒有關，無關的依主題放並改名；FB／微信存的圖依內容分類，親友傳的照片併回同一天，證件與成人內容移到私密資料夾。</p>
+    </div>
+    <div class="step"><div class="step-label">④ 每批會問要不要做</div>
+      <p>完全重複、連拍去重、嚴格去模糊、壓縮 q90（團體照保留原檔、保留色彩描述檔）、輕量改名（日期_時間_活動）。動檔前一定先給摘要和對照表，你說確定才搬，每一步都能還原。</p>
+    </div>
+    <div class="yt-note">分類規則正本在 Vault 的「照片分類清單表」，可以隨時改。技能正本：<code>%USERPROFILE%\.codex\skills\photo-organizer\SKILL.md</code>；工具在 <code>C:\Code\photo-inventory\</code>。</div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="jevGuideModal" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="modal" style="max-height:90vh">
+    <button class="modal-close" onclick="document.getElementById('jevGuideModal').classList.remove('open')">✕</button>
+    <div class="modal-title">🌐 Jev 瀏覽器 Agent 是做什麼的</div>
+    <div class="modal-sub">自動操作瀏覽器的 AI 小幫手：用一句話給它目標，它自己在網頁上點按鈕、填欄位，把事情做完。目前是實驗中的工具，沒有用在日常工作。</div>
+    <div class="step"><div class="step-label">① 它怎麼做到的</div>
+      <p>例如「查 Google Flights 蘇黎世飛倫敦的機票」，它會打開 Chrome，自己選出發地、目的地、日期再按搜尋。每一步先把網頁上能操作的東西整理成清單（例如「[2] 出發地輸入框」「[5] 搜尋按鈕」），再決定下一步點哪個、填什麼；要打字時才請小型語言模型產生文字。特色是快：官方示範這個機票搜尋含打字與等載入共 7.1 秒。</p>
+    </div>
+    <div class="step"><div class="step-label">② 它用到的兩個 AI</div>
+      <p><b>TypeSafe</b>：每一步決定點哪裡、填哪個欄位，是它的大腦；金鑰已設定。<br>
+      <b>打字用的小模型</b>：在網頁輸入文字時才用到，範例設定走 OpenRouter；<code>TEXT_MODEL_API_KEY</code> 目前是空的，所以要打字的任務會失敗，只剩純點擊的任務能跑。</p>
+    </div>
+    <div class="step"><div class="step-label">③ 三種用法</div>
+      <p><b>自己用儀表板</b>：按卡片 🚀 或總管理中心的 ▶，打開 127.0.0.1:8773，按「Start demo」看它一步步操作，比較像展示用。</p>
+      <p><b>下指令跑任務</b>：在 <code>C:\Code\jev-ultrafast</code> 執行</p>
+      <div class="cmd-box">uv run --env-file .env python examples/run.py --url &lt;網址&gt; --goal "&lt;目標&gt;"</div>
+      <p><b>讓 Claude 或 Codex 呼叫它</b>：AI 把需求整理成目標句丟給 Jev 執行、再讀回結果；要另外包成 skill，尚未做。另一個 jev-use skill 是給 Codex 操作整個桌面的，不是這個瀏覽器版。</p>
+    </div>
+    <div class="step"><div class="step-label">④ 要不要投入</div>
+      <p>Claude in Chrome 已經能代為操作瀏覽器，Jev 能做的大部分已經有了。Jev 的優勢只在「快」：同一種網頁操作要重複很多次時（固定格式查詢、填表）幾秒跑完。</p>
+      <p>代價：每一步都付費呼叫 API；網頁上看得到的內容會送到 TypeSafe 與 OpenRouter 兩家外部服務，公司內網頁面不適合；仍是 MVP，彈出視窗、上傳檔案、iframe 都不支援。</p>
+      <p>建議：沒有要重複跑的網頁任務就先不設定；有了再補打字模型金鑰、包成 skill 給 AI 呼叫。</p>
+    </div>
+    <div class="yt-note">2026-09-21 由 AGY 安裝於 <code>C:\Code\jev-ultrafast</code>，單元測試全過；原預設埠 8766 撞 LINE 對話整理，改用 8773。當時未接 Chrome 實跑任務，之後也沒再測。完整筆記在 Vault 的 Jev 專案進度檔。</div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script type="module">
@@ -1666,20 +1882,27 @@ const getGroqKeyFn = httpsCallable(functions, 'getGroqKey');
 const getAssemblyAIKeyFn = httpsCallable(functions, 'getAssemblyAIKey');
 const ALLOWED_EMAIL = 'ohihio@gmail.com';
 const TOOLS_COL = 'admin_tools';
-const CARD_CONTENT_VERSION = 34;
+const CARD_CONTENT_VERSION = 44;
 const VIDEO_AGENT_PROMPTS = {
   talkcraft: '使用 video-talkcraft 技能製作影片。先讀 C:/Code/video-tools-launcher/LOCAL-SETUP.md，使用 C:/Code/video-talkcraft 的現有安裝與專屬 Python 環境。先問我稿子、配音、圖片所在位置，以及發布平台與畫幅；先做首鏡預覽。繁體中文，使用本機能力與現有訂閱，付費 API 先告知並等我確認。不要自動發布。',
   autopilot: '使用 video-autopilot 技能與已配置的 editkin MCP。先讀 C:/Code/video-tools-launcher/LOCAL-SETUP.md，再讀 C:/Code/video-autopilot-kit/SETUP.md，先問品牌、內容類型與製作設定三區。請使用本機媒體引擎與現有訂閱，先確認 MCP 可用及本次需要的能力；缺少時說明，不可偽造完成。先問素材路徑，工程限配置的 workspace，由我審片及發布。付費 API 先告知並等我確認。',
   xiaoguan: '使用 video-editing-xiaoguan 技能剪片。剪片資料夾是 C:/Code/video-editing-xiaoguan，先讀技能最前面的「Windows 本機安裝對照」。先問我毛片檔名與片型，聽打完先跟我討論要留哪些段落，確認後才動剪。繁體中文，只用本機工具，付費 API 先告知並等我確認。不要自動發布。',
-  goal: '使用 goal-management 技能寫這一期的目標管理表。先讀技能指定的語氣守則與歷年原文，再問我這次要填上一期成果、訂新一期目標，還是兩個都做。繁體中文，內容不外送。'
+  goal: '使用 goal-management 技能寫這一期的目標管理表。先讀技能指定的語氣守則與歷年原文，再問我這次要填上一期成果、訂新一期目標，還是兩個都做。繁體中文，內容不外送。',
+  photo: '整理照片。使用 photo-organizer 技能，先讀技能指定的照片分類清單表，再問我要整理哪個資料夾。每題用數字選項、一次一題，繁體中文，照片內容不外送。',
+  fbcheck: '檢查文章。使用 fb-writing-coach 技能，先請我貼上文章；只改錯字、補標點，再標出卡住的句子，不要改寫。繁體中文。'
 };
-const VIDEO_AGENT_CLI = { xiaoguan: 'claude', goal: 'claude' };
-const videoAgentHref = key => 'ytcli://' + (VIDEO_AGENT_CLI[key] || 'codex') + '/' + btoa(String.fromCharCode(...new TextEncoder().encode(VIDEO_AGENT_PROMPTS[key]))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
-window.launchVideoAgent = key => { if (Object.hasOwn(VIDEO_AGENT_PROMPTS, key)) window.location.href = videoAgentHref(key); };
+const VIDEO_AGENT_CLI = { xiaoguan: 'claude', goal: 'claude', photo: 'claude', fbcheck: 'claude' };
+const videoAgentHref = (key, cli) => 'ytcli://' + (cli || VIDEO_AGENT_CLI[key] || 'codex') + '/' + btoa(String.fromCharCode(...new TextEncoder().encode(VIDEO_AGENT_PROMPTS[key]))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+window.launchVideoAgent = (key, cli) => { if (Object.hasOwn(VIDEO_AGENT_PROMPTS, key)) window.location.href = videoAgentHref(key, cli); };
 window.openTalkcraft = () => document.getElementById('talkcraftModal').classList.add('open');
 window.openVideoAutopilot = () => document.getElementById('videoAutopilotModal').classList.add('open');
 window.openXiaoguanEdit = () => document.getElementById('xiaoguanEditModal').classList.add('open');
 window.openGoalMgmt = () => document.getElementById('goalMgmtModal').classList.add('open');
+window.openPhotoOrganizer = () => document.getElementById('photoOrganizerModal').classList.add('open');
+window.openFbWriting = () => document.getElementById('fbWritingModal').classList.add('open');
+window.openHtmlMarker = () => document.getElementById('htmlMarkerModal').classList.add('open');
+window.openPhotoSorter = () => document.getElementById('photoSorterModal').classList.add('open');
+window.openJevGuide = () => document.getElementById('jevGuideModal').classList.add('open');
 const ICON_OPTIONS = ['🗂️','🎙️','📝','📚','📌','📎','📦','⚙️','🛠️','💡','📊','🧾','📁','🔧','🔍','🚀','⭐','✅','⚖️','🌐'];
 const DEFAULT_TOOLS = [
   { id: 'n8n-workflows', title: 'n8n 工作流程', description: '開啟 n8n 自動化工作流程管理頁；需連線 Tailscale', icon: '🔄', actionType: 'link', href: 'https://n8n-server.tailadc2b9.ts.net/home/workflows', order: 0.6, createdAt: '2026-10-05T00:00:00+08:00' },
@@ -1687,7 +1910,7 @@ const DEFAULT_TOOLS = [
   { id: 'video-autopilot', title: 'HAO剪片（Video Autopilot）', description: '素材、頻道設定與 Editkin 剪輯流程；點卡看教學，🚀 開 Codex', icon: '🎞️', actionType: 'modal', modalFn: 'openVideoAutopilot', infoFn: 'openVideoAutopilot', launchHref: videoAgentHref('autopilot'), order: 2.7, createdAt: '2026-10-02T00:00:00+08:00' },
   { id: 'video-editing-xiaoguan', title: '剪片小幫手（小關版）', description: '毛片 → 聽打 → 初剪 → 字幕 BGM → 審片；點卡看教學，🚀 開 Claude 剪片', icon: '✂️', actionType: 'modal', modalFn: 'openXiaoguanEdit', infoFn: 'openXiaoguanEdit', launchHref: videoAgentHref('xiaoguan'), order: 2.8, createdAt: '2026-10-05T00:00:00+08:00' },
   // order -1：Firestore 裡既有卡片的 order 是 0 起跳，給 -1 才排得到第一格（normalizeOrder 會重編成 0）
-  { id: 'ai-workbench', title: 'AI 工作台（本機）', description: '啟動 7 個 Hermes 分頁：3 AGY／2 Claude／2 Codex', icon: '🚀', actionType: 'link', href: 'aiwork://start', launchHref: 'aiwork://start', order: -1, createdAt: '2026-08-08T00:00:00+08:00' },
+  { id: 'ai-workbench', title: 'AI 工作台（本機）', description: '啟動 4 個 Hermes 分頁：2 Claude／2 Codex（AGY 分頁已移除：2026-11 帳號停權）', icon: '🚀', actionType: 'link', href: 'aiwork://start', launchHref: 'aiwork://start', order: -1, createdAt: '2026-08-08T00:00:00+08:00' },
   { id: 'tool-manager', title: 'AI 工具分類管理', description: '收藏、分類、搜尋與批次分析常用 AI 工具', icon: '🗂️', actionType: 'link', href: '/tool-manager/', order: 0, createdAt: '2026-04-29T00:00:00+08:00' },
   { id: 'transcribe', title: '音檔轉逐字稿', description: 'Groq 快速轉錄；可選說話者辨識並自動壓縮大檔', icon: '🎙️', actionType: 'modal', modalFn: 'openTranscribe', order: 1, createdAt: '2026-05-01T00:00:00+08:00' },
   { id: 'media-tools-local', title: '影音處理', description: '影片轉 MP3、錄音／錄影合併與影片壓縮；需先啟動 8767 服務', icon: '🎬', actionType: 'link', href: 'http://127.0.0.1:8767/#media', launchHref: 'mediatools://open', order: 2, createdAt: '2026-07-31T00:00:00+08:00' },
@@ -1698,7 +1921,7 @@ const DEFAULT_TOOLS = [
   { id: 'subtitle-archive', title: '課程字幕歸檔', description: '用 Arctime 校對版 SRT 取代自動字幕並保留整理結構', icon: '🔤', actionType: 'modal', modalFn: 'openSubtitleArchive', order: 11, createdAt: '2026-07-31T00:00:00+08:00' },
   { id: 'subtitle-lexicon-local', title: '字幕詞庫', description: '字幕詞庫、專有名詞校正與逐字稿比對；需先啟動 8767 服務', icon: '🔤', actionType: 'link', href: 'http://127.0.0.1:8767/#lexicon', launchHref: 'mediatools://open', order: 5, createdAt: '2026-09-15T00:00:00+08:00' },
   { id: 'video-progress', title: '影片製作進度表', description: '依 9 個階段追蹤每支影片的狀態、進度與連結', icon: '🎞️', actionType: 'link', href: '/影片進度表/', order: 6, createdAt: '2026-05-31T00:00:00+08:00' },
-  { id: 'ai-usage', title: 'AI 額度儀表板', description: '查看 Claude、Codex、Antigravity 額度與趨勢；AGY 三帳號切換要先按 🚀 啟動 8772', icon: '📊', actionType: 'link', href: '/ai-usage/', launchHref: 'agyswitch://start', order: 7, createdAt: '2026-07-14T00:00:00+08:00' },
+  { id: 'ai-usage', title: 'AI 額度儀表板', description: '查看 Claude、Codex 額度與趨勢；AGY 帳號切換已停用（2026-11 帳號停權）', icon: '📊', actionType: 'link', href: '/ai-usage/', order: 7, createdAt: '2026-07-14T00:00:00+08:00' },
   { id: 'calendar-dashboard', title: '研討會／課程行程總覽', description: 'Google Calendar 週時間軸：申請狀態、上下班時段與參加優先級', icon: '🗓️', actionType: 'link', href: '/calendar-dashboard/', order: 7.5, createdAt: '2026-09-13T00:00:00+08:00' },
   { id: 'skill-manager-local', title: 'AI Skill 管理器（本機）', description: '管理共用 Skills；需先啟動 127.0.0.1:8768', icon: '🛠️', actionType: 'link', href: 'http://127.0.0.1:8768/', order: 8, createdAt: '2026-07-14T00:00:00+08:00' },
   { id: 'line-digest-local', title: 'LINE 對話整理（本機）', description: '將 LINE 群組對話整理成 Obsidian 摘要；需先啟動 8766', icon: '💬', actionType: 'link', href: 'http://127.0.0.1:8766/', order: 9, createdAt: '2026-07-19T00:00:00+08:00' },
@@ -1709,21 +1932,27 @@ const DEFAULT_TOOLS = [
   { id: 'todo-dashboard-local', title: '待辦總表儀表板（本機）', description: '九分類看板讀寫 Obsidian 待辦總表，可勾選與新增；沒開按 🚀 啟動 8771', icon: '✅', actionType: 'link', href: 'http://127.0.0.1:8771/', launchHref: 'todoboard://open', order: 17, createdAt: '2026-08-25T00:00:00+08:00' },
   { id: 'session-title-sync', title: '對話名同步（本機）', description: '把 Claude Code 對話名對齊進度檔名；對 AI 說「同步檔名」', icon: '🏷️', actionType: 'modal', modalFn: 'openSessionTitleSync', order: 18, createdAt: '2026-09-04T00:00:00+08:00' },
   { id: 'yt-summary', title: 'YouTube 極速摘要（本機）', description: '貼網址免下影片30秒出摘要、留言正反批判檢驗與心智圖HTML；對 AI 說「YT摘要」', icon: '⚡', actionType: 'modal', modalFn: 'openYtSummary', order: 19, createdAt: '2026-09-09T00:00:00+08:00' },
-  { id: 'material-pipeline', title: '素材一條龍', description: '🐉 一句話做完整批素材：Claude 從初步分類、研討會照片、影片課程包、截圖／生活照歸檔做到知識入庫與結案，過程一題一題問你並給建議', icon: '🐉', actionType: 'link', href: 'ytcli://claude/57Sg5p2Q5LiA5qKd6b6N', launchHref: 'ytcli://claude/57Sg5p2Q5LiA5qKd6b6N', order: 19, createdAt: '2026-09-27T00:00:00+08:00' },
-  { id: 'material-inbox-classifier', title: '素材資料整理分類', description: '🚀 執行素材分類：AGY 先列影音分組與左右對照表，等你確認後才搬移／改名；照片分類維持不變', icon: '🗂️', actionType: 'modal', modalFn: 'openMaterialInboxClassifier', launchHref: 'ytcli://agy/6KuL5Z-36KGMIG1hdGVyaWFsLWluYm94LWNsYXNzaWZpZXLvvIzmlbTnkIblm7rlrprmlLbku7blpL4gRDpcMjAyNl_lvoXmlbTnkIbntKDmnZDjgIIK5YWI5LiN6KaB5pCs56e744CB5pS55ZCN44CB5Yiq6Zmk5oiW6KaG6JOL5Lu75L2V5qqU5qGI77yM5Lmf5LiN6KaB5ZG85Y-r5LiL5ri4IFNraWxs44CCCuWFiOebpOm7nuizh-aWmeWkvuS4reeahOWclueJh-OAgemMhOmfs-OAgemMhOW9seiIh-WFtuS7luaqlOahiO-8m-aJgOaciemMhOmfs--8j-mMhOW9see3qOiZn-W-jOmAkOasoeipouWVj-aIkeWTquS6m-WxrOaWvOWQjOS4gOa0u-WLleaIluWQjOS4gOWgguiqsuOAguW3suefpeWQjOS4gOa0u-WLleeahOWkmuauteW9semfs-S9v-eUqOWQjOS4gOa0u-WLleWQjeeoseWKoCAwMeOAgTAy77yb5LiN5ZCM5rS75YuV5L2_55So5LiN5ZCM5rS75YuV5ZCN56ix77yb5Zau5q615rS75YuV5LiN5by35YqgIDAx44CC5b2x6Z-z5pyA5b6M55u05o6l5pS-5ZyoIEQ6XDIwMjZf5b6F5pW055CG57Sg5p2QXF_liJ3mraXliIbpoZ4g5qC55bGk77yM54Wn54mH5YiG6aGe57at5oyB5pei5pyJ6KaP5YmH6IiH6LOH5paZ5aS-44CCCuWujOaIkOi-qOitmOW-jO-8jOWFiOWIl-WHuuW3puWPs-WwjeeFp-ihqO-8muWOn-Wni-i3r-W-ke-9nOaWsOi3r-W-ke-9nOWLleS9nO-8iOS_neaMge-8j-aQrOenu--8j-aUueWQje-8ie-9nOWIpOaWt-eQhueUseOAguihqOagvOWujOaIkOW-jOWBnOS4i-S-hu-8jOaYjueiuuetieW-heaIkei8uOWFpeOAjOeiuuiqjeWft-ihjOOAjeOAguWPquacieaUtuWIsOOAjOeiuuiqjeWft-ihjOOAjeW-jO-8jOaJjeS-neihqOagvOaQrOenu-iIh-aUueWQje-8m-mBh-WIsOWQjOWQjeaIlueWkeS8vOmHjeikh-aqlOWFiOWBnOS4i-ipouWVj-OAguWujOaIkOW-jOWPquWbnuWgseaIkOWKn-OAgeWkseaVl-OAgei3s-mBjuiIh-ihneeqge-8jOWIhumhnuaIkOaenOeUseaIkeiHquihjOafpeeci-OAgg', infoFn: 'openMaterialInboxClassifier', order: 20, createdAt: '2026-09-23T00:00:00+08:00' },
+  { id: 'photo-organizer', title: '整理照片', description: '📸 照片唯一入口：點卡選 Claude／Codex／Codex2 來做；清點、依日期＋GPS 切段、一題一題問你，歸到年度照片集', icon: '📸', actionType: 'modal', modalFn: 'openPhotoOrganizer', infoFn: 'openPhotoOrganizer', order: 18.9, createdAt: '2026-10-23T00:00:00+08:00' },
   { id: 'drink-order', title: '訂飲料（你訂 nidin）', description: '貼菜單網址＋一行一杯名單，AI 逐杯加購物車；結帳自己按', icon: '🧋', actionType: 'modal', modalFn: 'openDrinkOrder', order: 21, createdAt: '2026-09-11T00:00:00+08:00' },
   { id: 'html-visualizer', title: '長回覆做成網頁', description: '點一下開本機 Documents\\claude-html 索引頁；可開 AGY 產出全景手冊；📖 看說明書', icon: '📄', actionType: 'link', href: 'claudehtml://open', launchHref: 'claudehtml://open', agyHref: 'ytcli://agy/6KuL5pOU5Lu75YWo5pmv5a2457-S5omL5YaK6KO95L2c5bCI5a6244CC54--5Zyo6KuL5YWI5ZWP5oiR77ya44CM6KuL5ZWP6KaB5oqT5ZOq5YCL6LOH5paZ5aS-55qE6LOH5paZ77yf44CNCuetieaIkeaPkOS-m-iqsueoi-izh-aWmeWkvui3r-W-keW-jO-8jOiri-iugOWPluipsuizh-aWmeWkvuWFp-eahOOAjOaRmOimgeOAgeWfueiok-WgseWRiuOAgeaKgOiDveaoueOAjeS4ieWAiyBNYXJrZG93biDmqpTmoYjvvIzkvb_nlKggaHRtbC12aXN1YWxpemVyIOimj-evhOWwh-WFtuWQiOS9teijveS9nOaIkOS4gOS7veOAjOS4iSBUYWIg5YWo5pmv5a2457-S5omL5YaK44CNSFRNTO-8iOmggumDqOe9rumggiBUYWIg5YiH5o-b44CBQW50aHJvcGljIOexs-eZvemiqOagvOOAgeaKgOiDveaoueW4tuWPr-aJk-WLvumAsuW6puaineiIhyBMb2NhbFN0b3JhZ2Ug6KiY5oa244CB5rWB56iL5ZyW6IiH6Kqy5b6M6KmV6YeP5LqS5YuV5bGV6ZaL77yJ77yM5a6M5oiQ5b6M5a2Y5pa86Kmy6Kqy56iL6LOH5paZ5aS-5LiL5Lim5Zue5aCx5a6M5pW057WV5bCN6Lev5b6R44CC', infoFn: 'openHtmlVisualizer', order: 22, createdAt: '2026-09-11T00:00:00+08:00' },
   { id: 'hv-skill-main', title: '網頁產生器（主入口）', description: '整頁報告、教學、規格、選項拍板；挑版型、跑自檢、存檔開檔都它負責', icon: '📰', actionType: 'modal', modalFn: 'openHvMain', order: 23, createdAt: '2026-09-12T00:00:00+08:00' },
   { id: 'hv-skill-chart', title: '資料圖表（chart）', description: '只要一張圖表就找它：趨勢、占比、分組、目標對實際，用 @unovis 畫', icon: '📈', actionType: 'modal', modalFn: 'openHvChart', order: 24, createdAt: '2026-09-12T00:00:00+08:00' },
   { id: 'hv-skill-diagram', title: '結構圖（diagram-design）', description: '流程、架構、時序、狀態機等 39 型，手工排版 SVG，不用 Mermaid', icon: '🧩', actionType: 'modal', modalFn: 'openHvDiagram', order: 25, createdAt: '2026-09-12T00:00:00+08:00' },
-  { id: 'jev-ultrafast-local', title: 'Jev 瀏覽器 Agent（本機）', description: '極速視覺瀏覽器 Agent 決策儀表板；沒開按 🚀 啟動 8773', icon: '🌐', actionType: 'link', href: 'http://127.0.0.1:8773/', launchHref: 'jev://start', order: 26, createdAt: '2026-09-21T00:00:00+08:00' },
+  { id: 'jev-ultrafast-local', title: 'Jev 瀏覽器 Agent（本機）', description: '一句話給目標，AI 自動在網頁上點選、填欄位；📖 看說明，沒開按 🚀 啟動 8773', icon: '🌐', actionType: 'link', href: 'http://127.0.0.1:8773/', launchHref: 'jev://start', infoFn: 'openJevGuide', order: 26, createdAt: '2026-09-21T00:00:00+08:00' },
   { id: 'tradingview-desktop-mcp', title: 'TV 桌面直連（MCP）', description: 'CDP 直連本機 TradingView Desktop；即時讀取指標/副圖數值、畫線、自動截圖、Pine Script 編譯；支援 tv 指令', icon: '📈', actionType: 'modal', modalFn: 'openTvDesktopMcp', infoFn: 'openTvDesktopMcp', order: 27, createdAt: '2026-09-21T00:00:00+08:00' },
   { id: 'tradingview-chart-mcp', title: 'TV 背景快照（MCP）', description: 'Selenium 瀏覽器池背景拍圖，傳回多週期高清圖檔給 AI 視覺模型；已綁定 ulOiLJv4 圖表版面', icon: '📷', actionType: 'modal', modalFn: 'openTvChartMcp', infoFn: 'openTvChartMcp', order: 28, createdAt: '2026-09-21T00:00:00+08:00' },
   { id: 'control-center-local', title: '總管理中心（本機）', description: '所有網站、工具與待辦的入口心智圖；沒開按 🚀 啟動 8778', icon: '🧭', actionType: 'link', href: 'http://127.0.0.1:8778/', launchHref: 'ctrlcenter://open', order: -3, createdAt: '2026-10-21T00:00:00+08:00' },
   { id: 'pve-vm102-console', title: 'PVE 主控台 VM 102（內網）', description: 'Proxmox 10.123.17.47 上 VM 102 的網頁主控台；僅公司內網可連', icon: '🗄️', actionType: 'link', href: 'https://10.123.17.47:8006/#v1:0:=qemu%2F102:4:=jsconsole::::::', order: -2, createdAt: '2026-09-30T00:00:00+08:00' },
   { id: 'sic-status-page', title: 'SIC 機房狀態（內網）', description: 'Uptime Kuma 狀態頁：15 項核心設備掉線與硬體健康一頁看完；異常同步推播 Telegram；僅公司內網可連', icon: '📡', actionType: 'link', href: 'http://10.123.17.49:3001/status/sic', order: 0.5, createdAt: '2026-09-30T00:00:00+08:00' },
   { id: 'goal-management', title: '目標管理卡片', description: '半年一次的目標管理表，AI 用你的口氣填成果、擬新目標；點卡看教學，🚀 開 Claude 寫目標', icon: '🎯', actionType: 'modal', modalFn: 'openGoalMgmt', infoFn: 'openGoalMgmt', launchHref: videoAgentHref('goal'), order: 29, createdAt: '2026-10-07T00:00:00+08:00' },
-  { id: 'courses', title: '線上課程入口', description: '公司購買的 Hahow 課程入口頁：Power Query、Excel x AI、邏輯表達力；帳密另外提供，不在頁面上', icon: '🎓', actionType: 'link', href: '/courses/', order: 30, createdAt: '2026-10-07T00:00:00+08:00' }
+  { id: 'courses', title: '線上課程入口', description: '公司購買的 Hahow 課程入口頁：Power Query、Excel x AI、邏輯表達力；帳密另外提供，不在頁面上', icon: '🎓', actionType: 'link', href: '/courses/', order: 30, createdAt: '2026-10-07T00:00:00+08:00' },
+  { id: 'html-marker', title: 'HTML 畫線改字（本機）', description: '對 HTML 檔畫螢光、改字，直接存回原檔；HTML 右鍵「畫線改字」，或按 🚀 選檔', icon: '🖍️', actionType: 'modal', modalFn: 'openHtmlMarker', infoFn: 'openHtmlMarker', launchHref: 'htmlmarker://open', order: 31, createdAt: '2026-10-31T00:00:00+08:00' },
+  { id: 'photo-sorter', title: '照片分類器（本機）', description: '看圖時一鍵分類：D 送回收筒、G 標記分享、Ctrl+Z 復原；按 🚀 開啟', icon: '🏞️', actionType: 'modal', modalFn: 'openPhotoSorter', infoFn: 'openPhotoSorter', launchHref: 'photosorter://open', order: 32, createdAt: '2026-10-31T00:00:00+08:00' },
+  { id: 'fb-writing-coach', title: '檢查文章（FB 寫作教練）', description: 'FB 文章只改錯字、補標點，再標出卡住的句子，不代寫；點卡看教學，🚀 開 Claude 檢查', icon: '✍️', actionType: 'modal', modalFn: 'openFbWriting', infoFn: 'openFbWriting', launchHref: videoAgentHref('fbcheck'), order: 33, createdAt: '2026-10-31T00:00:00+08:00' },
+  { id: 'gift-receipt', title: '筆記本・桌曆・月曆簽收', description: '每年發放的筆記本、桌曆、月曆，點人名勾品項後手寫簽收；可列印年度簽收表', icon: '📒', actionType: 'link', href: '/gift-receipt/', order: 34, createdAt: '2026-11-09T00:00:00+08:00' },
+  { id: 'event-signup', title: '活動報名（代填＋行事曆）', description: '對 AI 說「去報名＋網址」：代填表單、你自己送出，送出後自動加行事曆含議程', icon: '📝', actionType: 'modal', modalFn: 'openEventSignup', infoFn: 'openEventSignup', order: 35, createdAt: '2026-11-13T00:00:00+08:00' },
+  { id: 'file-organizer', title: '整理桌面／整理檔案', description: '對 AI 說「整理桌面」：讀內容改名、截圖依時段成段，確認後全部搬到 D 槽', icon: '🗂️', actionType: 'modal', modalFn: 'openFileOrganizer', infoFn: 'openFileOrganizer', order: 36, createdAt: '2026-11-15T00:00:00+08:00' },
+  { id: 'sic-calendar', title: '公司年度行事曆', description: '對 AI 說「做明年行事曆」：照去年版型標假日、算休日，匯出上傳用 PDF', icon: '📅', actionType: 'modal', modalFn: 'openSicCalendar', infoFn: 'openSicCalendar', order: 37, createdAt: '2026-11-16T00:00:00+08:00' }
 ];
 
 let toolsState = DEFAULT_TOOLS.map(tool => ({ ...tool }));
@@ -1740,7 +1969,18 @@ onAuthStateChanged(auth, (user) => {
   renderTools();
   initIconGrid();
   loadToolOverrides();
+  openToolFromHash();
 });
+
+// 外部直連某張說明書卡片：/admin/#open=<卡片 id> 進來就直接打開它的說明書（總管理中心心智圖用）
+function openToolFromHash() {
+  const m = location.hash.match(/^#open=([\w-]+)$/);
+  if (!m) return;
+  history.replaceState(null, '', location.pathname + location.search);
+  const tool = toolsState.find(item => item.id === m[1]);
+  const fn = tool && (window[tool.modalFn] || window[tool.infoFn]);
+  if (typeof fn === 'function') fn();
+}
 
 window.logout = async () => { await signOut(auth); location.href = '/login.html'; };
 
@@ -1941,7 +2181,7 @@ function renderTools() {
         <div class="tool-created-at">${escapeHtml(formatToolCreatedAt(tool.createdAt))}</div>
       </div>
       <div class="tool-actions">
-        ${tool.launchHref ? `<button class="tool-action-btn" onclick="event.stopPropagation(); launchLocalService('${tool.launchHref}')" title="${tool.id === 'material-inbox-classifier' ? '執行素材分類' : '啟動本機服務'}">🚀</button>` : ''}
+        ${tool.launchHref ? `<button class="tool-action-btn" onclick="event.stopPropagation(); launchLocalService('${tool.launchHref}')" title="啟動本機服務">🚀</button>` : ''}
         ${tool.agyHref ? `<button class="tool-action-btn" onclick="event.stopPropagation(); launchAgyPanorama('${tool.agyHref}')" title="AGY 製作全景學習手冊">🤖</button>` : ''}
         ${tool.infoFn ? `<button class="tool-action-btn" onclick="event.stopPropagation(); ${tool.infoFn}()" title="說明書">📖</button>` : ''}
         <button class="tool-action-btn" onclick="event.stopPropagation(); openEditTool('${tool.id}')" title="編輯">✏️</button>
@@ -2156,8 +2396,10 @@ function closeOnOverlay(e) {
   if (e.target === document.getElementById('sessionTitleSyncModal')) closeSessionTitleSync();
   if (e.target === document.getElementById('ytSummaryModal')) closeYtSummary();
   if (e.target === document.getElementById('seminarOrganizerModal')) closeSeminarOrganizer();
-  if (e.target === document.getElementById('materialInboxClassifierModal')) closeMaterialInboxClassifier();
   if (e.target === document.getElementById('drinkOrderModal')) closeDrinkOrder();
+  if (e.target === document.getElementById('eventSignupModal')) closeEventSignup();
+  if (e.target === document.getElementById('fileOrganizerModal')) closeFileOrganizer();
+  if (e.target === document.getElementById('sicCalendarModal')) closeSicCalendar();
   if (e.target === document.getElementById('subtitleArchiveModal')) closeSubtitleArchive();
   if (e.target === document.getElementById('ytDlpModal')) closeYtDlp();
   if (e.target === document.getElementById('ytDownloadModal')) closeYtDownload();
@@ -2295,12 +2537,28 @@ function closeSeminarOrganizer() {
   document.getElementById('seminarOrganizerModal').classList.remove('open');
 }
 
-// material-inbox-classifier（素材資料整理分類）modal
-function openMaterialInboxClassifier() {
-  document.getElementById('materialInboxClassifierModal').classList.add('open');
+// event-signup（活動報名）modal
+function openEventSignup() {
+  document.getElementById('eventSignupModal').classList.add('open');
 }
-function closeMaterialInboxClassifier() {
-  document.getElementById('materialInboxClassifierModal').classList.remove('open');
+function closeEventSignup() {
+  document.getElementById('eventSignupModal').classList.remove('open');
+}
+
+// file-organizer（整理桌面／整理檔案）modal
+function openFileOrganizer() {
+  document.getElementById('fileOrganizerModal').classList.add('open');
+}
+function closeFileOrganizer() {
+  document.getElementById('fileOrganizerModal').classList.remove('open');
+}
+
+// sic-calendar（公司年度行事曆）modal
+function openSicCalendar() {
+  document.getElementById('sicCalendarModal').classList.add('open');
+}
+function closeSicCalendar() {
+  document.getElementById('sicCalendarModal').classList.remove('open');
 }
 
 // drink-order（訂飲料）modal
